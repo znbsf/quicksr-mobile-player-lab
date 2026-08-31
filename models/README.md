@@ -35,6 +35,10 @@ Android P3/M0 的 QNN HTP 路径使用 fixed-shape DCR 模型。派生文件不�
 ```text
 derived-models/quicksrnet-small-2x-fixed64-core.onnx
 derived-models/quicksrnet-small-2x-fixed64-dcr.onnx
+derived-models/quicksrnet-small-2x-fixed256-dcr.onnx
+derived-models/quicksrnet-small-2x-fixed256x144-dcr.onnx
+derived-models/quicksrnet-small-2x-fixed512x288-dcr.onnx
+derived-models/quicksrnet-small-2x-fixed640x360-dcr.onnx
 ```
 
 冻结身份：
@@ -43,12 +47,21 @@ derived-models/quicksrnet-small-2x-fixed64-dcr.onnx
 | --- | ---: | --- | --- |
 | `quicksrnet-small-2x-fixed64-core.onnx` | `93809` | `9a35f235ac9dc36447764a58a2d1511720dc346360f76b77fee490b347f9e3b6` | 图外 CRD PixelShuffle 诊断 |
 | `quicksrnet-small-2x-fixed64-dcr.onnx` | `93923` | `c902565d3ec55de1fbfa66aac8e283890c7b77eab0e39c60ba35022691148a5f` | QNN HTP strict 的 `64×64 → 128×128` 主路径 |
+| `quicksrnet-small-2x-fixed256-dcr.onnx` | `93938` | `f791fdc975862b2556eca8113cfb9139c0b3c32303c86ce85497298024ce89be` | 视频候选的 `256×256 → 512×512` 主路径；当前仅完成 PC ORT 等价验证 |
+| `quicksrnet-small-2x-fixed256x144-dcr.onnx` | `93955` | `1706078f92f19ab12aa91c932dbcbbdfb984e8d1167ef395d5a52286a03a9e4d` | 16:9 省电档 `256×144 → 512×288` |
+| `quicksrnet-small-2x-fixed512x288-dcr.onnx` | `93955` | `79e6b64b28ba9abe4b140b9c5760eda702679ecaf347ce16950f5fe56b3a5629` | 16:9 高分档 `512×288 → 1024×576` |
+| `quicksrnet-small-2x-fixed640x360-dcr.onnx` | `93955` | `ad7634d8bd831370c018c2570475cbe71b7f136ccd4da860c509f4619d0c42c1` | 默认 720p 神经输出档 `640×360 → 1280×720` |
 
 在包含 `onnx`、`onnxruntime` 和 `numpy` 的 Python 环境中运行：
 
 ```powershell
 python .\derived-models\derive_quicksrnet_fixed64.py
 python .\derived-models\test_derived_models.py
+python .\derived-models\derive_quicksrnet_fixed256.py
+python .\derived-models\test_derived_model_fixed256.py
+python .\derived-models\derive_quicksrnet_fixed256x144.py
+python .\derived-models\derive_quicksrnet_fixed512x288.py
+python .\derived-models\derive_quicksrnet_fixed640x360.py
 ```
 
 派生脚本会验证 canonical ONNX、P2 plan、图结构、权重身份和变换边界，然后原子写入两个本地 ONNX 与 manifest。派生模型仍包含完整 trained weights；图变换不会产生新的再分发许可。
@@ -67,7 +80,7 @@ python .\derived-models\test_derived_models.py
 .\build-local.ps1 -ModelPath <local-canonical-onnx>
 ```
 
-这个参数只覆盖 canonical 模型。两个 fixed-shape 派生模型仍必须存在于 `derived-models/`。
+这个参数只覆盖 canonical 模型。所有 fixed-shape 派生模型仍必须存在于 `derived-models/`。
 
 一个全新的 source-only checkout **不会包含模型，也不能直接 assemble**。这是预期的 fail-closed 行为，不是仓库缺失文件的 bug。
 

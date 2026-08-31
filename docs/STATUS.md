@@ -1,86 +1,76 @@
 # Project status
 
-状态日期：2026-08-31
+状态日期：2026-09-01
 
-本文件只记录已经观察到的事实、当前实现状态和下一门禁。源码存在、构建通过、真机执行、正确性、画质、性能和人工审核是不同状态。
+本文件区分源码实现、主机构建、真机执行、播放器代理性能、数值正确性、画质、热稳定性和人工审核。任何一项 PASS 都不能代替其他项。
 
 ## 一句话结论
 
-P3 已证明 Xiaomi 13 Ultra 上的 QNN HTP strict 执行资格，但冻结 PC golden 正确性合同 FAIL；独立仓库正在实现 M0 真实图片 ROI，尚未形成绑定本仓库 source/build 的真机结果；播放器未实现。
+v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 13 Ultra 上，`640×360 → 1280×720` QuickSR QNN HTP Sustained 对指定 `23.976023 fps` 片源的最终 APK smoke 跟住源帧率且 MediaCodec Drop=0，但画质合同、最终显示 latch、A/V sync、p95/p99 和长时间热稳定性仍未关闭。
 
-## 阶段状态
+## 当前状态
 
-| 阶段或门禁 | 状态 | 可证明的事实 | 仍然缺少 |
+| 能力或门禁 | 状态 | 已确认 | 尚未证明 |
 | --- | --- | --- | --- |
-| P3 QNN HTP runtime | PASS（历史真机证据） | Xiaomi 13 Ultra 枚举到 Qualcomm NPU，使用 HTP V73，禁 CPU EP fallback，35/35 ORT model events 仅 QNN，11/11 QNN ops supported，并存在 RPC/accelerator/HVX trace | 该结果不是本独立仓库 M0 的真机验收 |
-| P3 PC golden correctness | FAIL | `28,764 / 49,152` mismatch；max absolute error `0.0015161633491516113`；原冻结合同 `atol=rtol=1e-4` 且允许 mismatch 为 0 | 不得事后放宽 P3 合同；新合同必须在新 workload 运行前冻结 |
-| 独立源码白名单 | PRESENT | Android/ORT/QNN 源码、派生工具、验证器和文档已被选择性放入独立目录 | 尚未由本文件声称已经提交或推送到 GitHub |
-| M0 选图与 ROI 源码 | HOST BUILD PASS | 已有系统选图、中心 ROI、确定性下采样、bilinear、RGB/NCHW、QNN 输出转 Bitmap、PSNR 和本地 PNG 证据代码；17 个 Java 单测、lint、assemble 通过 | 仍需真机运行、回执回读、host validation 和人工审核 |
-| M0 build linkage | HOST PASS / DEVICE PENDING | wrapper 构建已产生绑定新 application ID 和 source identity 的本地 debug APK；APK 不进入 Git | 尚无本独立仓真机 receipt 来关闭 device linkage |
-| M0 Xiaomi 13 Ultra | NOT RUN / NOT REPORTED | 无 | 真实图片、HTP strict 回执、四张图片、trace 与失败记录 |
-| M0 correctness/quality | PENDING | P3 的精度错误类别已有记录 | 运行前冻结的 M0/P4 数值与画质合同、未参与定阈值的 ROI、PSNR/SSIM 或有依据的替代指标、人工 A/B |
-| Full-image tile/stitch | NOT IMPLEMENTED | 只有 fixed `64×64 → 128×128` 模型路径 | tile、halo、padding、crop、stitch、seam 与内存验证 |
-| Media3 M1～M4 | NOT IMPLEMENTED | 已有文档化路线 | Media3 依赖、播放器壳、effect、texture/PTS/flush、连续帧、AAR 与真机证据 |
-| Publication | PRIVATE REMOTE PASS | 独立 Git、68 文件 source-only 首次提交、owner-only private remote push/readback 和 GitHub `source-safety` 均完成 | 未授权公开；模型/APK/vendor binary/raw evidence 仍禁止发布 |
+| 主机构建 | PASS | v0.12.0；44 个 Java 单测、lint、assemble 均通过；source/build/APK identity 已生成 | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
+| 图片整图 2× | IMPLEMENTED | 系统选图、CPU/QNN HTP、tile/full-image、预览、取消和 PNG 保存路径已实现 | 本轮没有发布权利清晰的图片质量对比或新的数值验收 |
+| Media3 播放器 | IMPLEMENTED | 本地视频、PlayerView、原画/GPU Lanczos/QuickSR CPU/QuickSR QNN HTP 切换已实现 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
+| 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
+| QNN 运行时 | IMPLEMENTED | fixed-shape 模型 hash 校验、HTP tuning、graph finalization、持久 input/output tensor、资源释放和有限值抽查已实现 | 当前视频 smoke 没有附带发布级 placement/底层 HTP trace |
+| 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
+| 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
+| 数值正确性 | OPEN | shape/hash/finite 运行时检查存在；fixed-shape 派生模型在 PC ORT 做等价测试 | 视频路径尚缺同帧 CPU/golden 交替输入与 stale-output 专项验证 |
+| 视觉质量 | OPEN | App 可在原画、Lanczos 和 QNN 间切换 | 尚无权利清晰 HR reference 的 PSNR/SSIM/感知评价和盲测 |
+| 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
+| Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
 
-## P3 已经允许的声明
-
-允许：
-
-> 在冻结的 `64×64 → 128×128` fixed-DCR workload 上，Xiaomi 13 Ultra 已完成 QNN HTP strict 执行资格验证，且该次观察没有 CPU EP compute fallback。
-
-这句话必须同时附带：
-
-> 同一 P3 运行未通过冻结的 PC golden 正确性合同，因此不能声称 HTP correctness 完成。
-
-P3 profiling 的单 tile timing 只用于执行路径诊断，不能换算为整图或视频 FPS。
-
-## M0 当前代码范围
-
-当前 M0 源码意图实现：
+## 最终 APK smoke
 
 ```text
-本地图片
-→ 中心 128×128 HR ROI
-→ 固定 2× average downsample 为 64×64 LR
-→ deterministic bilinear baseline
-→ QuickSRNet fixed64 DCR + QNN HTP strict
-→ 128×128 QNN Bitmap
-→ PSNR 与四张 PNG evidence
+source:       1280x720 @ 23.976023 fps
+backend:      QNN HTP
+tuning:       Sustained
+model shape:  640x360 -> 1280x720
+frames / PTS: 645 / 26.860 s
+derived rate: 24.0134 fps
+codec:        4 stable windows, each about 120 rendered / 5 s, dropped 0
+UI sample:    ORT/QNN run 9 ms, output conversion 10 ms, total 22 ms
 ```
 
-当前 UI 或代码中出现“完成”文字不能充当验收。机器状态在真机回执和主机验证前保持 pending，human review 在 reviewer 打开真实图片和引用前保持 pending。
+这里的 `OrtSession.run` 是调用方 wall time，不是纯 NPU kernel 时间。UI timing 是定期抽到的一帧、整数毫秒，不是统计分布；`0 ms` 只表示取整后不足 1 ms。
 
-## M0 关闭条件
+## 已实现的数据流
 
-M0 只有全部满足下列条件后才能改为 PASS：
+```text
+local SDR video
+  -> Media3 / hardware MediaCodec decode
+  -> GL texture scaled to a static model input
+  -> RGBA readback and RGB NCHW conversion
+  -> persistent ORT input/output tensors
+  -> QNN HTP QuickSRNetSmall 2x
+  -> RGB output conversion and GL upload
+  -> Media3 output texture with original PTS
+  -> SurfaceView
+```
 
-1. 构建脚本通过并记录 source/build/APK/model/plan identity；
-2. Xiaomi 13 Ultra 上从系统选图器完成一次真实图片 ROI；
-3. `reference-hr-128.png`、`input-lr-64.png`、`baseline-bilinear-128.png` 和 `qnn-htp-128.png` 均保存并 hash；
-4. QNN HTP strict、CPU fallback disabled、ORT placement 和底层 HTP trace 分别通过；
-5. 运行前冻结的数值/画质合同在未用于定阈值的 ROI 上复测；
-6. 失败、非有限值、颜色通道、clamp、PNG 编码和 source/build 漂移均 fail closed；
-7. 主机验证器回读通过；
-8. 人工 reviewer 打开四张图片和 receipt，单独记录审核结论。
+默认 profile 保持 16:9，避免早期方形 profile 对画面比例和有效像素利用率的不利影响。其他档位保留用于性能/质量对照。
 
-## 下一步顺序
+## 当前性能判断
 
-1. 完成 standalone Golden 合成 fixture 回归与发布集合检查；
-2. 实现并冻结 P4 SSIM 阈值与三组输入 source identity/hash；
-3. 在已解锁的 Xiaomi 13 Ultra 上运行一张权利清晰或私人本地图片；
-4. 回读并独立验证 receipt、输出图片、ORT profile 和 QNN trace；
-5. 保留 PASS 或 FAIL，不根据结果事后修改合同；
-6. 完成人工 A/B 后再决定是否进入 Media3 M1。
+- 硬件解码器已经工作；为了速度重写整个播放器或 decoder 不是第一优先级。
+- 当前 720p 档的单帧样本中，ORT/QNN run 约 9 ms，输出转换约 10 ms，后者已成为同量级热点。
+- 下一轮最有价值的是减少 float NCHW → RGBA → GL upload 的 CPU 成本，并补 raw timing 分布、队列深度和 end-to-end latency。
+- QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
+- C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。
 
-播放器路线及其颜色空间、GL readback、PTS、背压与持续性能门禁见 [PLAYER_ROADMAP.md](PLAYER_ROADMAP.md)。发布边界见 [PUBLICATION_BOUNDARY.md](PUBLICATION_BOUNDARY.md)。
+## 仍然开放的门禁
 
-## 当前禁止的声明
+1. 在同一 APK、同一 tuning 下做 pinned/unpinned ABBA，隔离 pinned output 的独立贡献；
+2. 交替输入 A/B 并保存输出 hash，与 CPU/golden 对照，排除 stale output；
+3. 记录 p50/p95/p99、accepted/processed/dropped/bypassed/late、最大队列深度和墙钟时长；
+4. 加入 SurfaceFlinger 或等价最终显示观测，并检查 A/V sync、seek、flush、pause/resume；
+5. 在权利清晰的 HR reference 上比较 Lanczos 与 QNN 画质；
+6. 建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
+7. 若要复用，再拆分稳定 AAR API 和 demo app。
 
-- “真实图片超分已经在手机完成”；
-- “QNN HTP 正确性已经通过”；
-- “神经超分优于 bilinear/Anime4K”；
-- “完整图片已经无缝分块”；
-- “播放器插件已经实现”；
-- “720p/1080p 实时”；
-- “APK 或模型可以在 GitHub 发布”。
+优化经验见 [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md)，路线与门禁见 [PLAYER_ROADMAP.md](PLAYER_ROADMAP.md)，发布规则见 [PUBLICATION_BOUNDARY.md](PUBLICATION_BOUNDARY.md)。

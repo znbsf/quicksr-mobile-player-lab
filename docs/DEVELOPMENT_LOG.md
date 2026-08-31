@@ -76,3 +76,19 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Problem:** GitHub created the private repository, but the HTTPS OAuth token correctly refused a commit containing `.github/workflows/source-safety.yml` because that token lacked the separate `workflow` scope.
 - **Action:** did not broaden the OAuth grant and did not delete or rewrite the verified commit. A read-only SSH check showed the existing key already authenticated as the same GitHub account, so the remote was switched to SSH and the unchanged commit was pushed.
 - **Status:** closed. Remote `main` matched local HEAD and the first `source-safety` run passed every step.
+
+## 2026-09-01 — Media3 video player and neural effect became operational
+
+- **Result:** v0.12.0 now plays local video through Media3 and can switch among original, GPU Lanczos, QuickSR CPU, and QuickSR QNN HTP paths. It remembers the last persisted video URI so the user does not need to select the same item after every launch.
+- **Default profile:** the neural path preserves 16:9 and runs `640×360 → 1280×720` with QNN Sustained tuning.
+- **Bound final smoke:** a `1280×720 @ 23.976023 fps` local SDR source completed 645 frames by PTS 26.860 s (`24.0134 fps`). Four stable MediaCodec windows each rendered 120 frames in about 5 seconds with zero reported drops.
+- **Build:** 44 Java tests, Android lint, and debug assemble passed; the bound APK SHA-256 is `9d1a2153a844af29ddd883441c4e063217504b6e2cb649cce44aa0f64d0abf8e`.
+- **Boundary:** MediaCodec render/drop is a decoder-renderer proxy, UI timings are periodic single-frame samples, and the run does not close visual quality, final display latch, A/V sync, p95/p99, or general-device claims.
+
+## 2026-09-01 — The bottleneck was not simply “Java player versus C player”
+
+- **Observed:** hardware MediaCodec decode and GPU Lanczos could keep up with the source. Earlier neural runs accumulated queue delay and paid heavy per-frame output/session costs.
+- **Action:** added static rectangular models, persistent direct input/output tensors, ORT pinned outputs, QNN Baseline/Burst/Sustained modes, tuned graph finalization, buffer reuse, stage timings, and a lower-frequency full finite scan.
+- **Result:** after the combined change, the 720p neural-output smoke sampled roughly 9 ms in `OrtSession.run`, 10 ms in output conversion, and 22 ms total for the displayed frame.
+- **Lesson:** no same-build unpinned/pinned ABBA exists, so the gain cannot be attributed to pinned output alone. The next likely hotspot is output conversion/upload; replace individual hot loops with NEON/GPU/native code only after profiling, rather than replacing the whole Media3 player by assumption.
+- **Details:** see [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md).

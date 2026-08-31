@@ -1,0 +1,203 @@
+{
+  "artifact": {
+    "bytes": 93955,
+    "clip_bound_initializers": [
+      {
+        "clip_node": "/cnn/cnn.1/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.1/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.1/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.1/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/cnn/cnn.3/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.3/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.3/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.3/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/cnn/cnn.5/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.5/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.5/Clip",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.5/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/clip_output/Clip",
+        "dtype": "float32",
+        "initializer": "/clip_output/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/clip_output/Clip",
+        "dtype": "float32",
+        "initializer": "/clip_output/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      }
+    ],
+    "constant_node_count": 0,
+    "initializer_count": 16,
+    "input": {
+      "dtype": "float32",
+      "name": "image",
+      "shape": [
+        1,
+        3,
+        360,
+        640
+      ]
+    },
+    "node_count": 9,
+    "operator_inventory": {
+      "Clip": 4,
+      "Conv": 4,
+      "DepthToSpace": 1
+    },
+    "output": {
+      "dtype": "float32",
+      "name": "upscaled_image",
+      "shape": [
+        1,
+        3,
+        720,
+        1280
+      ]
+    },
+    "path": "derived-models/quicksrnet-small-2x-fixed640x360-dcr.onnx",
+    "sha256": "ad7634d8bd831370c018c2570475cbe71b7f136ccd4da860c509f4619d0c42c1",
+    "transformations": [
+      "apply the qualified fixed64 DCR graph rewrite",
+      "freeze input shape to [1,3,360,640]",
+      "freeze output shape to [1,3,720,1280]"
+    ]
+  },
+  "canonical_was_written": false,
+  "derivation_tool": {
+    "base_tool_path": "derived-models/derive_quicksrnet_fixed64.py",
+    "base_tool_sha256": "10e0c8a0c200fe235a14ff67114e573ee6413bbc72b8aa601da72bac24b9e964",
+    "deterministic_protobuf_serialization": true,
+    "path": "derived-models/derive_quicksrnet_fixed640x360.py",
+    "sha256": "9a1a81d4ea70838adc3d16139fe9ec587553dbf19552427dc3af7686a019b550",
+    "versions": {
+      "numpy": "2.2.6",
+      "onnx": "1.18.0",
+      "onnxruntime": "1.22.1"
+    }
+  },
+  "document_kind": "deterministic-onnx-fixed640x360-derivation-manifest",
+  "fixed64_dcr_input": {
+    "bytes": 93923,
+    "path": "derived-models/quicksrnet-small-2x-fixed64-dcr.onnx",
+    "sha256": "c902565d3ec55de1fbfa66aac8e283890c7b77eab0e39c60ba35022691148a5f"
+  },
+  "fixed64_was_written": false,
+  "pc_ort_validation": {
+    "cases": [
+      {
+        "comparison": {
+          "actual_sha256_little_endian_float32": "8415ce977e7dc83f334713f785264bb6ab16beed7b00fd9c0f252ec27f687a24",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 2764800,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "8415ce977e7dc83f334713f785264bb6ab16beed7b00fd9c0f252ec27f687a24",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            720,
+            1280
+          ],
+          "status": "pass"
+        },
+        "id": "rgb-gradient-640x360",
+        "input_sha256_little_endian_float32": "7f9ce8989e27e56343635e2d2c3da437a25cd7deafa4dac099d1d6eaffc24d2d",
+        "input_shape": [
+          1,
+          3,
+          360,
+          640
+        ]
+      },
+      {
+        "comparison": {
+          "actual_sha256_little_endian_float32": "c6e44c0e12fbe778a86e06ba4d935b2916d34e81984ca2920d9be597c5ef4551",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 2764800,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "c6e44c0e12fbe778a86e06ba4d935b2916d34e81984ca2920d9be597c5ef4551",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            720,
+            1280
+          ],
+          "status": "pass"
+        },
+        "id": "seeded-random-640x360",
+        "input_sha256_little_endian_float32": "8e52fe3f3af51e99361e9f9ce7c19a9ab6e19aeb45010dd65fe34cc8cec9bf25",
+        "input_shape": [
+          1,
+          3,
+          360,
+          640
+        ]
+      }
+    ],
+    "execution_mode": "sequential",
+    "graph_optimization_level": "disabled",
+    "inter_op_threads": 1,
+    "intra_op_threads": 1,
+    "provider": "CPUExecutionProvider",
+    "status": "pass"
+  },
+  "schema_version": 1,
+  "source": {
+    "bytes": 93994,
+    "path": "models/quicksrnet-small-2x-opset17.onnx",
+    "sha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce"
+  },
+  "status": "pass"
+}

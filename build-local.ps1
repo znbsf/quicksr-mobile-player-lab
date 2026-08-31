@@ -114,10 +114,19 @@ function Invoke-GradleGate {
     )
 
     $logPath = Join-Path $evidenceDirectory "$Gate.log"
-    & $gradlePath --no-daemon $Task "-PquickSrModelPath=$resolvedModel" "-PprototypeBuildId=$runId" 2>&1 |
-        Tee-Object -FilePath $logPath |
-        Out-Host
-    $exitCode = $LASTEXITCODE
+    # javac and AndroidX may emit non-fatal warnings on stderr. PowerShell turns redirected
+    # native stderr into ErrorRecord objects, which must not trip the script-wide Stop policy;
+    # the Gradle process exit code remains the gate authority.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $gradlePath --no-daemon $Task "-PquickSrModelPath=$resolvedModel" "-PprototypeBuildId=$runId" 2>&1 |
+            Tee-Object -FilePath $logPath |
+            Out-Host
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     return [pscustomobject][ordered]@{
         gate = $Gate
         task = $Task

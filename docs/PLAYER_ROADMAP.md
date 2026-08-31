@@ -1,25 +1,27 @@
 # QuickSR Mobile Player 路线图
 
-> 文档日期：2026-08-31
+> 文档更新：2026-09-01
 >
 > 文档性质：阶段边界、技术合同与证据门禁；不是完成证明。
 >
-> 当前活动阶段：**M0 真实静态图片 ROI**。
-> 未来阶段：**Media3 1.11.0 的 M1～M4 均未由本文件宣告完成**。
+> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现，并完成单 workload 吞吐观察。M1/M2 的主要功能代码已经存在；M3 有 `640×360 → 1280×720` 完整帧实验路径，但 correctness、画质、p95/p99、A/V sync、最终显示 latch、持续 thermal 和 tile/stitch 门禁尚未全部关闭。M4 AAR 仍未实现。
 
 ## 1. 先把当前事实说清楚
 
-本项目最终希望验证：QuickSRNetSmall ×2 能否在 Android 播放链路中，经 Qualcomm QNN HTP/NPU 对视频画面进行可复现、可评价、可持续的超分，并最终封装成可由 Media3 播放器接入的 effect library。
+本项目正在验证：QuickSRNetSmall ×2 能否在 Android 播放链路中，经 Qualcomm QNN HTP/NPU 对视频画面进行可复现、可评价、可持续的超分，并最终封装成可由其他 Media3 App 接入的 effect library。
 
-目前不能声称已经有播放器。阶段必须严格拆开：
+当前实现和正式门禁必须分开：
 
-| 阶段 | 当前边界 | 本阶段不代表什么 |
+| 阶段 | 当前实现快照 | 尚未关闭 |
 | --- | --- | --- |
-| 既有 runtime 探针 | 固定 `64×64` tensor → `128×128` tensor；QNN HTP execution 已有独立证据，原 PC golden correctness 仍为 FAIL | 不代表真实图片、全图、视频或实时 |
-| **M0（当前）** | 一张真实静态图片的确定性 `128×128` HR ROI → `64×64` LR → bilinear 与 QNN HTP `128×128` 输出；保存图像和评价证据 | 不代表完整图片；不涉及 Media3、视频解码、GL texture、A/V sync、持续播放或实时 |
-| **M1～M4（未来）** | Media3 1.11.0 播放器闭环、连续帧、tile/full-frame、持续性能和可复用 AAR | 在对应门禁通过前一律不能写成已实现 |
+| 既有 runtime 探针 | 固定 `64×64 → 128×128` 的 QNN HTP execution 已有独立证据 | 原冻结 PC golden correctness 仍为 FAIL |
+| M0 图片路径 | 已实现系统选图、完整图片 tile 2×、CPU/QNN、预览和 PNG 保存 | 本轮没有新的权利清晰质量报告 |
+| M1 | Media3 播放器、effect、PTS 传递、原始/GPU 模式已经运行 | 正式 seek/flush/EOS、截图 hash 和完整生命周期合同 |
+| M2 | 完整帧进入 CPU/QNN，静态 shape 与分阶段计时已经实现 | 冻结 correctness、颜色等价和同帧 reference |
+| M3 experimental | 默认 `640×360 → 1280×720`；指定 23.976 fps workload 的播放器代理约 24 fps、Drop=0 | 画质、最终 latch、A/V sync、p95/p99、功耗、正式 thermal 和 tile/stitch |
+| M4 | 未实现 | AAR、模块拆分、稳定 API、兼容矩阵和全新 checkout 交付验证 |
 
-M0 是从“任意 tensor”走向“真实像素语义”的桥梁。即使 M0 的代码存在，只要没有绑定 source/build/model/workload 的真机回执、输出图片、数值评价和人工复核，就不能仅凭界面或源码把 M0 标为 PASS。
+因此可以声称“可运行的实验播放器和逐帧神经路径已实现”，但仍不能泛化为“720p 在所有设备实时且画质正确”。
 
 ## 2. 产品边界
 
@@ -193,7 +195,7 @@ Media3 linear RGB BT.709 texture
 
 ## 8. M1～M4 执行路线
 
-### M1：Media3 播放器骨架与 texture 生命周期
+### M1：Media3 播放器骨架与 texture 生命周期（主要功能已实现，正式门禁未全关）
 
 范围：
 
@@ -214,7 +216,7 @@ M1 门禁：
 - 60 秒基线播放完成，drop 和异常有明确记录；
 - 人工完成播放、seek、暂停和旋转/生命周期检查。
 
-### M2：低分辨率完整帧 QNN 闭环
+### M2：低分辨率完整帧 QNN 闭环（主要功能已实现，正确性门禁待补）
 
 范围：
 
@@ -232,7 +234,7 @@ M2 门禁：
 - 所有已接受帧都能由 PTS 和 artifact identity 追溯；
 - 允许慢速或低 FPS，但必须如实记录；不能声称实时。
 
-### M3：360p → 720p tile/full-frame 与持续播放
+### M3：360p → 720p tile/full-frame 与持续播放（完整帧性能候选已观察）
 
 范围：
 
@@ -252,7 +254,7 @@ M3 门禁：
 - p50/p95/p99 分阶段延迟、late/drop/bypass、queue depth、内存和温度均有证据；
 - 运行前冻结目标帧率及其 frame budget；只有 p95 end-to-end、持续时长和 drop/thermal 门限都通过后，才允许在该分辨率/设备/模式下写“实时”。
 
-### M4：可复用 AAR 与公开交付
+### M4：可复用 AAR 与公开交付（未实现）
 
 范围：
 
@@ -315,8 +317,14 @@ M4 门禁：
 8. [Qualcomm AI Hub QuickSRNetSmall 模型页](https://aihub.qualcomm.com/models/quicksrnetsmall)
 9. [Qualcomm QuickSRNetSmall 模型实现：2×/3×/4× scale factor checkpoint 来源](https://github.com/qualcomm/ai-hub-models/blob/main/src/qai_hub_models/models/quicksrnetsmall/model.py)
 
-## 12. 下一次实际执行的唯一入口
+## 12. 下一次实际执行入口
 
-先完成并核查 M0 的真实图片 ROI evidence，不从 tensor probe 直接跳到“实时播放器”。M0 通过后，冻结 M1 的本地 SDR 视频、Media3 版本、PTS/flush 合同和 passthrough evidence，再开始写播放器代码。
+1. 冻结视频 correctness/画质合同，并用同 PTS CPU/golden 与权利清晰 reference 验证；
+2. 保存各阶段 raw ns 样本、队列深度和 accepted/processed/drop/late，报告 p50/p95/p99；
+3. 补 SurfaceFlinger 或等价最终显示观测、A/V sync、seek/flush/pause/resume；
+4. 优先 A/B 优化当前约 10 ms 的输出转换与 GL upload；
+5. 只有在测量显示 Java 热循环主导时才引入 NDK NEON 或 compute shader；
+6. 再评估 W8A8 I/O、QNN shared allocator、native I/O 或更深 zero-copy；
+7. 通过持续 thermal/功耗与画质门禁后，再拆分可复用 AAR。
 
-若 M1～M3 中发现 GL readback/upload 主导总延迟，应保留负结果，并据此决定是否继续优化 Media3 路径或另立 libmpv/native decoder 实验；不得在没有测量前用“未来 zero-copy”跳过当前证据。
+若 GL readback/upload 主导总延迟，应保留负结果，并据此决定继续优化 Media3 effect 还是另立 native pipeline 实验；不得在没有测量前用“未来 zero-copy”跳过当前证据。

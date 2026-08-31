@@ -1,4 +1,4 @@
-# QuickSRNetSmall ×2 fixed64 派生模型
+# QuickSRNetSmall ×2 fixed-shape 派生模型
 
 本目录保存可审查的派生工具、测试和 manifest；含完整权重的 ONNX 只在本机生成，不进入 Git。
 
@@ -10,8 +10,14 @@
 | `derive_quicksrnet_fixed64.py` | 可跟踪 | 确定性图变换与 PC ORT 验证代码，不含模型权重 |
 | `test_derived_models.py` | 可跟踪 | 图结构、hash、PixelShuffle 和数值等价单测，不含模型权重 |
 | `derivation-manifest.json` | 可跟踪 | 来源/输出 hash、shape、算子、变换与验证元数据，不含模型权重 |
+| `derive_quicksrnet_fixed256.py` | 可跟踪 | 从同一 canonical 模型确定性派生 fixed256 DCR，不改写 fixed64 产物 |
+| `test_derived_model_fixed256.py` | 可跟踪 | fixed256 图合同、确定性、fixed64 不变性与 PC ORT 等价测试 |
+| `derivation-manifest-fixed256.json` | 可跟踪 | fixed256 独立来源/输出 hash 与 PC ORT 验证记录 |
+| `derive_quicksrnet_fixed256x144.py` / `derive_quicksrnet_fixed512x288.py` / `derive_quicksrnet_fixed640x360.py` | 可跟踪 | 保持 16:9 的视频 fixed-shape 模型派生与 PC ORT 等价验证 |
 | `quicksrnet-small-2x-fixed64-core.onnx` | **仅本地生成** | 包含从上游 checkpoint 派生的完整 initializer 权重 |
 | `quicksrnet-small-2x-fixed64-dcr.onnx` | **仅本地生成** | 包含从上游 checkpoint 派生的完整 initializer 权重 |
+| `quicksrnet-small-2x-fixed256-dcr.onnx` | **仅本地生成** | 视频分块候选，包含同一组完整 initializer 权重 |
+| `quicksrnet-small-2x-fixed256x144-dcr.onnx` / `quicksrnet-small-2x-fixed512x288-dcr.onnx` / `quicksrnet-small-2x-fixed640x360-dcr.onnx` | **仅本地生成** | 16:9 视频档，输出分别为 512×288、1024×576、1280×720 |
 | `__pycache__/` | 仅本地生成 | Python 缓存 |
 
 不要使用 `git add -f` 绕过 ONNX 忽略规则。根目录的 `*.onnx` 规则会阻止误加；canonical ONNX、checkpoint 和其他本地产物也保持在 Git 之外。
@@ -27,6 +33,11 @@ $env:PYTHONDONTWRITEBYTECODE = "1"
 python .\derived-models\derive_quicksrnet_fixed64.py
 Push-Location .\derived-models
 try { python -m unittest .\test_derived_models.py } finally { Pop-Location }
+python .\derived-models\derive_quicksrnet_fixed256.py
+python .\derived-models\test_derived_model_fixed256.py
+python .\derived-models\derive_quicksrnet_fixed256x144.py
+python .\derived-models\derive_quicksrnet_fixed512x288.py
+python .\derived-models\derive_quicksrnet_fixed640x360.py
 ```
 
 派生脚本不下载模型、不接受路径覆盖；canonical ONNX 或 P2 plan 的 hash 不匹配时会失败关闭。成功后生成：
@@ -34,6 +45,9 @@ try { python -m unittest .\test_derived_models.py } finally { Pop-Location }
 - `quicksrnet-small-2x-fixed64-core.onnx`：固定输入 `[1,3,64,64]`，输出 `pre_shuffle_output [1,12,64,64]`，应用侧执行 CRD PixelShuffle。
 - `quicksrnet-small-2x-fixed64-dcr.onnx`：固定输入 `[1,3,64,64]`，输出 `upscaled_image [1,3,128,128]`，图内使用 DCR DepthToSpace。
 - `derivation-manifest.json`：记录 source/P2 plan/tool/output hash、图合同、变换和 PC ORT 等价结果。
+- `quicksrnet-small-2x-fixed256-dcr.onnx`：固定输入 `[1,3,256,256]`，输出 `[1,3,512,512]`；PC ORT 两组输入与 canonical 输出逐字节一致。
+- 三个 16:9 视频模型：`256×144→512×288`、`512×288→1024×576`、`640×360→1280×720`；均以两组输入完成 PC ORT 逐字节等价验证。
+- `derivation-manifest-fixed256.json`：fixed256 独立清单，并冻结 fixed64 两个模型及其历史清单的 hash。
 
 以 manifest 中的 hash 和验证状态为当前事实源，不手工复制旧 hash。
 

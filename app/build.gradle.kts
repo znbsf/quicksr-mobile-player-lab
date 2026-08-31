@@ -13,8 +13,33 @@ val coreModelSha256 = "9a35f235ac9dc36447764a58a2d1511720dc346360f76b77fee490b34
 val dcrModelName = "quicksrnet-small-2x-fixed64-dcr.onnx"
 val dcrModelBytes = 93923L
 val dcrModelSha256 = "c902565d3ec55de1fbfa66aac8e283890c7b77eab0e39c60ba35022691148a5f"
+val dcr256ModelName = "quicksrnet-small-2x-fixed256-dcr.onnx"
+val dcr256ModelBytes = 93938L
+val dcr256ModelSha256 = "f791fdc975862b2556eca8113cfb9139c0b3c32303c86ce85497298024ce89be"
+val dcr256x144ModelName = "quicksrnet-small-2x-fixed256x144-dcr.onnx"
+val dcr256x144ModelBytes = 93955L
+val dcr256x144ModelSha256 = "1706078f92f19ab12aa91c932dbcbbdfb984e8d1167ef395d5a52286a03a9e4d"
+val dcr512x288ModelName = "quicksrnet-small-2x-fixed512x288-dcr.onnx"
+val dcr512x288ModelBytes = 93955L
+val dcr512x288ModelSha256 = "79e6b64b28ba9abe4b140b9c5760eda702679ecaf347ce16950f5fe56b3a5629"
+val dcr640x360ModelName = "quicksrnet-small-2x-fixed640x360-dcr.onnx"
+val dcr640x360ModelBytes = 93955L
+val dcr640x360ModelSha256 = "ad7634d8bd831370c018c2570475cbe71b7f136ccd4da860c509f4619d0c42c1"
+val dcr512ModelName = "quicksrnet-small-2x-fixed512-dcr.onnx"
+val dcr512ModelBytes = 94039L
+val dcr512ModelSha256 = "d77f22e6a94274ecb66d3ad2fff389381a714d9bd2c90d209b8070f6f7cada34"
 val derivedModelsManifestBytes = 15614L
 val derivedModelsManifestSha256 = "8ed648d623a15acb0cf42dac00622a492a23b6ff223b04de24cd9c8f33d03430"
+val derived256ManifestBytes = 5799L
+val derived256ManifestSha256 = "c7e20ebf21f87b08368f0c6fbaf8fa6a0e0b6287ce6ff816a9917bf7a7cd117f"
+val derived256x144ManifestBytes = 5738L
+val derived256x144ManifestSha256 = "d184764cc605e932595c6319c46d8792520270095c630aab6db099c58b3f8e79"
+val derived512x288ManifestBytes = 5744L
+val derived512x288ManifestSha256 = "6ba5837eddfca1627a4fca908546ec0bcf36e0602d196e21fb6da01dfc3239f5"
+val derived640x360ManifestBytes = 5744L
+val derived640x360ManifestSha256 = "4be16e9ba0e6235b9af32770715c8f6329f99bb6a1599cc945ff52650c7f3c8e"
+val derived512ManifestBytes = 6214L
+val derived512ManifestSha256 = "4f46c9e8a61e6402dbf1e2f5c2b3a7c37339e2187affa4393cc531b716d07a98"
 val frozenPlanSha256 = "44852e9245c46959af438b64dff75db3489f09ac94ac3913277af9d361a00859"
 val qnnPlanSha256 = "2b7b888ba95949c92d3ea6df0852bb07fb4ef890227d0ed1842c795aed49af86"
 val p4PlanSha256 = "90d05b4cf9837a8a421fc35d144847a4cd727dcf39c8ca50f85aa128104a2fa8"
@@ -25,6 +50,11 @@ val generatedModelAssets = layout.buildDirectory.dir("generated/quicksrModelAsse
 val generatedModelFile = generatedModelAssets.map { it.file(lockedModelName) }
 val generatedCoreModelFile = generatedModelAssets.map { it.file(coreModelName) }
 val generatedDcrModelFile = generatedModelAssets.map { it.file(dcrModelName) }
+val generatedDcr256ModelFile = generatedModelAssets.map { it.file(dcr256ModelName) }
+val generatedDcr256x144ModelFile = generatedModelAssets.map { it.file(dcr256x144ModelName) }
+val generatedDcr512x288ModelFile = generatedModelAssets.map { it.file(dcr512x288ModelName) }
+val generatedDcr640x360ModelFile = generatedModelAssets.map { it.file(dcr640x360ModelName) }
+val generatedDcr512ModelFile = generatedModelAssets.map { it.file(dcr512ModelName) }
 
 fun sha256(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
@@ -68,7 +98,17 @@ val sourceIdentityFiles = fileTree("src/main") {
     rootProject.file("prototype-plan-p3-qnn.json"),
     rootProject.file("contracts/p4-real-image-roi-plan.json"),
     rootProject.file("derived-models/derivation-manifest.json"),
-    rootProject.file("derived-models/derive_quicksrnet_fixed64.py")
+    rootProject.file("derived-models/derive_quicksrnet_fixed64.py"),
+    rootProject.file("derived-models/derivation-manifest-fixed256.json"),
+    rootProject.file("derived-models/derive_quicksrnet_fixed256.py"),
+    rootProject.file("derived-models/derivation-manifest-fixed256x144.json"),
+    rootProject.file("derived-models/derive_quicksrnet_fixed256x144.py"),
+    rootProject.file("derived-models/derivation-manifest-fixed512x288.json"),
+    rootProject.file("derived-models/derive_quicksrnet_fixed512x288.py"),
+    rootProject.file("derived-models/derivation-manifest-fixed640x360.json"),
+    rootProject.file("derived-models/derive_quicksrnet_fixed640x360.py"),
+    rootProject.file("derived-models/derivation-manifest-fixed512.json"),
+    rootProject.file("derived-models/derive_quicksrnet_fixed512.py")
 )
 val appSourceSha256 = sourceIdentity(sourceIdentityFiles, rootProject.projectDir)
 val prototypeBuildId = providers.gradleProperty("prototypeBuildId").orElse("manual-unlinked").get()
@@ -83,10 +123,44 @@ val prepareQuickSrModel by tasks.registering {
         .orElse(defaultModel)
     val coreModel = rootProject.file("derived-models/$coreModelName")
     val dcrModel = rootProject.file("derived-models/$dcrModelName")
+    val dcr256Model = rootProject.file("derived-models/$dcr256ModelName")
+    val dcr256x144Model = rootProject.file("derived-models/$dcr256x144ModelName")
+    val dcr512x288Model = rootProject.file("derived-models/$dcr512x288ModelName")
+    val dcr640x360Model = rootProject.file("derived-models/$dcr640x360ModelName")
+    val dcr512Model = rootProject.file("derived-models/$dcr512ModelName")
     val derivedManifest = rootProject.file("derived-models/derivation-manifest.json")
+    val derived256Manifest = rootProject.file("derived-models/derivation-manifest-fixed256.json")
+    val derived256x144Manifest = rootProject.file("derived-models/derivation-manifest-fixed256x144.json")
+    val derived512x288Manifest = rootProject.file("derived-models/derivation-manifest-fixed512x288.json")
+    val derived640x360Manifest = rootProject.file("derived-models/derivation-manifest-fixed640x360.json")
+    val derived512Manifest = rootProject.file("derived-models/derivation-manifest-fixed512.json")
 
-    inputs.files(sourceModel, coreModel, dcrModel, derivedManifest)
-    outputs.files(generatedModelFile, generatedCoreModelFile, generatedDcrModelFile)
+    inputs.files(
+        sourceModel,
+        coreModel,
+        dcrModel,
+        dcr256Model,
+        dcr256x144Model,
+        dcr512x288Model,
+        dcr640x360Model,
+        dcr512Model,
+        derivedManifest,
+        derived256Manifest,
+        derived256x144Manifest,
+        derived512x288Manifest,
+        derived640x360Manifest,
+        derived512Manifest
+    )
+    outputs.files(
+        generatedModelFile,
+        generatedCoreModelFile,
+        generatedDcrModelFile,
+        generatedDcr256ModelFile,
+        generatedDcr256x144ModelFile,
+        generatedDcr512x288ModelFile,
+        generatedDcr640x360ModelFile,
+        generatedDcr512ModelFile
+    )
     outputs.upToDateWhen { false }
 
     doLast {
@@ -123,11 +197,61 @@ val prepareQuickSrModel by tasks.registering {
         verify(source, lockedModelBytes, lockedModelSha256, "canonical model")
         verify(coreModel, coreModelBytes, coreModelSha256, "fixed core model")
         verify(dcrModel, dcrModelBytes, dcrModelSha256, "fixed DCR model")
+        verify(dcr256Model, dcr256ModelBytes, dcr256ModelSha256, "fixed256 DCR model")
+        verify(
+            dcr256x144Model,
+            dcr256x144ModelBytes,
+            dcr256x144ModelSha256,
+            "fixed256x144 DCR model"
+        )
+        verify(
+            dcr512x288Model,
+            dcr512x288ModelBytes,
+            dcr512x288ModelSha256,
+            "fixed512x288 DCR model"
+        )
+        verify(
+            dcr640x360Model,
+            dcr640x360ModelBytes,
+            dcr640x360ModelSha256,
+            "fixed640x360 DCR model"
+        )
+        verify(dcr512Model, dcr512ModelBytes, dcr512ModelSha256, "fixed512 DCR model")
         verify(
             derivedManifest,
             derivedModelsManifestBytes,
             derivedModelsManifestSha256,
             "derived-model manifest"
+        )
+        verify(
+            derived256Manifest,
+            derived256ManifestBytes,
+            derived256ManifestSha256,
+            "fixed256 derived-model manifest"
+        )
+        verify(
+            derived256x144Manifest,
+            derived256x144ManifestBytes,
+            derived256x144ManifestSha256,
+            "fixed256x144 derived-model manifest"
+        )
+        verify(
+            derived512x288Manifest,
+            derived512x288ManifestBytes,
+            derived512x288ManifestSha256,
+            "fixed512x288 derived-model manifest"
+        )
+        verify(
+            derived640x360Manifest,
+            derived640x360ManifestBytes,
+            derived640x360ManifestSha256,
+            "fixed640x360 derived-model manifest"
+        )
+        verify(
+            derived512Manifest,
+            derived512ManifestBytes,
+            derived512ManifestSha256,
+            "fixed512 derived-model manifest"
         )
         verifyShaOnly(rootProject.file("prototype-plan-p2.json"), frozenPlanSha256, "P2 plan")
         verifyShaOnly(rootProject.file("prototype-plan-p3-qnn.json"), qnnPlanSha256, "P3 QNN plan")
@@ -140,7 +264,24 @@ val prepareQuickSrModel by tasks.registering {
         val targets = listOf(
             Triple(source, generatedModelFile.get().asFile, lockedModelSha256),
             Triple(coreModel, generatedCoreModelFile.get().asFile, coreModelSha256),
-            Triple(dcrModel, generatedDcrModelFile.get().asFile, dcrModelSha256)
+            Triple(dcrModel, generatedDcrModelFile.get().asFile, dcrModelSha256),
+            Triple(dcr256Model, generatedDcr256ModelFile.get().asFile, dcr256ModelSha256),
+            Triple(
+                dcr256x144Model,
+                generatedDcr256x144ModelFile.get().asFile,
+                dcr256x144ModelSha256
+            ),
+            Triple(
+                dcr512x288Model,
+                generatedDcr512x288ModelFile.get().asFile,
+                dcr512x288ModelSha256
+            ),
+            Triple(
+                dcr640x360Model,
+                generatedDcr640x360ModelFile.get().asFile,
+                dcr640x360ModelSha256
+            ),
+            Triple(dcr512Model, generatedDcr512ModelFile.get().asFile, dcr512ModelSha256)
         )
         targets.forEach { (input, target, digest) ->
             target.parentFile.mkdirs()
@@ -154,14 +295,14 @@ val prepareQuickSrModel by tasks.registering {
 
 android {
     namespace = "dev.aisystems.quicksrplayerlab"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.aisystems.quicksrplayerlab"
         minSdk = 27
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.5.0"
+        versionCode = 16
+        versionName = "0.12.0"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -175,10 +316,35 @@ android {
         buildConfigField("long", "CORE_MODEL_BYTES", "${coreModelBytes}L")
         buildConfigField("String", "DCR_MODEL_SHA256", "\"$dcrModelSha256\"")
         buildConfigField("long", "DCR_MODEL_BYTES", "${dcrModelBytes}L")
+        buildConfigField("String", "DCR256_MODEL_FILE", "\"$dcr256ModelName\"")
+        buildConfigField("String", "DCR256_MODEL_SHA256", "\"$dcr256ModelSha256\"")
+        buildConfigField("long", "DCR256_MODEL_BYTES", "${dcr256ModelBytes}L")
+        buildConfigField("String", "DCR256X144_MODEL_FILE", "\"$dcr256x144ModelName\"")
+        buildConfigField("String", "DCR256X144_MODEL_SHA256", "\"$dcr256x144ModelSha256\"")
+        buildConfigField("long", "DCR256X144_MODEL_BYTES", "${dcr256x144ModelBytes}L")
+        buildConfigField("String", "DCR512X288_MODEL_FILE", "\"$dcr512x288ModelName\"")
+        buildConfigField("String", "DCR512X288_MODEL_SHA256", "\"$dcr512x288ModelSha256\"")
+        buildConfigField("long", "DCR512X288_MODEL_BYTES", "${dcr512x288ModelBytes}L")
+        buildConfigField("String", "DCR640X360_MODEL_FILE", "\"$dcr640x360ModelName\"")
+        buildConfigField("String", "DCR640X360_MODEL_SHA256", "\"$dcr640x360ModelSha256\"")
+        buildConfigField("long", "DCR640X360_MODEL_BYTES", "${dcr640x360ModelBytes}L")
+        buildConfigField("String", "DCR512_MODEL_FILE", "\"$dcr512ModelName\"")
+        buildConfigField("String", "DCR512_MODEL_SHA256", "\"$dcr512ModelSha256\"")
+        buildConfigField("long", "DCR512_MODEL_BYTES", "${dcr512ModelBytes}L")
         buildConfigField(
             "String",
             "DERIVED_MODELS_MANIFEST_SHA256",
             "\"$derivedModelsManifestSha256\""
+        )
+        buildConfigField(
+            "String",
+            "DERIVED256_MANIFEST_SHA256",
+            "\"$derived256ManifestSha256\""
+        )
+        buildConfigField(
+            "String",
+            "DERIVED512_MANIFEST_SHA256",
+            "\"$derived512ManifestSha256\""
         )
         buildConfigField("String", "PLAN_SHA256", "\"$frozenPlanSha256\"")
         buildConfigField("String", "QNN_PLAN_SHA256", "\"$qnnPlanSha256\"")
@@ -237,5 +403,8 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:$ortDependencyVersion")
     implementation("com.qualcomm.qti:onnxruntime-android-qnn:$qnnPluginVersion")
     implementation("com.qualcomm.qti:qnn-runtime:$qnnRuntimeVersion")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-ui:1.11.0")
+    implementation("androidx.media3:media3-effect:1.11.0")
     testImplementation("junit:junit:4.13.2")
 }

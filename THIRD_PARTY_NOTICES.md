@@ -91,6 +91,20 @@ Anyone resolving or packaging the dependency is responsible for reviewing and
 accepting the controlling Qualcomm terms. APK distribution remains a separate
 license-review gate.
 
+## AndroidX Media3
+
+- Upstream: <https://github.com/androidx/media>
+- Android dependencies used by the experiment:
+  - `androidx.media3:media3-exoplayer:1.11.0`
+  - `androidx.media3:media3-ui:1.11.0`
+  - `androidx.media3:media3-effect:1.11.0`
+- License: Apache License 2.0
+- License text: <https://github.com/androidx/media/blob/release/LICENSE>
+
+Media3 supplies the player, UI, GL effect interfaces, byte-buffer bridge, and
+Lanczos baseline used by the demo. Its resolved AARs and generated application
+artifacts are not stored in this source repository.
+
 ## Build and test dependencies
 
 Android build tools, Gradle, and JUnit are resolved from their upstream

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtEpDevice;
@@ -23,6 +24,7 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.qnnpluginep.QnnPluginEpLibraryKt;
 
 final class QnnPluginRuntime {
+    private static final ReentrantLock PROCESS_LOCK = new ReentrantLock(true);
     private static final String[] REQUIRED_NATIVE_LIBRARIES = new String[]{
             "libonnxruntime_providers_qnn.so",
             "libQnnHtp.so",
@@ -32,6 +34,14 @@ final class QnnPluginRuntime {
     };
 
     private QnnPluginRuntime() {
+    }
+
+    static void lockProcess() throws InterruptedException {
+        PROCESS_LOCK.lockInterruptibly();
+    }
+
+    static void unlockProcess() {
+        PROCESS_LOCK.unlock();
     }
 
     static void prepareProcessEnvironment(Context context, JSONObject evidence) throws Exception {
@@ -68,6 +78,62 @@ final class QnnPluginRuntime {
             String backendName,
             boolean disableCpuFallback,
             JSONObject evidence) throws Exception {
+        return registerAndConfigure(
+                context,
+                environment,
+                options,
+                runId,
+                backendName,
+                disableCpuFallback,
+                evidence,
+                true,
+                QuickSrSession.Tuning.BASELINE);
+    }
+
+    static Registration registerForInference(
+            Context context,
+            OrtEnvironment environment,
+            OrtSession.SessionOptions options,
+            String runId,
+            JSONObject evidence) throws Exception {
+        return registerForInference(
+                context,
+                environment,
+                options,
+                runId,
+                evidence,
+                QuickSrSession.Tuning.BASELINE);
+    }
+
+    static Registration registerForInference(
+            Context context,
+            OrtEnvironment environment,
+            OrtSession.SessionOptions options,
+            String runId,
+            JSONObject evidence,
+            QuickSrSession.Tuning tuning) throws Exception {
+        return registerAndConfigure(
+                context,
+                environment,
+                options,
+                runId,
+                "QNN_HTP_FULL_IMAGE",
+                true,
+                evidence,
+                false,
+                tuning);
+    }
+
+    private static Registration registerAndConfigure(
+            Context context,
+            OrtEnvironment environment,
+            OrtSession.SessionOptions options,
+            String runId,
+            String backendName,
+            boolean disableCpuFallback,
+            JSONObject evidence,
+            boolean captureDetailedEvidence,
+            QuickSrSession.Tuning tuning) throws Exception {
         String epName = QnnPluginEpLibraryKt.getEpName();
         String libraryPath = QnnPluginEpLibraryKt.getLibraryPath();
         evidence.put("pluginVersion", BuildConfig.QNN_PLUGIN_VERSION);
@@ -77,6 +143,9 @@ final class QnnPluginRuntime {
         evidence.put("backendType", "htp");
         evidence.put("cpuEpFallbackDisabled", disableCpuFallback);
         evidence.put("diagnosticOnly", !disableCpuFallback);
+        evidence.put(
+                "captureMode",
+                captureDetailedEvidence ? "DETAILED_DIAGNOSTIC" : "FUNCTIONAL_INFERENCE");
         evidence.put("registrationStatus", "PENDING");
         evidence.put("npuSelectionStatus", "PENDING");
         evidence.put("providerConfigurationStatus", "PENDING");
@@ -134,22 +203,31 @@ final class QnnPluginRuntime {
 
             String safeStem = (runId + "-" + backendName)
                     .replaceAll("[^A-Za-z0-9._-]", "_");
-            File qnnProfileDirectory = requireDirectory(
-                    new File(context.getFilesDir(), "qnn-profiles"));
-            File qnnTraceDirectory = requireDirectory(
-                    new File(new File(context.getFilesDir(), "qnn-traces"), safeStem));
-            File qnnProfileFile = new File(qnnProfileDirectory, safeStem + ".csv");
+            File qnnProfileFile = null;
+            File qnnTraceDirectory = null;
+            if (captureDetailedEvidence) {
+                File qnnProfileDirectory = requireDirectory(
+                        new File(context.getFilesDir(), "qnn-profiles"));
+                qnnTraceDirectory = requireDirectory(
+                        new File(new File(context.getFilesDir(), "qnn-traces"), safeStem));
+                qnnProfileFile = new File(qnnProfileDirectory, safeStem + ".csv");
+            }
 
             Map<String, String> providerOptions = new LinkedHashMap<>();
             providerOptions.put("backend_type", "htp");
             providerOptions.put("offload_graph_io_quantization", "0");
             providerOptions.put("enable_htp_fp16_precision", "0");
-            providerOptions.put("profiling_level", "detailed");
-            providerOptions.put("profiling_file_path", qnnProfileFile.getAbsolutePath());
-            providerOptions.put("enable_framework_op_trace", "1");
-            providerOptions.put("framework_op_trace_dir", qnnTraceDirectory.getAbsolutePath());
-            providerOptions.put("dump_qnn_ep_input_graph", "1");
-            providerOptions.put("dump_qnn_ep_input_graph_dir", qnnTraceDirectory.getAbsolutePath());
+            if (tuning != QuickSrSession.Tuning.BASELINE) {
+                providerOptions.put("htp_graph_finalization_optimization_mode", "3");
+            }
+            if (captureDetailedEvidence) {
+                providerOptions.put("profiling_level", "detailed");
+                providerOptions.put("profiling_file_path", qnnProfileFile.getAbsolutePath());
+                providerOptions.put("enable_framework_op_trace", "1");
+                providerOptions.put("framework_op_trace_dir", qnnTraceDirectory.getAbsolutePath());
+                providerOptions.put("dump_qnn_ep_input_graph", "1");
+                providerOptions.put("dump_qnn_ep_input_graph_dir", qnnTraceDirectory.getAbsolutePath());
+            }
 
             if (disableCpuFallback) {
                 Backend.disableCpuFallback(options);
@@ -162,18 +240,23 @@ final class QnnPluginRuntime {
             publicProviderOptions.put("backend_type", "htp");
             publicProviderOptions.put("offload_graph_io_quantization", "0");
             publicProviderOptions.put("enable_htp_fp16_precision", "0");
-            publicProviderOptions.put("profiling_level", "detailed");
-            publicProviderOptions.put(
-                    "profiling_file_path",
-                    "qnn-profiles/" + qnnProfileFile.getName());
-            publicProviderOptions.put("enable_framework_op_trace", "1");
-            publicProviderOptions.put(
-                    "framework_op_trace_dir",
-                    "qnn-traces/" + qnnTraceDirectory.getName());
-            publicProviderOptions.put("dump_qnn_ep_input_graph", "1");
-            publicProviderOptions.put(
-                    "dump_qnn_ep_input_graph_dir",
-                    "qnn-traces/" + qnnTraceDirectory.getName());
+            if (tuning != QuickSrSession.Tuning.BASELINE) {
+                publicProviderOptions.put("htp_graph_finalization_optimization_mode", "3");
+            }
+            if (captureDetailedEvidence) {
+                publicProviderOptions.put("profiling_level", "detailed");
+                publicProviderOptions.put(
+                        "profiling_file_path",
+                        "qnn-profiles/" + qnnProfileFile.getName());
+                publicProviderOptions.put("enable_framework_op_trace", "1");
+                publicProviderOptions.put(
+                        "framework_op_trace_dir",
+                        "qnn-traces/" + qnnTraceDirectory.getName());
+                publicProviderOptions.put("dump_qnn_ep_input_graph", "1");
+                publicProviderOptions.put(
+                        "dump_qnn_ep_input_graph_dir",
+                        "qnn-traces/" + qnnTraceDirectory.getName());
+            }
             evidence.put("providerOptions", publicProviderOptions);
             evidence.put("providerConfigurationStatus", "PASS");
             return new Registration(
@@ -181,7 +264,8 @@ final class QnnPluginRuntime {
                     epName,
                     qnnProfileFile,
                     qnnTraceDirectory,
-                    evidence);
+                    evidence,
+                    captureDetailedEvidence);
         } catch (Throwable failure) {
             evidence.put("providerConfigurationStatus", "FAIL");
             if (registered) {
@@ -250,12 +334,13 @@ final class QnnPluginRuntime {
         }
     }
 
-    static final class Registration {
+    static final class Registration implements AutoCloseable {
         private final OrtEnvironment environment;
         private final String epName;
         private final File profileFile;
         private final File traceDirectory;
         private final JSONObject evidence;
+        private final boolean captureDetailedEvidence;
         private boolean finalized;
         private boolean evidenceComplete;
 
@@ -264,49 +349,57 @@ final class QnnPluginRuntime {
                 String epName,
                 File profileFile,
                 File traceDirectory,
-                JSONObject evidence) {
+                JSONObject evidence,
+                boolean captureDetailedEvidence) {
             this.environment = environment;
             this.epName = epName;
             this.profileFile = profileFile;
             this.traceDirectory = traceDirectory;
             this.evidence = evidence;
+            this.captureDetailedEvidence = captureDetailedEvidence;
         }
 
-        void captureAndUnregister() {
+        void captureAndUnregister() throws Exception {
             if (finalized) {
                 return;
             }
             finalized = true;
             Throwable artifactFailure = null;
-            try {
-                JSONObject profileArtifact = artifact(profileFile);
-                evidence.put("qnnProfilingArtifact", profileArtifact);
-                if (!profileFile.isFile() || profileFile.length() == 0L) {
-                    throw new IllegalStateException(
-                            "QNN profiling CSV is missing or empty after the session closed");
-                }
-                JSONArray traceArtifacts = new JSONArray();
-                File[] files = traceDirectory.listFiles(File::isFile);
-                if (files != null) {
-                    java.util.Arrays.sort(files, java.util.Comparator.comparing(File::getName));
-                    for (File file : files) {
-                        traceArtifacts.put(artifact(file));
+            if (captureDetailedEvidence) {
+                try {
+                    JSONObject profileArtifact = artifact(profileFile);
+                    evidence.put("qnnProfilingArtifact", profileArtifact);
+                    if (!profileFile.isFile() || profileFile.length() == 0L) {
+                        throw new IllegalStateException(
+                                "QNN profiling CSV is missing or empty after the session closed");
                     }
+                    JSONArray traceArtifacts = new JSONArray();
+                    File[] files = traceDirectory.listFiles(File::isFile);
+                    if (files != null) {
+                        java.util.Arrays.sort(files, java.util.Comparator.comparing(File::getName));
+                        for (File file : files) {
+                            traceArtifacts.put(artifact(file));
+                        }
+                    }
+                    evidence.put("frameworkOpTraceArtifacts", traceArtifacts);
+                    if (traceArtifacts.length() == 0) {
+                        throw new IllegalStateException(
+                                "QNN framework op trace is missing after the session closed");
+                    }
+                } catch (Throwable failure) {
+                    artifactFailure = failure;
+                    putCleanupField(evidence, "artifactCaptureStatus", "FAIL");
                 }
-                evidence.put("frameworkOpTraceArtifacts", traceArtifacts);
-                if (traceArtifacts.length() == 0) {
-                    throw new IllegalStateException(
-                            "QNN framework op trace is missing after the session closed");
-                }
-            } catch (Throwable failure) {
-                artifactFailure = failure;
-                putCleanupField(evidence, "artifactCaptureStatus", "FAIL");
+            } else {
+                putCleanupField(evidence, "artifactCaptureStatus", "SKIPPED_FUNCTIONAL_MODE");
             }
 
+            Throwable unregisterFailure = null;
             try {
                 environment.unregisterExecutionProviderLibrary(epName);
                 putCleanupField(evidence, "unregisterStatus", "PASS");
             } catch (Throwable failure) {
+                unregisterFailure = failure;
                 putCleanupField(evidence, "unregisterStatus", "FAIL");
                 if (artifactFailure == null) {
                     artifactFailure = failure;
@@ -315,7 +408,9 @@ final class QnnPluginRuntime {
                 }
             }
             if (artifactFailure == null) {
-                putCleanupField(evidence, "artifactCaptureStatus", "PASS");
+                if (captureDetailedEvidence) {
+                    putCleanupField(evidence, "artifactCaptureStatus", "PASS");
+                }
                 evidenceComplete = true;
             } else {
                 try {
@@ -327,10 +422,28 @@ final class QnnPluginRuntime {
                     // The primary session or run failure must never be replaced by cleanup reporting.
                 }
             }
+            if (!captureDetailedEvidence && unregisterFailure != null) {
+                throw asException(unregisterFailure);
+            }
+        }
+
+        @Override
+        public void close() throws Exception {
+            captureAndUnregister();
         }
 
         boolean isEvidenceComplete() {
             return evidenceComplete;
+        }
+
+        private static Exception asException(Throwable failure) {
+            if (failure instanceof Exception) {
+                return (Exception) failure;
+            }
+            if (failure instanceof Error) {
+                throw (Error) failure;
+            }
+            return new RuntimeException(failure);
         }
     }
 }
