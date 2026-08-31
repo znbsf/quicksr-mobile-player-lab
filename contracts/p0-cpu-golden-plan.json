@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "quicksr-p0-cpu-golden",
+  "status": "FROZEN_HISTORY",
+  "workload": {
+    "inputGenerator": "DeterministicInputs.rgbGradientNchw-v1",
+    "inputShape": [1, 3, 64, 64],
+    "outputShape": [1, 3, 128, 128],
+    "modelSha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce"
+  },
+  "correctness_gate": {
+    "comparison": "abs(android - pc_golden) <= 1e-4 + 1e-4 * abs(pc_golden) for every element",
+    "allowed_mismatch_count": 0,
+    "allowed_nonfinite_count": 0
+  },
+  "boundary": "This historical CPU reference contract does not define the P4 HTP acceptance threshold."
+}

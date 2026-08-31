@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0.0",
+  "experimentId": "QUICKSR-P3-QNN-HTP-INFRASTRUCTURE",
+  "frozenAt": "2026-08-30T00:00:00+08:00",
+  "statusBeforeRun": "FROZEN_NOT_RUN",
+  "purpose": "Determine whether the packaged ONNX Runtime QNN plugin can execute the fixed-shape QuickSRNetSmall 2x DCR graph on the Xiaomi 13 Ultra HTP without CPU fallback.",
+  "predictionBeforeRun": {
+    "deviceDiscovery": "A QNNExecutionProvider NPU device is expected because the target is Snapdragon 8 Gen 2, but this remains unobserved until the app enumerates it.",
+    "sessionCreation": "The fixed FP32 DCR graph may still fail during QNN graph composition, device setup, or precision validation; such a failure is preserved and is not converted to CPU success.",
+    "performance": "No performance claim is permitted from this profiling-enabled infrastructure probe."
+  },
+  "target": {
+    "deviceModel": "Xiaomi 13 Ultra",
+    "socFamily": "Snapdragon 8 Gen 2",
+    "requiredAbi": "arm64-v8a",
+    "requiredHardwareType": "NPU",
+    "requiredBackendType": "htp"
+  },
+  "dependencies": {
+    "onnxRuntimeAndroid": {
+      "coordinate": "com.microsoft.onnxruntime:onnxruntime-android",
+      "version": "1.26.0"
+    },
+    "qnnPlugin": {
+      "coordinate": "com.qualcomm.qti:onnxruntime-android-qnn",
+      "version": "2.5.0",
+      "aarSha256": "da496414c0c8374cefede14c9a8c433d331b9ba06b5b02ff0bf4a510a26fc772"
+    },
+    "qnnRuntime": {
+      "coordinate": "com.qualcomm.qti:qnn-runtime",
+      "requestedValidatedVersion": "2.49.40",
+      "resolvedPublicMavenVersion": "2.49.0",
+      "aarSha256": "fbb55c5680da8c44398fd78dfbaa50473b17a1cb35a10126d85fd93ea47787b0",
+      "versionDifferenceGate": "Record the actual runtime result; do not silently describe 2.49.0 as 2.49.40."
+    }
+  },
+  "model": {
+    "variant": "fixed64-dcr-full",
+    "asset": "quicksrnet-small-2x-fixed64-dcr.onnx",
+    "bytes": 93923,
+    "sha256": "c902565d3ec55de1fbfa66aac8e283890c7b77eab0e39c60ba35022691148a5f",
+    "input": "float32 NCHW [1,3,64,64]",
+    "output": "float32 NCHW [1,3,128,128]",
+    "graphOps": [
+      "Conv",
+      "Clip",
+      "DepthToSpace(DCR)"
+    ]
+  },
+  "providerContract": {
+    "pluginRegistrationName": "QNNExecutionProvider",
+    "deviceSelection": "epName == QNNExecutionProvider AND hardwareType == NPU",
+    "providerOptions": {
+      "backend_type": "htp",
+      "offload_graph_io_quantization": "0",
+      "enable_htp_fp16_precision": "0",
+      "profiling_level": "detailed",
+      "enable_framework_op_trace": "1"
+    },
+    "cpuFallback": "disabled",
+    "forbidden": [
+      "backend_type=cpu",
+      "backend_path combined with backend_type",
+      "CPU success relabeled as QNN success",
+      "latency-only NPU claims"
+    ]
+  },
+  "workload": {
+    "inputGenerator": "DeterministicInputs.rgbGradientNchw-v1",
+    "warmupRuns": 5,
+    "measuredRuns": 30,
+    "profilingEnabled": true,
+    "benchmarkClaimAllowed": false
+  },
+  "strictEvidenceGates": [
+    "Required QNN plugin, HTP, System, V73 Stub, and V73 Skel libraries are packaged and hashed.",
+    "QNN plugin registration succeeds.",
+    "At least one QNNExecutionProvider device with hardwareType NPU is selected.",
+    "Provider configuration uses backend_type htp and disables CPU EP fallback.",
+    "Session creation and all 5 warmup plus 30 measured runs succeed.",
+    "ORT profile contains QNNExecutionProvider node events and zero non-target compute node events.",
+    "QNN profiling CSV is present, non-empty, and hash-linked.",
+    "Framework op trace is present and hash-linked.",
+    "Host golden correctness comparison passes before any correctness or NPU success claim is published."
+  ],
+  "claimPolicy": {
+    "inAppPassMeaning": "Runtime execution and structural sanity only.",
+    "npuClaimAllowedBeforeHostValidation": false,
+    "humanReviewRequired": true
+  }
+}

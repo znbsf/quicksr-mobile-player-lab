@@ -1,0 +1,45 @@
+# Local IDE and build state
+.idea/
+.gradle/
+**/build/
+local.properties
+*.iml
+
+# Models and vendor/runtime binaries are local-only. The repository stores
+# coordinates, hashes, and preparation tools, never redistributable payloads.
+models/*.onnx
+derived-models/*.onnx
+*.apk
+*.aab
+*.aar
+*.so
+*.dex
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Raw inference/device evidence stays local until explicitly sanitized.
+local-artifacts/
+device-results/
+golden-correctness/results/
+build/evidence/
+*.f32le
+*.raw
+*.raw.b64
+*.csv
+*.trace
+*.log
+
+# Secrets and signing material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+.env
+.env.*
+
+# Python and OS state
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db

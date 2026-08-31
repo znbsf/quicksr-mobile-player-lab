@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "QSRS2X-ANDROID-P0-20260830",
+  "createdAt": "2026-08-30T00:00:00+08:00",
+  "status": "frozen-before-build",
+  "question": "Can the exact qualified QuickSRNetSmall 2x ONNX artifact be loaded and executed in a native Android app while preserving backend requests, timing boundaries, output identity, failures, and device context as append-only receipts?",
+  "target": {
+    "device": "user-provided Xiaomi 13 Ultra",
+    "deviceConnectionAtPlanTime": "not-connected",
+    "socExpectation": "Snapdragon 8 Gen 2; must be confirmed from device metadata before use as observed evidence",
+    "minSdk": 27,
+    "compileSdk": 35,
+    "runtime": "ONNX Runtime Android 1.26.0",
+    "model": {
+      "name": "QuickSRNetSmall 2x",
+      "file": "quicksrnet-small-2x-opset17.onnx",
+      "sha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce",
+      "bytes": 93994,
+      "opset": 17,
+      "input": "image",
+      "output": "upscaled_image"
+    }
+  },
+  "scope": {
+    "included": [
+      "single in-memory float32 NCHW frame",
+      "deterministic 64x64 RGB gradient input and 128x128 output",
+      "CPU, XNNPACK, NNAPI, and QNN HTP probe as separate requested backends",
+      "session creation time and 5 warmup plus 30 measured Session.run attempts",
+      "P50 and P95 latency, success denominator, output shape, finite/range checks, and output SHA-256",
+      "append-only success and failure receipts",
+      "device, thermal, battery-temperature, and process-memory snapshot when Android exposes them"
+    ],
+    "excluded": [
+      "camera, decoder, encoder, MediaCodec, display, or continuous video",
+      "540p or 1080p performance claims",
+      "image-quality, temporal-stability, PSNR, SSIM, or user-study claims",
+      "INT8 quantization or fixed-shape accelerator compilation",
+      "verified per-node execution-provider assignment",
+      "JNI or a C++ Android integration claim",
+      "public redistribution of the model or APK"
+    ]
+  },
+  "timingBoundary": {
+    "sessionCreation": "asset bytes already read; measures OrtSession construction only",
+    "runLatency": "measures OrtSession.run call only with an existing direct FloatBuffer-backed tensor",
+    "excludedFromRunLatency": [
+      "asset read",
+      "input generation and tensor creation",
+      "output FloatBuffer copy",
+      "validation and SHA-256",
+      "receipt serialization and storage",
+      "decode, colorspace conversion, render, and encode"
+    ]
+  },
+  "predictions": [
+    {
+      "id": "PRED-01",
+      "statement": "The local project should compile and package with the exact locked model when the Android SDK, JDK, cached Gradle, and Maven dependency are available.",
+      "confidence": "medium"
+    },
+    {
+      "id": "PRED-02",
+      "statement": "CPU should execute the 64x64 to 128x128 probe on a connected compatible Android device.",
+      "confidence": "medium"
+    },
+    {
+      "id": "PRED-03",
+      "statement": "XNNPACK and NNAPI availability and performance are unknown until measured on the actual device and firmware.",
+      "confidence": "not-applicable"
+    },
+    {
+      "id": "PRED-04",
+      "statement": "QNN HTP is expected not to initialize from the stock onnxruntime-android AAR; a failure is an expected, preserved probe result rather than a hidden fallback success.",
+      "confidence": "medium"
+    },
+    {
+      "id": "PRED-05",
+      "statement": "No valid full-frame or real-time video conclusion can be made from this probe.",
+      "confidence": "high"
+    }
+  ],
+  "acceptance": {
+    "hostBuildGate": [
+      "model bytes and SHA-256 are verified before packaging",
+      "unit tests pass",
+      "Android lint passes",
+      "debug APK assembles",
+      "each host build attempt has a unique evidence directory"
+    ],
+    "deviceGate": [
+      "device identity is captured without serial number or raw fingerprint",
+      "each requested backend creates a unique receipt whether it succeeds or fails",
+      "30 of 30 measured attempts succeed for a PASS receipt",
+      "output shape is exactly [1,3,128,128]",
+      "all output values are finite and within the declared tolerance",
+      "provider assignment remains explicitly unverified unless a trace is added later"
+    ],
+    "humanGate": "pending; machine build or device execution cannot advance human review"
+  },
+  "stopRules": [
+    "Do not silently use a different model when the locked artifact is absent or mismatched.",
+    "Do not report a requested backend as used when provider configuration failed.",
+    "Do not convert a QNN probe failure into CPU success.",
+    "Do not delete or overwrite a failed build or device receipt after a successful retry.",
+    "Do not extrapolate the 64x64 probe to video resolution or frame rate."
+  ]
+}

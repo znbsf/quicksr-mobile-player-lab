@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "QSRS2X-ANDROID-P1-20260830",
+  "createdAt": "2026-08-30T20:59:56.5212576+08:00",
+  "status": "frozen-before-p1-build-and-run",
+  "derivesFrom": "QSRS2X-ANDROID-P0-20260830",
+  "questions": [
+    "Does the Xiaomi 13 Ultra CPU output match a PC ORT golden tensor generated from the exact Java float32 input under the frozen per-element tolerance?",
+    "When CPU fallback is explicitly allowed, which optimized nodes actually execute on XNNPACK or NNAPI, and what latency and correctness result does each hybrid path produce?"
+  ],
+  "lockedInputs": {
+    "modelSha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce",
+    "generator": "DeterministicInputs.rgbGradientNchw-v1",
+    "inputShape": [1, 3, 64, 64],
+    "expectedInputSha256LittleEndianFloat32": "cc13c100d394903d5c9ccde7a44aab63660e266099077063a0a0de326f5b9fc9",
+    "outputShape": [1, 3, 128, 128]
+  },
+  "correctnessGate": {
+    "reference": "PC ORT CPU output generated from the exact Java-order float32 input",
+    "comparison": "abs(android-reference) <= 1e-4 + 1e-4 * abs(reference) for every element",
+    "allowedMismatchCount": 0,
+    "allowedNonfiniteCount": 0,
+    "rawAndroidOutputRequired": true,
+    "hashEqualityAloneIsNotCorrectness": true
+  },
+  "backendMatrix": [
+    {
+      "backend": "CPU",
+      "cpuFallbackDisabled": false,
+      "purpose": "correctness baseline"
+    },
+    {
+      "backend": "XNNPACK",
+      "cpuFallbackDisabled": true,
+      "purpose": "retain strict full-graph diagnostic"
+    },
+    {
+      "backend": "XNNPACK_HYBRID",
+      "cpuFallbackDisabled": false,
+      "purpose": "measure supported partitions and explicit CPU fallback"
+    },
+    {
+      "backend": "NNAPI",
+      "cpuFallbackDisabled": true,
+      "purpose": "retain strict full-graph diagnostic"
+    },
+    {
+      "backend": "NNAPI_HYBRID",
+      "cpuFallbackDisabled": false,
+      "purpose": "measure supported partitions and explicit CPU fallback"
+    }
+  ],
+  "profilingGate": {
+    "ortProfileRequiredForSuccessfulRun": true,
+    "profileSha256Required": true,
+    "providerAssignmentMustBeParsedFromObservedNodeEvents": true,
+    "requestedProviderMustNotBeInferredFromConfigurationAlone": true
+  },
+  "predictions": [
+    {
+      "id": "P1-PRED-01",
+      "statement": "Android CPU and PC CPU outputs may differ byte-for-byte but should pass the frozen numerical tolerance.",
+      "confidence": "medium"
+    },
+    {
+      "id": "P1-PRED-02",
+      "statement": "XNNPACK cannot own the complete graph because the official supported-op list covers Conv but does not list Clip or DepthToSpace; a hybrid path may still accelerate Conv partitions.",
+      "confidence": "high"
+    },
+    {
+      "id": "P1-PRED-03",
+      "statement": "NNAPI partition coverage on this firmware remains unknown until the profile is parsed.",
+      "confidence": "not-applicable"
+    }
+  ],
+  "acceptance": [
+    "Every successful run saves an immutable float32 little-endian output artifact referenced by bytes and SHA-256 in its receipt.",
+    "Every successful run saves an ORT profile referenced by bytes and SHA-256 in its receipt.",
+    "The host comparator verifies receipt, raw-output hash, element count, finite values, tolerance and mismatch denominator.",
+    "The profile parser reports provider counts and node names without promoting requested-provider configuration into an assignment claim.",
+    "Strict failures remain preserved; hybrid success is not reported as full-provider coverage."
+  ],
+  "stopRules": [
+    "Do not call hash inequality a correctness failure before numerical comparison.",
+    "Do not call a hybrid run XNNPACK-only or NNAPI-only.",
+    "Do not change the model merely to obtain a green provider result before profiling the locked graph.",
+    "Do not extrapolate the 64x64 tensor probe to video throughput."
+  ]
+}

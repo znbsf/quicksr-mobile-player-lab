@@ -1,0 +1,43 @@
+name: source-safety
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-source-only-boundary:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Verify publication candidate
+        shell: pwsh
+        run: ./scripts/verify-publication.ps1
+
+      - name: Exercise publication negative fixtures
+        shell: pwsh
+        run: ./scripts/verify-publication.test.ps1
+
+      - name: Test evidence validators
+        shell: pwsh
+        run: >-
+          node --test
+          validate-nnapi-device-log.test.mjs
+          validate-ort-profile.test.mjs
+          validate-qnn-htp-case.test.mjs
+
+      - name: Parse frozen JSON contracts
+        shell: pwsh
+        run: >-
+          Get-ChildItem -Recurse -File -Filter *.json |
+          Where-Object { $_.FullName -notmatch '[\\/](?:.git|build|.gradle)[\\/]' } |
+          ForEach-Object { $null = Get-Content -Raw -LiteralPath $_.FullName | ConvertFrom-Json }

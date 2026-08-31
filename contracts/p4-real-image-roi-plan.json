@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "quicksr-p4-real-image-roi-qualification",
+  "createdAt": "2026-08-31",
+  "status": "FROZEN_THRESHOLDS_INPUT_HASHES_PENDING",
+  "purpose": "Qualify QNN HTP numerical agreement and image-pipeline utility before any full-frame or player performance work.",
+  "priorCalibrationEvidence": {
+    "scope": "P3 deterministic gradient; excluded from P4 acceptance inputs",
+    "htpExecution": "PASS",
+    "pcGoldenCorrectnessUnderLegacyTolerance": "FAIL",
+    "legacyTolerance": {
+      "atol": 0.0001,
+      "rtol": 0.0001,
+      "allowedMismatchCount": 0
+    },
+    "observedMaxAbsoluteError": 0.0015161633491516113,
+    "observedMeanAbsoluteError": 0.0002611008830958698,
+    "interpretation": "The old result may inform pre-run thresholds but cannot itself pass P4. It remains a preserved failure."
+  },
+  "runtimeContract": {
+    "model": "QuickSRNetSmall 2x fixed-64 DCR derivative",
+    "input": "1x3x64x64 NCHW RGB float32 in [0,1]",
+    "output": "1x3x128x128 NCHW RGB float32",
+    "provider": "QNN HTP strict",
+    "cpuEpFallbackDisabled": true,
+    "requiredPlacement": "all ORT graph events assigned to QNN; HTP accelerator trace present",
+    "deviceGateIndependent": true
+  },
+  "inputQualification": {
+    "minimumCases": 3,
+    "requiredCases": [
+      "unseen deterministic edge and frequency pattern",
+      "unseen deterministic color and gradient pattern",
+      "one rights-safe real image ROI with recorded source license"
+    ],
+    "hashRule": "Record decoded HR RGB8 hash and derived LR float32 hash before the first device gate run.",
+    "oldP3GradientMayPass": false,
+    "interactiveUserPhotos": "diagnostic-only and never committed"
+  },
+  "acceleratorNumericalGate": {
+    "reference": "PC ONNX Runtime CPU using identical DCR model and input bytes",
+    "comparison": "abs(htp - pc) <= 0.002 + 0.002 * abs(pc)",
+    "atol": 0.002,
+    "rtol": 0.002,
+    "allowedMismatchCount": 0,
+    "allowedNonfiniteCount": 0,
+    "maximumMeanAbsoluteError": 0.0005,
+    "minimumRgb8PsnrAgainstPcDb": 48.0,
+    "allCasesMustPass": true
+  },
+  "superResolutionUtilityGate": {
+    "degradation": "frozen 2x2 rounded RGB8 average downsample",
+    "baseline": "frozen half-pixel bilinear RGB8 upscale",
+    "reference": "pre-downsample 128x128 HR RGB8 ROI",
+    "minimumMeanPsnrGainOverBaselineDb": 0.1,
+    "maximumPerCasePsnrRegressionDb": 0.2,
+    "ssimRequired": true,
+    "ssimThreshold": "PENDING_IMPLEMENTATION; cannot pass until frozen before input hashes",
+    "humanBlindReview": "REQUIRED_AND_INDEPENDENT",
+    "machineMetricsCannotCloseHumanReview": true
+  },
+  "evidenceRequirements": [
+    "run-before prediction",
+    "model, plan, build, input and output identities",
+    "PC and HTP raw output hashes",
+    "ORT placement and QNN HTP trace",
+    "HR, LR, bilinear and QNN rendered PNG hashes",
+    "PSNR and SSIM calculations from a host-side independent validator",
+    "human reviewer result with inspected artifact references",
+    "failure point, evidence correction and retest linkage"
+  ],
+  "executionPolicy": {
+    "deviceGateAllowedNow": false,
+    "unblockWhen": [
+      "SSIM implementation and threshold are frozen",
+      "all three input source identities and hashes are frozen",
+      "host comparator and negative tests pass"
+    ],
+    "performanceOptimizationAllowedBeforeCorrectnessPass": false,
+    "fullFrameOrPlayerClaimAllowed": false
+  }
+}

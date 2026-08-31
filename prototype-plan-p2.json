@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "QSRS2X-ANDROID-P2-DERIVED-EP-20260830",
+  "createdAt": "2026-08-30T21:08:09.1857434+08:00",
+  "status": "frozen-before-p2-model-generation-build-and-device-run",
+  "derivesFrom": "QSRS2X-ANDROID-P1-20260830",
+  "observedP1Basis": {
+    "cpuGoldenComparison": "PASS; 49152/49152 elements within atol=rtol=1e-4",
+    "xnnpackHybrid": "four Conv nodes assigned to XnnpackExecutionProvider; Transpose and DepthToSpace assigned to CPUExecutionProvider",
+    "nnapiHybrid": "five NNAPI partitions observed; four Clip nodes and DepthToSpace assigned to CPUExecutionProvider",
+    "strictResult": "XNNPACK and NNAPI both still fail session creation when ORT CPU fallback is disabled"
+  },
+  "question": "Can two deterministic, source-linked fixed-shape derivatives remove the observed provider blockers while preserving canonical QuickSRNetSmall x2 output correctness?",
+  "derivatives": [
+    {
+      "id": "fixed64-pre-shuffle-core",
+      "input": [1, 3, 64, 64],
+      "output": [1, 12, 64, 64],
+      "transform": [
+        "freeze symbolic input dimensions",
+        "convert Clip bound Constant nodes to initializers",
+        "remove final CRD DepthToSpace and expose its input",
+        "perform exact CRD pixel shuffle in the Android application"
+      ],
+      "target": "XNNPACK strict core graph with ORT CPU fallback disabled"
+    },
+    {
+      "id": "fixed64-dcr-full",
+      "input": [1, 3, 64, 64],
+      "output": [1, 3, 128, 128],
+      "transform": [
+        "freeze symbolic input and output dimensions",
+        "convert Clip bound Constant nodes to initializers",
+        "reorder final Conv output channels and bias using [0,4,8,1,5,9,2,6,10,3,7,11]",
+        "change DepthToSpace mode from CRD to DCR"
+      ],
+      "target": "NNAPI strict full graph with NNAPI CPU disabled and ORT CPU fallback disabled"
+    }
+  ],
+  "correctnessGate": {
+    "canonicalModelSha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce",
+    "inputSha256LittleEndianFloat32": "cc13c100d394903d5c9ccde7a44aab63660e266099077063a0a0de326f5b9fc9",
+    "comparison": "abs(derived-canonical) <= 1e-4 + 1e-4 * abs(canonical) for every element",
+    "allowedMismatchCount": 0,
+    "allowedNonfiniteCount": 0,
+    "derivationManifestWithSourceAndOutputHashesRequired": true
+  },
+  "deviceGate": {
+    "xnnpack": [
+      "session creation succeeds with ORT CPU fallback disabled",
+      "profile contains target-provider Conv events",
+      "application CRD pixel shuffle is reported separately from ORT execution",
+      "final output passes the PC golden gate"
+    ],
+    "nnapi": [
+      "session creation succeeds with ORT CPU fallback disabled and NNAPI CPU disabled",
+      "profile contains NNAPI provider events and no ORT CPU node events",
+      "final output passes the PC golden gate"
+    ]
+  },
+  "predictions": [
+    {
+      "id": "P2-PRED-01",
+      "statement": "The pre-shuffle core plus application CRD pixel shuffle will be numerically identical to the canonical graph and permit the four Conv/Clip stages to be owned by XNNPACK.",
+      "confidence": "high"
+    },
+    {
+      "id": "P2-PRED-02",
+      "statement": "The DCR rewrite will preserve output semantics; whether the Xiaomi NNAPI driver accepts the entire graph remains uncertain until strict device execution.",
+      "confidence": "medium"
+    }
+  ],
+  "stopRules": [
+    "Never overwrite or relabel the canonical ONNX model.",
+    "Do not call application pixel shuffle an execution-provider node.",
+    "Do not call NNAPI hardware execution proven unless NNAPI CPU is disabled and the profile has no ORT CPU nodes.",
+    "Keep any failed derivative, session or correctness result as negative evidence.",
+    "Do not use profiling latency as a publication benchmark."
+  ]
+}

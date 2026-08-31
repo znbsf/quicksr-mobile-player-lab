@@ -1,0 +1,521 @@
+{
+  "artifacts": {
+    "fixed64_dcr_full": {
+      "bytes": 93923,
+      "clip_bound_initializers": [
+        {
+          "clip_node": "/cnn/cnn.1/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.1/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.1/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.1/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/cnn/cnn.3/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.3/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.3/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.3/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/cnn/cnn.5/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.5/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.5/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.5/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/clip_output/Clip",
+          "dtype": "float32",
+          "initializer": "/clip_output/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/clip_output/Clip",
+          "dtype": "float32",
+          "initializer": "/clip_output/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        }
+      ],
+      "constant_node_count": 0,
+      "initializer_count": 16,
+      "input": {
+        "dtype": "float32",
+        "name": "image",
+        "shape": [
+          1,
+          3,
+          64,
+          64
+        ]
+      },
+      "node_count": 9,
+      "operator_inventory": {
+        "Clip": 4,
+        "Conv": 4,
+        "DepthToSpace": 1
+      },
+      "output": {
+        "dtype": "float32",
+        "name": "upscaled_image",
+        "shape": [
+          1,
+          3,
+          128,
+          128
+        ]
+      },
+      "path": "derived-models/quicksrnet-small-2x-fixed64-dcr.onnx",
+      "sha256": "c902565d3ec55de1fbfa66aac8e283890c7b77eab0e39c60ba35022691148a5f",
+      "transformations": [
+        "freeze input shape to [1,3,64,64] and output to [1,3,128,128]",
+        "replace eight scalar Clip-bound Constant nodes with graph initializers",
+        "gather final Conv weight output channels and bias with [0,4,8,1,5,9,2,6,10,3,7,11]",
+        "change DepthToSpace mode from CRD to DCR"
+      ]
+    },
+    "fixed64_pre_shuffle_core": {
+      "bytes": 93809,
+      "clip_bound_initializers": [
+        {
+          "clip_node": "/cnn/cnn.1/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.1/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.1/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.1/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/cnn/cnn.3/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.3/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.3/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.3/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/cnn/cnn.5/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.5/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/cnn/cnn.5/Clip",
+          "dtype": "float32",
+          "initializer": "/cnn/cnn.5/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        },
+        {
+          "clip_node": "/clip_output/Clip",
+          "dtype": "float32",
+          "initializer": "/clip_output/Constant_output_0",
+          "role": "min",
+          "shape": [],
+          "value": 0.0
+        },
+        {
+          "clip_node": "/clip_output/Clip",
+          "dtype": "float32",
+          "initializer": "/clip_output/Constant_1_output_0",
+          "role": "max",
+          "shape": [],
+          "value": 1.0
+        }
+      ],
+      "constant_node_count": 0,
+      "initializer_count": 16,
+      "input": {
+        "dtype": "float32",
+        "name": "image",
+        "shape": [
+          1,
+          3,
+          64,
+          64
+        ]
+      },
+      "node_count": 8,
+      "operator_inventory": {
+        "Clip": 4,
+        "Conv": 4
+      },
+      "output": {
+        "dtype": "float32",
+        "name": "pre_shuffle_output",
+        "shape": [
+          1,
+          12,
+          64,
+          64
+        ]
+      },
+      "path": "derived-models/quicksrnet-small-2x-fixed64-core.onnx",
+      "sha256": "9a35f235ac9dc36447764a58a2d1511720dc346360f76b77fee490b347f9e3b6",
+      "transformations": [
+        "freeze input shape to [1,3,64,64]",
+        "replace eight scalar Clip-bound Constant nodes with graph initializers",
+        "remove final DepthToSpace(mode=CRD, blocksize=2)",
+        "rename the exposed final Clip output to pre_shuffle_output",
+        "declare output shape [1,12,64,64]"
+      ]
+    }
+  },
+  "canonical_was_written": false,
+  "derivation_tool": {
+    "deterministic_protobuf_serialization": true,
+    "path": "derived-models/derive_quicksrnet_fixed64.py",
+    "path_overrides_allowed": false,
+    "sha256": "10e0c8a0c200fe235a14ff67114e573ee6413bbc72b8aa601da72bac24b9e964",
+    "versions": {
+      "numpy": "2.2.6",
+      "onnx": "1.18.0",
+      "onnxruntime": "1.22.1"
+    }
+  },
+  "document_kind": "deterministic-onnx-derivation-manifest",
+  "frozen_correctness_gate": {
+    "allowed_mismatch_count": 0,
+    "allowed_nonfinite_count": 0,
+    "android_input_sha256_little_endian_float32": "cc13c100d394903d5c9ccde7a44aab63660e266099077063a0a0de326f5b9fc9",
+    "atol": 0.0001,
+    "comparison": "abs(derived-canonical) <= 1e-4 + 1e-4 * abs(canonical)",
+    "rtol": 0.0001
+  },
+  "p2_plan": {
+    "bytes": 3806,
+    "expected_sha256": "44852e9245c46959af438b64dff75db3489f09ac94ac3913277af9d361a00859",
+    "path": "prototype-plan-p2.json",
+    "sha256": "44852e9245c46959af438b64dff75db3489f09ac94ac3913277af9d361a00859"
+  },
+  "pc_ort_validation": {
+    "cases": [
+      {
+        "canonical_output_sha256_little_endian_float32": "14f1b50fb48f8f30f075eb1e902164d0d7314be9056d5bf8059a583bf5f29458",
+        "core_plus_application_crd_pixel_shuffle_vs_canonical": {
+          "actual_sha256_little_endian_float32": "14f1b50fb48f8f30f075eb1e902164d0d7314be9056d5bf8059a583bf5f29458",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 49152,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "14f1b50fb48f8f30f075eb1e902164d0d7314be9056d5bf8059a583bf5f29458",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            128,
+            128
+          ],
+          "status": "pass"
+        },
+        "core_raw_output_sha256_little_endian_float32": "46eaa469a3ab600ae345c915cfcd26a2c3e1ea2e10478f1bfdbfb4fe70895134",
+        "core_raw_output_shape": [
+          1,
+          12,
+          64,
+          64
+        ],
+        "dcr_full_vs_canonical": {
+          "actual_sha256_little_endian_float32": "14f1b50fb48f8f30f075eb1e902164d0d7314be9056d5bf8059a583bf5f29458",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 49152,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "14f1b50fb48f8f30f075eb1e902164d0d7314be9056d5bf8059a583bf5f29458",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            128,
+            128
+          ],
+          "status": "pass"
+        },
+        "id": "android-rgb-gradient-64",
+        "input_sha256_little_endian_float32": "cc13c100d394903d5c9ccde7a44aab63660e266099077063a0a0de326f5b9fc9",
+        "input_shape": [
+          1,
+          3,
+          64,
+          64
+        ]
+      },
+      {
+        "canonical_output_sha256_little_endian_float32": "491d5b1f2f2c3464173be933ec3a38a445e9c59430f5842f113e614b76076cd5",
+        "core_plus_application_crd_pixel_shuffle_vs_canonical": {
+          "actual_sha256_little_endian_float32": "491d5b1f2f2c3464173be933ec3a38a445e9c59430f5842f113e614b76076cd5",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 49152,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "491d5b1f2f2c3464173be933ec3a38a445e9c59430f5842f113e614b76076cd5",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            128,
+            128
+          ],
+          "status": "pass"
+        },
+        "core_raw_output_sha256_little_endian_float32": "dbd6d5363679b79fd74dd9a5dbd9ad63a3ee8cd98e22f6ef9a54664b03437300",
+        "core_raw_output_shape": [
+          1,
+          12,
+          64,
+          64
+        ],
+        "dcr_full_vs_canonical": {
+          "actual_sha256_little_endian_float32": "491d5b1f2f2c3464173be933ec3a38a445e9c59430f5842f113e614b76076cd5",
+          "allowed_mismatch_count": 0,
+          "allowed_nonfinite_count": 0,
+          "atol": 0.0001,
+          "element_count": 49152,
+          "exact_float32_bytes": true,
+          "max_abs_error": 0.0,
+          "mismatch_count": 0,
+          "nonfinite_count": 0,
+          "reference_sha256_little_endian_float32": "491d5b1f2f2c3464173be933ec3a38a445e9c59430f5842f113e614b76076cd5",
+          "rtol": 0.0001,
+          "shape": [
+            1,
+            3,
+            128,
+            128
+          ],
+          "status": "pass"
+        },
+        "id": "seeded-random-64",
+        "input_sha256_little_endian_float32": "37cd633b83ddbbbc6fe57c2a23affa77da8771d79650428f56856275a0cbff93",
+        "input_shape": [
+          1,
+          3,
+          64,
+          64
+        ]
+      }
+    ],
+    "execution_mode": "sequential",
+    "graph_optimization_level": "disabled",
+    "inter_op_threads": 1,
+    "intra_op_threads": 1,
+    "provider": "CPUExecutionProvider",
+    "status": "pass"
+  },
+  "schema_version": 1,
+  "source": {
+    "bytes": 93994,
+    "expected_sha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce",
+    "initializer_count": 8,
+    "input": {
+      "dtype": "float32",
+      "name": "image",
+      "shape": [
+        "batch",
+        3,
+        "height",
+        "width"
+      ]
+    },
+    "node_count": 17,
+    "operator_inventory": {
+      "Clip": 4,
+      "Constant": 8,
+      "Conv": 4,
+      "DepthToSpace": 1
+    },
+    "output": {
+      "dtype": "float32",
+      "name": "upscaled_image",
+      "shape": [
+        "batch",
+        3,
+        "scaled_height",
+        "scaled_width"
+      ]
+    },
+    "path": "models/quicksrnet-small-2x-opset17.onnx",
+    "sha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce"
+  },
+  "status": "pass",
+  "transform_details": {
+    "canonical_contract": {
+      "depth_to_space_name": "/depth_to_space/DepthToSpace",
+      "final_bias_name": "conv_last.bias",
+      "final_bias_sha256": "bca81f123768ed69f3e00c39765b298315ee132b9e12a83476f08651b4cf4907",
+      "final_clip_name": "/clip_output/Clip",
+      "final_conv_name": "/conv_last/Conv",
+      "final_weight_name": "conv_last.weight",
+      "final_weight_sha256": "16e0418924e95bf0ba2ce7381d8afc052643cbe77375856059ebd05f7cfd6ed9"
+    },
+    "clip_bound_rewrites": [
+      {
+        "clip_node": "/cnn/cnn.1/Clip",
+        "constant_node": "/cnn/cnn.1/Constant",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.1/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.1/Clip",
+        "constant_node": "/cnn/cnn.1/Constant_1",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.1/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/cnn/cnn.3/Clip",
+        "constant_node": "/cnn/cnn.3/Constant",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.3/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.3/Clip",
+        "constant_node": "/cnn/cnn.3/Constant_1",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.3/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/cnn/cnn.5/Clip",
+        "constant_node": "/cnn/cnn.5/Constant",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.5/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/cnn/cnn.5/Clip",
+        "constant_node": "/cnn/cnn.5/Constant_1",
+        "dtype": "float32",
+        "initializer": "/cnn/cnn.5/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      },
+      {
+        "clip_node": "/clip_output/Clip",
+        "constant_node": "/clip_output/Constant",
+        "dtype": "float32",
+        "initializer": "/clip_output/Constant_output_0",
+        "role": "min",
+        "shape": [],
+        "value": 0.0
+      },
+      {
+        "clip_node": "/clip_output/Clip",
+        "constant_node": "/clip_output/Constant_1",
+        "dtype": "float32",
+        "initializer": "/clip_output/Constant_1_output_0",
+        "role": "max",
+        "shape": [],
+        "value": 1.0
+      }
+    ],
+    "core_removed": {
+      "blocksize": 2,
+      "mode": "CRD",
+      "new_graph_output": "pre_shuffle_output",
+      "node": "/depth_to_space/DepthToSpace",
+      "old_input": "/clip_output/Clip_output_0",
+      "op_type": "DepthToSpace"
+    },
+    "dcr_permutation": {
+      "bias_axis": 0,
+      "bias_sha256_after": "a5f88b16a8d455fc73c0e74e22c9a260f9b5aa07ead4c9b90469228d1e3e8865",
+      "bias_sha256_before": "bca81f123768ed69f3e00c39765b298315ee132b9e12a83476f08651b4cf4907",
+      "depth_to_space_mode_after": "DCR",
+      "depth_to_space_mode_before": "CRD",
+      "gather_indices": [
+        0,
+        4,
+        8,
+        1,
+        5,
+        9,
+        2,
+        6,
+        10,
+        3,
+        7,
+        11
+      ],
+      "meaning": "new DCR input channel gathers this old CRD output channel",
+      "weight_axis": 0,
+      "weight_sha256_after": "e8cae82aaf6bf9d244c579ec6cad855afad7c9f1830f48873fd688e9b4fe75c7",
+      "weight_sha256_before": "16e0418924e95bf0ba2ce7381d8afc052643cbe77375856059ebd05f7cfd6ed9"
+    }
+  }
+}
