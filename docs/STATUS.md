@@ -21,7 +21,7 @@ P3 已证明 Xiaomi 13 Ultra 上的 QNN HTP strict 执行资格，但冻结 PC g
 | M0 correctness/quality | PENDING | P3 的精度错误类别已有记录 | 运行前冻结的 M0/P4 数值与画质合同、未参与定阈值的 ROI、PSNR/SSIM 或有依据的替代指标、人工 A/B |
 | Full-image tile/stitch | NOT IMPLEMENTED | 只有 fixed `64×64 → 128×128` 模型路径 | tile、halo、padding、crop、stitch、seam 与内存验证 |
 | Media3 M1～M4 | NOT IMPLEMENTED | 已有文档化路线 | Media3 依赖、播放器壳、effect、texture/PTS/flush、连续帧、AAR 与真机证据 |
-| Publication | NOT COMPLETE | 已有 source-only 规则和自动扫描脚本 | 独立 Git 初始化、候选文件审计、提交、private remote push 与回读 |
+| Publication | PRIVATE REMOTE PASS | 独立 Git、68 文件 source-only 首次提交、owner-only private remote push/readback 和 GitHub `source-safety` 均完成 | 未授权公开；模型/APK/vendor binary/raw evidence 仍禁止发布 |
 
 ## P3 已经允许的声明
 

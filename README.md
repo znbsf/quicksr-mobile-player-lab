@@ -9,6 +9,8 @@
 
 这个独立仓库用于把现有 Android QNN HTP runtime 探针逐步变成可在手机上观察、评价并最终接入播放器的超分实验。它不是已经完成的播放器插件，也不把单个 `64×64` tensor 的执行时间包装成视频性能。
 
+开发仓库：[znbsf/quicksr-mobile-player-lab](https://github.com/znbsf/quicksr-mobile-player-lab)（当前为 private、source-only；没有模型、APK 或原始真机证据）。
+
 更细的当前状态见 [docs/STATUS.md](docs/STATUS.md)，播放器阶段和 Media3 技术路线见 [docs/PLAYER_ROADMAP.md](docs/PLAYER_ROADMAP.md)。
 
 ## 当前目标：M0 真实图片 ROI
@@ -109,6 +111,8 @@ profiling timing 只用于定位；`Session.run` timing 不是完整图像或视
 ## Source-only GitHub 边界
 
 本项目采用 **private-first、source-only**：即使 GitHub 仓库是 private，也只提交适合源码审查的材料。
+
+当前 `main` 已推送到 owner-only 私有仓库；GitHub `source-safety` 会重复执行发布集合检查、合成负面用例、17 个 evidence-validator 测试和 JSON 合同解析。它不执行需要本地模型/vendor runtime 的 Android 构建，因此不能替代上文的本地主机构建证据。
 
 允许进入 Git 的内容包括原创 Java/Python/PowerShell/JavaScript 源码、Gradle 配置、测试、验证器、冻结合同、hash、架构、问题记录和经过人工脱敏的小型汇总。
 
