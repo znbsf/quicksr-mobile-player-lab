@@ -50,6 +50,20 @@ enum ModelVariant {
             new long[]{1, 3, 360, 640},
             new long[]{1, 3, 720, 1280},
             false),
+    FIXED640X360_3X_FULL(
+            "fixed640x360-3x-full",
+            "quicksrnet-small-3x-fixed640x360.onnx",
+            "upscaled_image",
+            new long[]{1, 3, 360, 640},
+            new long[]{1, 3, 1080, 1920},
+            false),
+    FIXED640X360_4X_FULL(
+            "fixed640x360-4x-full",
+            "quicksrnet-small-4x-fixed640x360.onnx",
+            "upscaled_image",
+            new long[]{1, 3, 360, 640},
+            new long[]{1, 3, 1440, 2560},
+            false),
     FIXED512_DCR_FULL(
             "fixed512-dcr-full",
             "quicksrnet-small-2x-fixed512-dcr.onnx",
@@ -180,6 +194,10 @@ enum ModelVariant {
                 return BuildConfig.DCR512X288_MODEL_BYTES;
             case FIXED640X360_DCR_FULL:
                 return BuildConfig.DCR640X360_MODEL_BYTES;
+            case FIXED640X360_3X_FULL:
+                return BuildConfig.FIXED640X360_3X_MODEL_BYTES;
+            case FIXED640X360_4X_FULL:
+                return BuildConfig.FIXED640X360_4X_MODEL_BYTES;
             case FIXED512_DCR_FULL:
                 return BuildConfig.DCR512_MODEL_BYTES;
             default:
@@ -203,6 +221,10 @@ enum ModelVariant {
                 return BuildConfig.DCR512X288_MODEL_SHA256;
             case FIXED640X360_DCR_FULL:
                 return BuildConfig.DCR640X360_MODEL_SHA256;
+            case FIXED640X360_3X_FULL:
+                return BuildConfig.FIXED640X360_3X_MODEL_SHA256;
+            case FIXED640X360_4X_FULL:
+                return BuildConfig.FIXED640X360_4X_MODEL_SHA256;
             case FIXED512_DCR_FULL:
                 return BuildConfig.DCR512_MODEL_SHA256;
             default:

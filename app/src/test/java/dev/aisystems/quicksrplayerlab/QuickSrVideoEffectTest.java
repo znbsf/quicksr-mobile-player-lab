@@ -61,6 +61,30 @@ public final class QuickSrVideoEffectTest {
         assertEquals(360, QuickSrVideoEffect.Profile.FULL_720P.inputHeight());
         assertEquals(1280, QuickSrVideoEffect.Profile.FULL_720P.outputWidth());
         assertEquals(720, QuickSrVideoEffect.Profile.FULL_720P.outputHeight());
+        assertEquals(1280, QuickSrVideoEffect.Profile.FULL_720P.canvasWidth());
+        assertEquals(720, QuickSrVideoEffect.Profile.FULL_720P.canvasHeight());
+
+        assertSame(
+                ModelVariant.FIXED640X360_3X_FULL,
+                QuickSrVideoEffect.Profile.FULL_1080P_3X.modelVariant());
+        assertEquals(1920, QuickSrVideoEffect.Profile.FULL_1080P_3X.outputWidth());
+        assertEquals(1080, QuickSrVideoEffect.Profile.FULL_1080P_3X.outputHeight());
+        assertEquals(1920, QuickSrVideoEffect.Profile.FULL_1080P_3X.canvasWidth());
+        assertEquals(1080, QuickSrVideoEffect.Profile.FULL_1080P_3X.canvasHeight());
+
+        assertSame(
+                ModelVariant.FIXED640X360_4X_FULL,
+                QuickSrVideoEffect.Profile.FULL_1440P_4X.modelVariant());
+        assertEquals(2560, QuickSrVideoEffect.Profile.FULL_1440P_4X.outputWidth());
+        assertEquals(1440, QuickSrVideoEffect.Profile.FULL_1440P_4X.outputHeight());
+
+        assertSame(
+                ModelVariant.FIXED640X360_3X_FULL,
+                QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X.modelVariant());
+        assertEquals(1920, QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X.outputWidth());
+        assertEquals(1080, QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X.outputHeight());
+        assertEquals(3840, QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X.canvasWidth());
+        assertEquals(2160, QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X.canvasHeight());
 
         assertSame(
                 ModelVariant.FIXED512_DCR_FULL,
@@ -115,6 +139,33 @@ public final class QuickSrVideoEffectTest {
         assertEquals(0, rgba.get(base + 1) & 0xff);
         assertEquals(128, rgba.get(base + 2) & 0xff);
         assertEquals(77, rgba.get(base + 3) & 0xff);
+    }
+
+    @Test
+    public void packNchwToRgba_mapsAlphaForThreeXAndFourXOutputs() {
+        for (int scale : new int[]{3, 4}) {
+            int inputWidth = 4;
+            int inputHeight = 2;
+            int outputWidth = inputWidth * scale;
+            int outputHeight = inputHeight * scale;
+            byte[] inputRgba = new byte[inputWidth * inputHeight * 4];
+            inputRgba[3] = (byte) 11;
+            inputRgba[inputRgba.length - 1] = (byte) 99;
+            float[] output = new float[outputWidth * outputHeight * 3];
+            byte[] packed = new byte[outputWidth * outputHeight * 4];
+
+            QuickSrVideoEffect.packNchwToRgba(
+                    output,
+                    inputRgba,
+                    inputWidth,
+                    inputHeight,
+                    outputWidth,
+                    outputHeight,
+                    packed);
+
+            assertEquals(11, packed[3] & 0xff);
+            assertEquals(99, packed[packed.length - 1] & 0xff);
+        }
     }
 
     @Test

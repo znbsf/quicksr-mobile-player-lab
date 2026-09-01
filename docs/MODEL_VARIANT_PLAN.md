@@ -42,11 +42,13 @@ changing only the output scale cannot solve that mismatch.
 | 720p 16:9 | 1.5x | 2x | 3x | 2x then GPU resize |
 | square 360/480/720 | same scale logic, then pillarbox | same | same | 2x then GPU resize and pillarbox |
 
-“Scale component available” does not mean the Android App has a validated
-target canvas for every row. Android currently integrates and has device smoke
-evidence only for the 640x360 -> 1280x720 2x path. The other scales are PC-only
-until their fixed graphs, memory limits, HTP placement, correctness and display
-paths pass separately.
+Android v0.13.0 now integrates fixed 640x360 2x/3x/4x graphs. The API 35 x86
+emulator completed one frame at true 1280x720, 1920x1080 and 2560x1440 neural
+texture sizes; a separate 4K fallback displayed the 1920x1080 neural texture on
+a 3840x2160 GL canvas. This closes a functional shape/display gate only. Physical
+Qualcomm evidence still covers only the older 2x 720p path; the 3x/4x graphs
+still need HTP placement, memory, correctness, sustained throughput and thermal
+validation on the phone.
 
 ## Real-time budget
 
@@ -54,6 +56,9 @@ paths pass separately.
 - The observed phone 720p smoke sampled about 9 ms in ORT/QNN, 10 ms in output
   conversion and 22 ms total, but that is one periodic sample rather than p95.
 - The PC fixed-model results are 4.3-6.6 fps and therefore not real-time.
+- On the x86 emulator, first-frame totals were 432 ms for true 1080p and 651 ms
+  for true 1440p; full finite scans alone cost 172 and 311 ms. These CPU samples
+  validate the path and expose memory-scan cost, but do not predict phone HTP.
 - 1440p has 4x and 4K has 9x as many output pixels as 720p. Even if NPU compute
   remains acceptable, float output conversion, CPU/GPU transfer and texture
   upload can dominate.

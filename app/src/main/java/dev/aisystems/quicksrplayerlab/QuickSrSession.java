@@ -19,8 +19,8 @@ import ai.onnxruntime.OrtSession;
 
 final class QuickSrSession implements AutoCloseable {
     enum Mode {
-        QNN_HTP("QNN HTP · QuickSRNet 2×"),
-        CPU("CPU · QuickSRNet 2×");
+        QNN_HTP("QNN HTP · QuickSRNet"),
+        CPU("CPU · QuickSRNet");
 
         private final String label;
 

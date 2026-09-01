@@ -6,13 +6,13 @@
 
 ## 一句话结论
 
-v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 13 Ultra 上，`640×360 → 1280×720` QuickSR QNN HTP Sustained 对指定 `23.976023 fps` 片源的最终 APK smoke 跟住源帧率且 MediaCodec Drop=0，但画质合同、最终显示 latch、A/V sync、p95/p99 和长时间热稳定性仍未关闭。
+v0.13.0 已形成可安装的图片与本地视频超分 App，并在 API 35 模拟器跑通真实 1080p/1440p 神经纹理和 4K 显示保底；物理机 QNN 证据仍只覆盖此前 v0.12.0 的 `640×360 → 1280×720` 档，不能外推到新增高分辨率档。
 
 ## 当前状态
 
 | 能力或门禁 | 状态 | 已确认 | 尚未证明 |
 | --- | --- | --- | --- |
-| 主机构建 | PASS | v0.12.0；45 个 Java 单测、lint、assemble 均通过；source/build/APK identity 已生成 | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
+| 主机构建 | PASS | v0.13.0；48 个 Java 单测、lint、x86_64/arm64-v8a assemble 均通过；arm64-v8a APK SHA-256 `72ad85fa1d8921c0b8a7286a699c3dd45b5aa30cad16f30ff26d0f82c1fd098b` | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
 | 图片整图 2× | IMPLEMENTED | 系统选图、CPU/QNN HTP、tile/full-image、预览、取消和 PNG 保存路径已实现 | 本轮没有发布权利清晰的图片质量对比或新的数值验收 |
 | Media3 播放器 | IMPLEMENTED | 本地视频、PlayerView、原画/GPU Lanczos/QuickSR CPU/QuickSR QNN HTP 切换已实现 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
@@ -23,10 +23,11 @@ v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 
 | 视觉质量 | OPEN（已有 PC 观察） | SHA-256 核验的 CC BY 3.0 开源动画帧/短片已比较 QuickSR、Lanczos、bilinear；干净输入有局部优势，模糊/JPEG Q35 与视频均未稳定胜过 Lanczos | 仍缺代表性动漫集、感知指标、盲测、字幕/线条/时序专项与手机同帧输出 |
 | 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
-| PC-first 动漫路线 | PASS（开源动画管线限定） | 1.5×/2×/3×/4× 官方 checkpoint 已导出并验证；18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 路线已在开源动画帧上全部执行；15 帧 H.264 退化视频已跑通 | 素材是 3D 开源动画而非代表性日本动漫；1440p/4K reference 来自 1080p resize；Android 仍只集成 2× 720p 输出 |
-| x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；自生成 640×360/5 秒视频完成 75 帧，状态报告 1280×720 效果画布 | 模拟器没有 Qualcomm HTP；CPU 排队和耗时不可外推真机实时性能 |
+| PC-first 动漫路线 | PASS（开源动画管线限定） | 1.5×/2×/3×/4× 官方 checkpoint 已导出并验证；18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 路线已在开源动画帧上全部执行；15 帧 H.264 退化视频已跑通 | 素材是 3D 开源动画而非代表性日本动漫；1440p/4K reference 来自 1080p resize |
+| Android 高分辨率档 | PASS（模拟器功能限定） | 3× `640×360→1920×1080`、4× `640×360→2560×1440` 与 `1080p neural→4K GL canvas` 均完成首帧；任意倍率 NCHW→RGBA/alpha 映射已有单测 | 未在物理 Qualcomm 设备验证 HTP placement、内存、画质、连续吞吐或热稳定性；4K 档不是原生 4K 神经输出 |
+| x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；权利清晰 640×360 H.264 clip 的 720p/1080p/1440p/4K 显示档均完成首帧，报告的画布和神经纹理尺寸符合 profile | 模拟器没有 Qualcomm HTP；CPU 单帧耗时和排队不可外推真机实时性能 |
 
-## 最终 APK smoke
+## 已存档的 v0.12.0 物理机 720p smoke
 
 ```text
 source:       1280x720 @ 23.976023 fps
@@ -50,7 +51,7 @@ local SDR video
   -> GL texture scaled to a static model input
   -> RGBA readback and RGB NCHW conversion
   -> persistent ORT input/output tensors
-  -> QNN HTP QuickSRNetSmall 2x
+  -> CPU or QNN HTP QuickSRNetSmall selected scale
   -> RGB output conversion and GL upload
   -> neural RGBA written into the output-sized Media3 texture with original PTS
   -> SurfaceView
@@ -62,6 +63,7 @@ local SDR video
 
 - 硬件解码器已经工作；为了速度重写整个播放器或 decoder 不是第一优先级。
 - 当前 720p 档的单帧样本中，ORT/QNN run 约 9 ms，输出转换约 10 ms，后者已成为同量级热点。
+- API 35 x86 CPU 首帧功能样本：1080p 总计 432 ms（ORT 116 ms、finite 扫描 172 ms），1440p 总计 651 ms（ORT 168 ms、finite 扫描 311 ms），4K 显示保底总计 476 ms。它们不是稳态统计，也不是手机 HTP 预测。
 - 下一轮最有价值的是减少 float NCHW → RGBA → GL upload 的 CPU 成本，并补 raw timing 分布、队列深度和 end-to-end latency。
 - QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
 - C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。

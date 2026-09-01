@@ -1,13 +1,14 @@
 # QuickSR Mobile Player Lab
 
-Android 端图片与视频超分实验 App。当前版本为 **v0.12.0**：使用 Media3 播放本地视频，并通过 ONNX Runtime QNN Execution Provider 在 Qualcomm HTP/NPU 上逐帧运行 QuickSRNetSmall 2×。
+Android 端图片与视频超分实验 App。当前版本为 **v0.13.0**：使用 Media3 播放本地视频，并通过 ONNX Runtime 在 CPU 或 Qualcomm QNN HTP/NPU 上逐帧运行 QuickSRNetSmall 2×/3×/4×。
 
 > 当前状态（2026-09-01）
 >
 > - **App 已实现：**本地图片整图 2×、PNG 保存、本地视频播放、上一次视频一键重播、原画/GPU Lanczos/QuickSR CPU/QuickSR QNN HTP 切换。
 > - **默认视频档：**`640×360 → 1280×720`、16:9、QNN HTP Sustained。
-> - **指定设备与片源实测：**源视频为 `1280×720 @ 23.976023 fps`；最终 APK 的 26.860 秒 smoke 中处理 645 帧，折算 `24.0134 fps`，四个约 5 秒 MediaCodec 窗口均 Render=120、Drop=0。
-> - **构建已通过：**44 个 Java 单测、Android lint、debug assemble；最终 APK SHA-256 为 `9d1a2153a844af29ddd883441c4e063217504b6e2cb649cce44aa0f64d0abf8e`。
+> - **既有物理机实测：**此前 v0.12.0 使用 `1280×720 @ 23.976023 fps` 片源；26.860 秒 smoke 中处理 645 帧，折算 `24.0134 fps`，四个约 5 秒 MediaCodec 窗口均 Render=120、Drop=0。
+> - **高分辨率模拟器实测：**API 35 x86_64 CPU 路径已分别生成 `1920×1080`、`2560×1440` 神经纹理，并把 `1920×1080` 神经纹理放到 `3840×2160` GL 画布；这只证明功能和尺寸，不代表 QNN 实时性能。
+> - **构建已通过：**48 个 Java 单测、Android lint、x86_64/arm64-v8a debug assemble；arm64-v8a APK SHA-256 为 `72ad85fa1d8921c0b8a7286a699c3dd45b5aa30cad16f30ff26d0f82c1fd098b`。
 > - **证据边界：**上述 FPS/Drop 是单设备、单 SDR 本地片源的 decoder-renderer 代理结果，不是所有手机/片源的通用 720p 实时承诺，也不是 SurfaceFlinger 最终 latch、A/V sync、画质正确性或长期热稳定性证明。
 
 开发仓库：[znbsf/quicksr-mobile-player-lab](https://github.com/znbsf/quicksr-mobile-player-lab)（private、source-only；不提交模型、APK、私人媒体或原始真机证据）。
@@ -37,13 +38,16 @@ Android 端图片与视频超分实验 App。当前版本为 **v0.12.0**：使�
   - `256×256 → 512×512`；
   - `512×288 → 1024×576`；
   - `640×360 → 1280×720`（默认）；
+  - `640×360 → 1920×1080`（3× 实验档）；
+  - `640×360 → 2560×1440`（4× 实验档）；
+  - `640×360 → 1920×1080 → 3840×2160 GL 画布`（4K 显示保底，不是原生 4K 神经推理）；
   - `512×512 → 1024×1024`；
 - QNN 提供 Baseline、Burst 和 Sustained 三种实验 tuning；
 - UI 分开显示排队、输入转换、ORT/QNN run、输出转换和整帧处理时间。
 
-这些视频档会先把解码帧缩放到模型的静态输入尺寸，再把 2× 神经输出交回 GL 播放链路。它们不是把原始 720p/1080p 每个像素分块覆盖后再 2× 的完整超分方案。
+这些视频档会先把解码帧缩放到模型的静态输入尺寸，再把所选倍率的神经输出交回 GL 播放链路。它们不是对原始高分辨率帧逐块全覆盖的方案；4K 保底档也只是 1080p 神经纹理经 GPU 显示缩放。
 
-## 最终构建 smoke
+## 已存档的 v0.12.0 物理机 720p smoke
 
 | 项目 | 结果 |
 | --- | --- |
@@ -55,7 +59,7 @@ Android 端图片与视频超分实验 App。当前版本为 **v0.12.0**：使�
 | 折算速率 | `24.0134 fps` |
 | 稳定 MediaCodec 窗口 | 4 个窗口均约 `120 / 5 s`，Drop=0 |
 | 单次 UI 抽样 | ORT/QNN run 9 ms；输出转换 10 ms；整段 22 ms |
-| 主机构建 | 44 tests PASS；lint PASS；assemble PASS |
+| 主机构建 | 48 tests PASS；lint PASS；x86_64/arm64-v8a assemble PASS |
 
 单次 UI 抽样是每 15 帧显示的一帧、毫秒向下取整，不是平均值或 p50/p95。`OrtSession.run` 是主机侧 wall time，包含 JNI、provider 与可能的数据移动，不应称为纯 NPU kernel 时间。
 

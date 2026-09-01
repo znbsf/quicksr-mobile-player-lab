@@ -110,3 +110,10 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Video result:** the deterministic 15-frame H.264 CRF28 path ran at 175.1 ms mean inference (5.71 fps) on PC CPU. QuickSR averaged 30.069 dB versus Lanczos 30.203 dB and also had a higher temporal-delta error.
 - **Route result:** all 18 source/layout/target routes executed. QuickSR won clean PSNR on 12 and lost or tied on 6; median chain time was 494.8 ms and maximum was 3313.1 ms.
 - **Lesson:** output scale coverage is no longer the main PC blocker. Degradation robustness, representative anime data, temporal quality and Android high-resolution memory/copy behavior are the next gates. A complete C player rewrite would not address those model-quality or NPU/memory costs.
+
+## 2026-09-01 — Android 3×/4× integration and emulator high-resolution smoke
+
+- **Implementation:** integrated hash-pinned fixed `640×360` QuickSRNetSmall 3× and 4× graphs. Added true `1920×1080` and `2560×1440` neural profiles plus an explicit `1920×1080 neural → 3840×2160 GL canvas` fallback.
+- **Bug found and fixed:** the original output packer assumed every neural result was exactly 2× and used `x >> 1` / `y >> 1` for alpha. The first 3× run therefore failed with an output-buffer length mismatch. The packer now accepts rectangular arbitrary-scale output and maps alpha proportionally; 3×/4× contracts are covered by unit tests.
+- **Observed API 35 x86 CPU checks:** 1080p completed one frame at 432 ms total (`ORT 116 ms`, finite scan `172 ms`); 1440p completed at 651 ms (`ORT 168 ms`, finite scan `311 ms`); the 4K display fallback completed at 476 ms with a `1920×1080` neural texture and `3840×2160` effect canvas. No app/GL exception was observed.
+- **Boundary:** these are first-frame functional checks, not p50/p95, real-time playback proof or Qualcomm HTP evidence. The phone was disconnected, so physical-device 3×/4× placement, sustained throughput, memory pressure, quality and thermals remain open.

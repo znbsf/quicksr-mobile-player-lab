@@ -220,10 +220,10 @@ public final class SuperResolutionActivity extends Activity {
         root.addView(videoHeading);
         TextView videoBoundary = text(
                 "QuickSR 视频模式会真实执行逐帧神经推理。默认 720p 档保持 16:9，" +
-                        "把整帧缩到 640×360，再由 QuickSRNet 输出 1280×720。" +
-                        "仍可切换 512×288 高分档、256×144 省电档、" +
-                        "方形实验档或快速档。" +
-                        "这些档位是整帧缩放，不是逐块覆盖整张 720p/1080p 的最终方案。",
+                        "把整帧缩到 640×360，再由 2× 模型输出 1280×720；" +
+                        "实验性 3×/4× 档分别生成真实 1920×1080 与 2560×1440 神经纹理。" +
+                        "4K 显示档先生成 1080p 神经纹理，再由 GPU 放大到 3840×2160，" +
+                        "不等同原生 4K 神经推理。所有档位都是整帧缩放，不是分块覆盖原始高分辨率帧。",
                 14);
         root.addView(videoBoundary);
 
@@ -840,16 +840,20 @@ public final class SuperResolutionActivity extends Activity {
                         });
                     });
             // ByteBufferGlEffect keeps the dimensions of its input texture for its output pool.
-            // Establish the neural output canvas first, then let QuickSR downsample only its
-            // readback input and write the 2x result into that output-sized texture.
+            // Establish the display canvas first, then let QuickSR downsample only its readback
+            // input and write the selected-scale neural result into the effect pipeline.
             Effect outputCanvas = Presentation.createForWidthAndHeight(
-                    profile.outputWidth(),
-                    profile.outputHeight(),
+                    profile.canvasWidth(),
+                    profile.canvasHeight(),
                     Presentation.LAYOUT_SCALE_TO_FIT);
             player.setVideoEffects(Arrays.asList(outputCanvas, effect));
             updateVideoStatus(
                     backend + " · " + tuning + " 已开启：每帧 " + profile +
-                            "，输出画布 " + profile.outputWidth() + "×" + profile.outputHeight() + "。" +
+                            "，输出画布 " + profile.canvasWidth() + "×" + profile.canvasHeight() + "。" +
+                            (profile.canvasWidth() == profile.outputWidth()
+                                    ? ""
+                                    : "神经纹理 " + profile.outputWidth() + "×" + profile.outputHeight()
+                                            + "，再由 GPU 缩放显示。") +
                             "正在等待首帧 HTP/CPU 实测……");
             return;
         }

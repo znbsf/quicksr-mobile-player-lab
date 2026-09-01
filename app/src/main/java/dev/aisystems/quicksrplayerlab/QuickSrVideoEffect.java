@@ -38,12 +38,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Experimental per-frame neural video effect with an explicit model-resolution profile.
  *
  * <p>Media3 scales each SDR effect input to the selected static model input. One QuickSRNet
- * inference produces a 2x RGBA result and uploads it back to the GL pipeline. The activity places
+ * inference produces an RGBA result and uploads it back to the GL pipeline. The activity places
  * a {@code Presentation} effect before this effect so the GL output texture already has the neural
  * output dimensions; this avoids shrinking a 720p neural result back into a genuine 360p source
  * texture. Profiles include square compatibility experiments and aspect-preserving 16:9 paths up
- * to {@link Profile#FULL_720P}; {@link Profile#FAST_64} remains a performance fallback. No profile
- * is a tiled full-resolution path.
+ * through true 1080p and 1440p neural textures. A separate 4K display fallback scales a 1080p
+ * neural texture into a 4K effect canvas; it is not native 4K neural inference. {@link
+ * Profile#FAST_64} remains a performance fallback. No profile is a tiled full-resolution path.
  */
 @UnstableApi
 final class QuickSrVideoEffect implements GlEffect {
@@ -71,6 +72,29 @@ final class QuickSrVideoEffect implements GlEffect {
                 360,
                 1280,
                 720),
+        FULL_1080P_3X(
+                "1080p 神经输出 · 640x360 -> 1920x1080",
+                ModelVariant.FIXED640X360_3X_FULL,
+                640,
+                360,
+                1920,
+                1080),
+        FULL_1440P_4X(
+                "1440p 神经输出 · 640x360 -> 2560x1440",
+                ModelVariant.FIXED640X360_4X_FULL,
+                640,
+                360,
+                2560,
+                1440),
+        DISPLAY_4K_FROM_1080P_3X(
+                "4K 显示保底 · 640x360 -> 神经1080p -> GPU 4K",
+                ModelVariant.FIXED640X360_3X_FULL,
+                640,
+                360,
+                1920,
+                1080,
+                3840,
+                2160),
         ULTRA_512(
                 "512x512 -> 1024x1024",
                 ModelVariant.FIXED512_DCR_FULL,
@@ -85,6 +109,8 @@ final class QuickSrVideoEffect implements GlEffect {
         private final int inputHeight;
         private final int outputWidth;
         private final int outputHeight;
+        private final int canvasWidth;
+        private final int canvasHeight;
 
         Profile(
                 String label,
@@ -93,12 +119,34 @@ final class QuickSrVideoEffect implements GlEffect {
                 int inputHeight,
                 int outputWidth,
                 int outputHeight) {
+            this(
+                    label,
+                    modelVariant,
+                    inputWidth,
+                    inputHeight,
+                    outputWidth,
+                    outputHeight,
+                    outputWidth,
+                    outputHeight);
+        }
+
+        Profile(
+                String label,
+                ModelVariant modelVariant,
+                int inputWidth,
+                int inputHeight,
+                int outputWidth,
+                int outputHeight,
+                int canvasWidth,
+                int canvasHeight) {
             this.label = label;
             this.modelVariant = modelVariant;
             this.inputWidth = inputWidth;
             this.inputHeight = inputHeight;
             this.outputWidth = outputWidth;
             this.outputHeight = outputHeight;
+            this.canvasWidth = canvasWidth;
+            this.canvasHeight = canvasHeight;
         }
 
         ModelVariant modelVariant() {
@@ -133,6 +181,14 @@ final class QuickSrVideoEffect implements GlEffect {
 
         int outputHeight() {
             return outputHeight;
+        }
+
+        int canvasWidth() {
+            return canvasWidth;
+        }
+
+        int canvasHeight() {
+            return canvasHeight;
         }
 
         @Override
@@ -1052,9 +1108,7 @@ final class QuickSrVideoEffect implements GlEffect {
             byte[] packedRgba) {
         int inputPixels = checkedPixels(inputWidth, inputHeight);
         int outputPixels = checkedPixels(outputWidth, outputHeight);
-        if (outputWidth != inputWidth * TilePlan.SCALE
-                || outputHeight != inputHeight * TilePlan.SCALE
-                || output.length != 3 * outputPixels
+        if (output.length != 3 * outputPixels
                 || inputRgba.length != inputPixels * RGBA_BYTES_PER_PIXEL
                 || packedRgba.length != outputPixels * RGBA_BYTES_PER_PIXEL) {
             throw new IllegalArgumentException("QuickSR video output buffer length mismatch");
@@ -1063,14 +1117,16 @@ final class QuickSrVideoEffect implements GlEffect {
         int bluePlane = outputPixels * 2;
         int rgbaOffset = 0;
         for (int y = 0; y < outputHeight; y++) {
-            int inputAlphaRow = (y >> 1) * inputWidth * RGBA_BYTES_PER_PIXEL;
+            int inputY = Math.min(inputHeight - 1, y * inputHeight / outputHeight);
+            int inputAlphaRow = inputY * inputWidth * RGBA_BYTES_PER_PIXEL;
             int outputPixel = y * outputWidth;
             for (int x = 0; x < outputWidth; x++) {
                 packedRgba[rgbaOffset++] = normalizedToByte(output[outputPixel]);
                 packedRgba[rgbaOffset++] = normalizedToByte(output[greenPlane + outputPixel]);
                 packedRgba[rgbaOffset++] = normalizedToByte(output[bluePlane + outputPixel]);
+                int inputX = Math.min(inputWidth - 1, x * inputWidth / outputWidth);
                 packedRgba[rgbaOffset++] = inputRgba[
-                        inputAlphaRow + (x >> 1) * RGBA_BYTES_PER_PIXEL + 3];
+                        inputAlphaRow + inputX * RGBA_BYTES_PER_PIXEL + 3];
                 outputPixel++;
             }
         }
