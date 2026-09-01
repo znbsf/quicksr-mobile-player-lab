@@ -31,6 +31,7 @@ import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.effect.LanczosResample;
+import androidx.media3.effect.Presentation;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
@@ -40,6 +41,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -100,7 +102,9 @@ public final class SuperResolutionActivity extends Activity {
     private Bitmap bitmapBeingSaved;
     private volatile long imageTaskGeneration;
     private volatile boolean activityDestroyed;
-    private VideoMode videoMode = VideoMode.QUICKSR_QNN;
+    private VideoMode videoMode = BuildConfig.QNN_RUNTIME_EXPECTED
+            ? VideoMode.QUICKSR_QNN
+            : VideoMode.QUICKSR_CPU;
     private Uri lastVideoUri;
     private String lastVideoName;
 
@@ -109,7 +113,12 @@ public final class SuperResolutionActivity extends Activity {
         super.onCreate(savedInstanceState);
         restoreLastVideo();
         setContentView(createContent());
-        prepareQnnEnvironment();
+        if (BuildConfig.QNN_RUNTIME_EXPECTED) {
+            prepareQnnEnvironment();
+        } else {
+            imageBackendSpinner.setSelection(QuickSrSession.Mode.CPU.ordinal());
+            imageStatus.setText("x86_64 模拟器构建：使用 CPU 验证 UI/Media3；不提供 QNN HTP。");
+        }
         player = new ExoPlayer.Builder(this).build();
         playerView.setPlayer(player);
         player.addListener(new Player.Listener() {
@@ -746,7 +755,9 @@ public final class SuperResolutionActivity extends Activity {
     }
 
     private void toggleVideoEffect() {
-        videoMode = videoMode.next();
+        do {
+            videoMode = videoMode.next();
+        } while (!BuildConfig.QNN_RUNTIME_EXPECTED && videoMode == VideoMode.QUICKSR_QNN);
         applyVideoEffects();
         updateVideoEffectButton();
     }
@@ -797,17 +808,17 @@ public final class SuperResolutionActivity extends Activity {
                                 updateVideoStatus(String.format(
                                         Locale.US,
                                         "%s · %s · %s：已完成 %d 帧\n" +
-                                                "解码 %d×%d；神经 %d×%d→%d×%d；" +
+                                                "效果画布 %d×%d；神经 %d×%d→%d×%d；" +
                                                 "会话/复制/排队/RGBA转张量/整段推理/输出转RGBA/总计 " +
                                                 "%d/%d/%d/%d/%d/%d/%d ms\n" +
                                                 "推理拆分：输入拷贝/ORT run/输出拷贝/finite扫描 " +
                                                 "%d/%d/%d/%d ms%s；PTS %.3f s",
                                         stats.mode,
-                                        stats.tuning,
+                                        videoTuningLabel(stats.mode, stats.tuning),
                                         stats.profile,
                                         stats.frameNumber,
-                                        stats.decodedWidth,
-                                        stats.decodedHeight,
+                                        stats.effectInputWidth,
+                                        stats.effectInputHeight,
                                         stats.modelInputWidth,
                                         stats.modelInputHeight,
                                         stats.modelOutputWidth,
@@ -828,9 +839,17 @@ public final class SuperResolutionActivity extends Activity {
                             }
                         });
                     });
-            player.setVideoEffects(Collections.singletonList(effect));
+            // ByteBufferGlEffect keeps the dimensions of its input texture for its output pool.
+            // Establish the neural output canvas first, then let QuickSR downsample only its
+            // readback input and write the 2x result into that output-sized texture.
+            Effect outputCanvas = Presentation.createForWidthAndHeight(
+                    profile.outputWidth(),
+                    profile.outputHeight(),
+                    Presentation.LAYOUT_SCALE_TO_FIT);
+            player.setVideoEffects(Arrays.asList(outputCanvas, effect));
             updateVideoStatus(
-                    backend + " · " + tuning + " 已开启：每帧 " + profile + " → 拉伸显示。" +
+                    backend + " · " + tuning + " 已开启：每帧 " + profile +
+                            "，输出画布 " + profile.outputWidth() + "×" + profile.outputHeight() + "。" +
                             "正在等待首帧 HTP/CPU 实测……");
             return;
         }
@@ -863,6 +882,12 @@ public final class SuperResolutionActivity extends Activity {
             default:
                 throw new IllegalStateException("Unknown video mode: " + videoMode);
         }
+    }
+
+    private static String videoTuningLabel(
+            QuickSrSession.Mode mode,
+            QuickSrSession.Tuning tuning) {
+        return mode == QuickSrSession.Mode.CPU ? "CPU 默认" : tuning.toString();
     }
 
     private boolean videoModeMatches(QuickSrSession.Mode mode) {

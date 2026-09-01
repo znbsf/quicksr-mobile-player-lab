@@ -46,6 +46,10 @@ val p4PlanSha256 = "90d05b4cf9837a8a421fc35d144847a4cd727dcf39c8ca50f85aa128104a
 val ortDependencyVersion = "1.26.0"
 val qnnPluginVersion = "2.5.0"
 val qnnRuntimeVersion = "2.49.0"
+val targetAbi = providers.gradleProperty("targetAbi").orElse("arm64-v8a").get()
+require(targetAbi in setOf("arm64-v8a", "x86_64")) {
+    "targetAbi must be arm64-v8a or x86_64, observed: $targetAbi"
+}
 val generatedModelAssets = layout.buildDirectory.dir("generated/quicksrModelAssets")
 val generatedModelFile = generatedModelAssets.map { it.file(lockedModelName) }
 val generatedCoreModelFile = generatedModelAssets.map { it.file(coreModelName) }
@@ -305,7 +309,7 @@ android {
         versionName = "0.12.0"
 
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += targetAbi
         }
 
         testInstrumentationRunner = "android.app.Instrumentation"
@@ -352,6 +356,8 @@ android {
         buildConfigField("String", "ORT_DEPENDENCY_VERSION", "\"$ortDependencyVersion\"")
         buildConfigField("String", "QNN_PLUGIN_VERSION", "\"$qnnPluginVersion\"")
         buildConfigField("String", "QNN_RUNTIME_VERSION", "\"$qnnRuntimeVersion\"")
+        buildConfigField("String", "TARGET_ABI", "\"$targetAbi\"")
+        buildConfigField("boolean", "QNN_RUNTIME_EXPECTED", (targetAbi == "arm64-v8a").toString())
         buildConfigField("String", "APP_SOURCE_SHA256", "\"$appSourceSha256\"")
         buildConfigField("String", "PROTOTYPE_BUILD_ID", "\"$prototypeBuildId\"")
     }

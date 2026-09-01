@@ -37,11 +37,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Experimental per-frame neural video effect with an explicit model-resolution profile.
  *
- * <p>Media3 scales each decoded SDR frame to the selected static model input. One QuickSRNet
- * inference produces a 2x RGBA result, which is uploaded back to the GL pipeline and stretched to
- * the decoded frame's original dimensions. Profiles include square compatibility experiments and
- * aspect-preserving 16:9 paths up to {@link Profile#FULL_720P}; {@link Profile#FAST_64} remains a
- * performance fallback. No profile is a tiled full-resolution path.
+ * <p>Media3 scales each SDR effect input to the selected static model input. One QuickSRNet
+ * inference produces a 2x RGBA result and uploads it back to the GL pipeline. The activity places
+ * a {@code Presentation} effect before this effect so the GL output texture already has the neural
+ * output dimensions; this avoids shrinking a 720p neural result back into a genuine 360p source
+ * texture. Profiles include square compatibility experiments and aspect-preserving 16:9 paths up
+ * to {@link Profile#FULL_720P}; {@link Profile#FAST_64} remains a performance fallback. No profile
+ * is a tiled full-resolution path.
  */
 @UnstableApi
 final class QuickSrVideoEffect implements GlEffect {
@@ -157,8 +159,8 @@ final class QuickSrVideoEffect implements GlEffect {
         final QuickSrSession.Tuning tuning;
         final Profile profile;
         final int frameNumber;
-        final int decodedWidth;
-        final int decodedHeight;
+        final int effectInputWidth;
+        final int effectInputHeight;
         final int modelInputSide;
         final int modelOutputSide;
         final int modelInputWidth;
@@ -183,8 +185,8 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Mode mode,
                 Profile profile,
                 int frameNumber,
-                int decodedWidth,
-                int decodedHeight,
+                int effectInputWidth,
+                int effectInputHeight,
                 long copyMs,
                 long queueMs,
                 long inputConversionMs,
@@ -198,8 +200,8 @@ final class QuickSrVideoEffect implements GlEffect {
                     QuickSrSession.Tuning.BASELINE,
                     profile,
                     frameNumber,
-                    decodedWidth,
-                    decodedHeight,
+                    effectInputWidth,
+                    effectInputHeight,
                     copyMs,
                     queueMs,
                     inputConversionMs,
@@ -220,8 +222,8 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Tuning tuning,
                 Profile profile,
                 int frameNumber,
-                int decodedWidth,
-                int decodedHeight,
+                int effectInputWidth,
+                int effectInputHeight,
                 long copyMs,
                 long queueMs,
                 long inputConversionMs,
@@ -239,8 +241,8 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.profile = profile;
             this.frameNumber = frameNumber;
-            this.decodedWidth = decodedWidth;
-            this.decodedHeight = decodedHeight;
+            this.effectInputWidth = effectInputWidth;
+            this.effectInputHeight = effectInputHeight;
             this.modelInputWidth = profile.inputWidth();
             this.modelInputHeight = profile.inputHeight();
             this.modelOutputWidth = profile.outputWidth();
@@ -265,6 +267,7 @@ final class QuickSrVideoEffect implements GlEffect {
 
     private static final Profile DEFAULT_PROFILE = Profile.FAST_64;
     private static final int RGBA_BYTES_PER_PIXEL = 4;
+    private static final int MAX_POOLED_INPUT_BUFFERS = 8;
     private static final int MAX_POOLED_OUTPUT_BUFFERS = 3;
     private static final long RELEASE_TIMEOUT_SECONDS = 30L;
     private final ProcessorImpl processor;
@@ -442,6 +445,8 @@ final class QuickSrVideoEffect implements GlEffect {
         private final QuickSrSession.Tuning tuning;
         private final StatsListener listener;
         private final ExecutorService inferenceExecutor;
+        private final Object inputBufferPoolLock = new Object();
+        private final ArrayDeque<byte[]> inputBufferPool = new ArrayDeque<>();
         private final Object outputBufferPoolLock = new Object();
         private final ArrayDeque<ByteBuffer> outputBufferPool = new ArrayDeque<>();
         private final Set<FrameResult> outstandingFrameResults =
@@ -494,7 +499,7 @@ final class QuickSrVideoEffect implements GlEffect {
         public Size configure(int inputWidth, int inputHeight)
                 throws VideoFrameProcessingException {
             if (inputWidth <= 0 || inputHeight <= 0) {
-                throw new VideoFrameProcessingException("Invalid decoded video dimensions");
+                throw new VideoFrameProcessingException("Invalid effect input dimensions");
             }
             this.inputWidth = inputWidth;
             this.inputHeight = inputHeight;
@@ -503,8 +508,8 @@ final class QuickSrVideoEffect implements GlEffect {
 
         @Override
         public GlRect getScaledRegion(long presentationTimeUs) {
-            // Media3 scales the complete decoded frame to the selected static model input. The
-            // output is later stretched back to the original aspect ratio, avoiding a crop.
+            // Media3 scales the complete output-sized effect canvas to the static model input.
+            // The processor later writes the 2x neural result back into that canvas.
             return new GlRect(inputWidth, inputHeight);
         }
 
@@ -529,10 +534,16 @@ final class QuickSrVideoEffect implements GlEffect {
             // soon as the returned future is cancelled or completed.
             long receivedNs = SystemClock.elapsedRealtimeNanos();
             int inputPixels = checkedPixels(inputWidth, inputHeight);
-            byte[] rgba = new byte[inputPixels * RGBA_BYTES_PER_PIXEL];
-            ByteBuffer source = image.pixelBuffer.duplicate();
-            source.position(0);
-            source.get(rgba);
+            byte[] rgba = acquireInputBuffer(inputPixels * RGBA_BYTES_PER_PIXEL);
+            try {
+                ByteBuffer source = image.pixelBuffer.duplicate();
+                source.position(0);
+                source.get(rgba);
+            } catch (Throwable failure) {
+                recycleInputBuffer(rgba);
+                resultFuture.setException(failure);
+                return resultFuture;
+            }
             long copiedNs = SystemClock.elapsedRealtimeNanos();
             try {
                 inferenceExecutor.execute(() -> processCopiedFrame(
@@ -542,6 +553,7 @@ final class QuickSrVideoEffect implements GlEffect {
                         copiedNs,
                         resultFuture));
             } catch (RejectedExecutionException failure) {
+                recycleInputBuffer(rgba);
                 resultFuture.setException(failure);
             }
             return resultFuture;
@@ -627,6 +639,32 @@ final class QuickSrVideoEffect implements GlEffect {
                 }
             } catch (Throwable failure) {
                 resultFuture.setException(failure);
+            } finally {
+                recycleInputBuffer(rgba);
+            }
+        }
+
+        private byte[] acquireInputBuffer(int byteCount) {
+            synchronized (inputBufferPoolLock) {
+                byte[] pooled = inputBufferPool.pollFirst();
+                if (pooled != null && pooled.length == byteCount) {
+                    return pooled;
+                }
+            }
+            return new byte[byteCount];
+        }
+
+        private void recycleInputBuffer(byte[] buffer) {
+            int expectedByteCount = profile.inputWidth()
+                    * profile.inputHeight()
+                    * RGBA_BYTES_PER_PIXEL;
+            if (buffer == null || buffer.length != expectedByteCount) {
+                return;
+            }
+            synchronized (inputBufferPoolLock) {
+                if (!released && inputBufferPool.size() < MAX_POOLED_INPUT_BUFFERS) {
+                    inputBufferPool.addFirst(buffer);
+                }
             }
         }
 
@@ -820,6 +858,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 qnnLockWaiter.interrupt();
             }
             recycleOutstandingFrameResults();
+            synchronized (inputBufferPoolLock) {
+                inputBufferPool.clear();
+            }
             synchronized (outputBufferPoolLock) {
                 outputBufferPool.clear();
             }

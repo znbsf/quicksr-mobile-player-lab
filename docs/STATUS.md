@@ -23,6 +23,8 @@ v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 
 | 视觉质量 | OPEN | App 可在原画、Lanczos 和 QNN 间切换 | 尚无权利清晰 HR reference 的 PSNR/SSIM/感知评价和盲测 |
 | 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
+| PC-first 动漫路线 | IN PROGRESS | 18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 的等比路线已机器化；合成 2× CPU baseline 已跑通 | 真实权利清晰动漫集、1.5×/3×/4× 模型和时间一致性评价仍待接入 |
+| x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；自生成 640×360/5 秒视频完成 75 帧，状态报告 1280×720 效果画布 | 模拟器没有 Qualcomm HTP；CPU 排队和耗时不可外推真机实时性能 |
 
 ## 最终 APK smoke
 
@@ -44,12 +46,13 @@ UI sample:    ORT/QNN run 9 ms, output conversion 10 ms, total 22 ms
 ```text
 local SDR video
   -> Media3 / hardware MediaCodec decode
+  -> Presentation establishes the selected neural-output canvas
   -> GL texture scaled to a static model input
   -> RGBA readback and RGB NCHW conversion
   -> persistent ORT input/output tensors
   -> QNN HTP QuickSRNetSmall 2x
   -> RGB output conversion and GL upload
-  -> Media3 output texture with original PTS
+  -> neural RGBA written into the output-sized Media3 texture with original PTS
   -> SurfaceView
 ```
 

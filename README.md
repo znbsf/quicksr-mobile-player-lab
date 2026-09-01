@@ -61,6 +61,12 @@ Android 端图片与视频超分实验 App。当前版本为 **v0.12.0**：使�
 
 详细的优化过程、失败归因与下一步见 [实时视频超分经验总结](docs/REALTIME_VIDEO_SR_LESSONS.md)，正式状态边界见 [项目状态](docs/STATUS.md)。
 
+## PC-first 动漫目标矩阵
+
+`pc-benchmark/` 已把 16:9 360p/480p/720p 与方形低分辨率输入，到 1080p、1440p、2160p 的 18 条路线固化为机器可读计划。方形素材始终等比放大后居中留边，不拉伸；1.5×/2×/3×/4× 以直接模型为目标，2.25×/4.5×/6× 使用显式的混合缩放或级联策略。
+
+该目录同时提供确定性的合成动漫风 HR/LR 对和本机 ONNX Runtime CPU 基线，用于先验证退化、推理、指标与报告链路。它不会把合成素材分数冒充真实动漫数据集结论，也不会用 PC CPU 时间推断手机 QNN HTP 性能。运行方法见 [PC-first benchmark](pc-benchmark/README.md)。
+
 ## 为什么没有重写播放器为 C
 
 已观测到解码器走 Qualcomm 硬件 MediaCodec，GPU Lanczos 与最终 QNN 档都能跟住 23.976 fps 片源。早期慢点主要出现在每帧 tensor/output 生命周期、CPU↔GL↔ORT/QNN 边界和排队，而不是播放器控制层本身。

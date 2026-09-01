@@ -92,3 +92,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Result:** after the combined change, the 720p neural-output smoke sampled roughly 9 ms in `OrtSession.run`, 10 ms in output conversion, and 22 ms total for the displayed frame.
 - **Lesson:** no same-build unpinned/pinned ABBA exists, so the gain cannot be attributed to pinned output alone. The next likely hotspot is output conversion/upload; replace individual hot loops with NEON/GPU/native code only after profiling, rather than replacing the whole Media3 player by assumption.
 - **Details:** see [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md).
+
+## 2026-09-01 — PC-first anime matrix and real output-sized video canvas
+
+- **Problem:** a `ByteBufferGlEffect.Processor.configure()` return value controls readback size, not the Media3 effect output texture. With a genuine 360p source, the old chain could therefore infer a 720p neural frame and then blit it back into a 360p output texture before `PlayerView` scaling.
+- **Action:** added an explicit `Presentation` effect before QuickSR so the downstream output pool is already the profile output size. QuickSR still reads a static 640×360 tensor input but now writes its 1280×720 result into a 1280×720 effect canvas. Added an x86_64 emulator build that defaults to CPU and skips the unavailable HTP mode.
+- **Observed emulator check:** an API 35 x86_64 AVD played a locally generated 640×360, 5-second clip and completed 75 QuickSR CPU frames. The UI reported `effect canvas 1280×720` and `640×360→1280×720`; one periodic sample showed 42 ms ORT, 233 ms queue, and 293 ms total.
+- **Hot-path change:** input RGBA arrays are now pooled across frames instead of allocating one large Java byte array for every accepted frame.
+- **PC baseline:** the fixed 640×360→1280×720 model ran 20 measured CPU iterations at mean 184.4 ms, p50 178.5 ms, and nearest-rank p95 209.5 ms on the current host. The deterministic synthetic line-art pair measured 33.47 dB QuickSR PSNR versus 29.55 dB bilinear.
+- **Boundary:** the synthetic scores validate only the benchmark plumbing. Emulator timings do not predict QNN HTP, and this check does not close real-anime quality, final display latch, A/V sync or thermal gates.

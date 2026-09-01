@@ -388,11 +388,44 @@ public final class QuickSrVideoEffectTest {
         assertSame(QuickSrVideoEffect.Profile.HIGH_256, stats.profile);
         assertEquals(256, stats.modelInputSide);
         assertEquals(512, stats.modelOutputSide);
-        assertEquals(1920, stats.decodedWidth);
-        assertEquals(1080, stats.decodedHeight);
+        assertEquals(1920, stats.effectInputWidth);
+        assertEquals(1080, stats.effectInputHeight);
         assertEquals(600, stats.sessionSetupMs);
         assertEquals(41, stats.inferenceMs);
         assertEquals(52, stats.totalProcessingMs);
+    }
+
+    @Test
+    public void processorReusesReleasedInputRgbaBuffer() throws Exception {
+        Class<?> processorClass = Arrays.stream(QuickSrVideoEffect.class.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("ProcessorImpl"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> constructor = processorClass.getDeclaredConstructor(
+                Context.class,
+                QuickSrSession.Mode.class,
+                QuickSrVideoEffect.Profile.class,
+                QuickSrVideoEffect.StatsListener.class);
+        constructor.setAccessible(true);
+        Object processor = constructor.newInstance(
+                null,
+                QuickSrSession.Mode.CPU,
+                QuickSrVideoEffect.Profile.FAST_64,
+                null);
+        Method acquire = processorClass.getDeclaredMethod("acquireInputBuffer", int.class);
+        Method recycle = processorClass.getDeclaredMethod("recycleInputBuffer", byte[].class);
+        Method release = processorClass.getDeclaredMethod("release");
+        acquire.setAccessible(true);
+        recycle.setAccessible(true);
+        release.setAccessible(true);
+        int bytes = INPUT_SIDE * INPUT_SIDE * 4;
+
+        byte[] first = (byte[]) acquire.invoke(processor, bytes);
+        recycle.invoke(processor, (Object) first);
+        byte[] second = (byte[]) acquire.invoke(processor, bytes);
+
+        assertSame(first, second);
+        release.invoke(processor);
     }
 
     private static int referenceNormalizedToByte(float value) {
