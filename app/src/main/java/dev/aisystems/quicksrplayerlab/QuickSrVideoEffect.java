@@ -236,6 +236,7 @@ final class QuickSrVideoEffect implements GlEffect {
         final long outputConversionMs;
         final long totalProcessingMs;
         final long presentationTimeUs;
+        final long observedMonotonicNs;
 
         FrameStats(
                 QuickSrSession.Mode mode,
@@ -318,6 +319,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.outputConversionMs = outputConversionMs;
             this.totalProcessingMs = totalProcessingMs;
             this.presentationTimeUs = presentationTimeUs;
+            this.observedMonotonicNs = System.nanoTime();
         }
     }
 

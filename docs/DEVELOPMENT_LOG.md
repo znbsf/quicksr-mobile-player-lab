@@ -124,3 +124,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Runner:** generalized the route matrix to repeated assets and degradations. It center-crops only to the declared 16:9/1:1 layout, never stretches square art, and emits grouped JSON/CSV summaries linked to the raw report hash.
 - **Observed:** 72 cases completed. QuickSR won PSNR on 30/36 clean cases but only 7/36 blur-plus-JPEG-Q35 cases. It won 16/18 cases on the square comic asset. Median chain time was 492.6 ms; maximum was 3440.2 ms.
 - **Product lesson:** current QuickSRSmall is a useful clean line-art route, not a universal legacy-restoration model. Strong compression should trigger Lanczos or a degradation-trained candidate until a larger anime corpus and human review justify a different policy.
+
+## 2026-09-01 — Reproducible Android QNN resolution matrix
+
+- **Problem:** the high-resolution profiles existed, but selecting spinners by hand and reading occasional UI samples could not produce a repeatable 720p/1080p/1440p/4K comparison.
+- **Action:** added benchmark-only Intent extras for run ID, backend, profile and tuning. The App emits compact JSON Logcat events for the exact configuration, errors and every 10 processed frames, including monotonic observation time plus queue, conversion, ORT and total timings.
+- **Host validator:** a dependency-free Python validator rejects CPU fallback, profile/dimension drift, device errors, malformed telemetry and insufficient post-warm-up samples. It computes raw p50/p95 and observed throughput, then classifies `realtime_30`, `realtime_24` or `offline` separately from the functional gate.
+- **Runner:** the PowerShell matrix runner requires exactly one authorized arm64 physical device, rejects `ro.kernel.qemu=1`, installs the explicitly supplied APK, starts each case by Intent and preserves raw logs/reports only under ignored `device-results/`.
+- **Observed emulator regression:** API 35 x86_64 emitted one CPU configuration plus 49 1080p frame samples. A QNN request emitted a structured `configuration` error because the x86 build has no QNN runtime. This proves the control/telemetry and fail-closed paths only; it does not produce Qualcomm HTP evidence.
+- **Status:** host and emulator automation are ready. The phone was disconnected, so physical v0.14.0 QNN measurements remain pending rather than inferred.

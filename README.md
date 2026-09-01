@@ -1,6 +1,6 @@
 # QuickSR Mobile Player Lab
 
-Android 端图片与视频超分实验 App。当前版本为 **v0.13.0**：使用 Media3 播放本地视频，并通过 ONNX Runtime 在 CPU 或 Qualcomm QNN HTP/NPU 上逐帧运行 QuickSRNetSmall 2×/3×/4×。
+Android 端图片与视频超分实验 App。当前版本为 **v0.14.0**：使用 Media3 播放本地视频，并通过 ONNX Runtime 在 CPU 或 Qualcomm QNN HTP/NPU 上逐帧运行 QuickSRNetSmall 2×/3×/4×。
 
 > 当前状态（2026-09-01）
 >
@@ -8,7 +8,8 @@ Android 端图片与视频超分实验 App。当前版本为 **v0.13.0**：使�
 > - **默认视频档：**`640×360 → 1280×720`、16:9、QNN HTP Sustained。
 > - **既有物理机实测：**此前 v0.12.0 使用 `1280×720 @ 23.976023 fps` 片源；26.860 秒 smoke 中处理 645 帧，折算 `24.0134 fps`，四个约 5 秒 MediaCodec 窗口均 Render=120、Drop=0。
 > - **高分辨率模拟器实测：**API 35 x86_64 CPU 路径已分别生成 `1920×1080`、`2560×1440` 神经纹理，并把 `1920×1080` 神经纹理放到 `3840×2160` GL 画布；这只证明功能和尺寸，不代表 QNN 实时性能。
-> - **构建已通过：**48 个 Java 单测、Android lint、x86_64/arm64-v8a debug assemble；arm64-v8a APK SHA-256 为 `72ad85fa1d8921c0b8a7286a699c3dd45b5aa30cad16f30ff26d0f82c1fd098b`。
+> - **自动化已补齐：**视频 benchmark 可由 Intent 固定运行 ID、后端、分辨率档和 tuning，并向 Logcat 分批输出逐帧原始阶段耗时；设备脚本拒绝模拟器和非 arm64 设备。
+> - **构建已通过：**52 个 Java 单测、6 个设备日志验证器单测、17 个 PC 矩阵单测、Android lint、x86_64/arm64-v8a debug assemble；arm64-v8a APK SHA-256 为 `297d87b0a88a1212f7e55b07c4c51cb789155a60ae3628e3dd92650e4e90dc61`。
 > - **证据边界：**上述 FPS/Drop 是单设备、单 SDR 本地片源的 decoder-renderer 代理结果，不是所有手机/片源的通用 720p 实时承诺，也不是 SurfaceFlinger 最终 latch、A/V sync、画质正确性或长期热稳定性证明。
 
 开发仓库：[znbsf/quicksr-mobile-player-lab](https://github.com/znbsf/quicksr-mobile-player-lab)（private、source-only；不提交模型、APK、私人媒体或原始真机证据）。
@@ -103,6 +104,20 @@ sha256:  3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce
 ```
 
 脚本会验证模型、派生 manifest 与文件 hash，并依次运行 unit tests、lint、assemble 和 source/build identity linkage。构建成功不自动等于真机性能、画质或发布许可通过。
+
+## 真机 QNN 分辨率矩阵
+
+连接一台 arm64 Qualcomm 手机后，可把系统媒体库中已授权给 App 的视频 URI 传给一键脚本：
+
+```powershell
+.\scripts\run-android-qnn-resolution-matrix.ps1 `
+  -ApkPath .\app\build\outputs\apk\debug\app-debug.apk `
+  -VideoUri 'content://media/external/video/media/<id>'
+```
+
+脚本按 [机器可读测试计划](contracts/android-qnn-resolution-plan.json) 运行 720p、原生神经 1080p、原生神经 1440p 和“神经 1080p→GPU 4K”四档。每档丢弃 15 帧 warm-up，检查后端必须为 QNN HTP、tuning 必须为 Sustained、模型/画布尺寸必须吻合且不能有设备错误，再分别报告功能门禁和 `realtime_30`、`realtime_24` 或 `offline` 性能分类。原始日志和报告只写入被 Git 忽略的 `device-results/`。
+
+模拟器只用于 CPU 遥测链路检查。脚本会拒绝 `ro.kernel.qemu=1`，App 自身也会在 x86 构建收到 `QUICKSR_QNN` benchmark 请求时输出结构化配置错误，而不是悄悄回退 CPU。
 
 ## Source-only GitHub 边界
 
