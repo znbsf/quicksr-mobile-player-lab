@@ -25,6 +25,8 @@ plan = load_module("plan_matrix", HERE / "plan_matrix.py")
 baseline = load_module("run_fixed2x_baseline", HERE / "run_fixed2x_baseline.py")
 runtime = load_module("benchmark_runtime", HERE / "benchmark_runtime.py")
 fetch = load_module("fetch_open_assets", HERE / "fetch_open_assets.py")
+route_runner = load_module("run_route_matrix_benchmark", HERE / "run_route_matrix_benchmark.py")
+corpus_summary = load_module("summarize_route_corpus", HERE / "summarize_route_corpus.py")
 
 
 class TargetMatrixTests(unittest.TestCase):
@@ -73,10 +75,12 @@ class TargetMatrixTests(unittest.TestCase):
         self.assertAlmostEqual(realtime_product, route["content_rect"]["scale"], places=9)
         availability = route["scale_component_availability"]
         self.assertEqual(availability["pc"]["quality"], "integrated")
-        self.assertEqual(availability["android"]["quality"], "model-needed")
+        self.assertEqual(availability["android"]["quality"], "integrated")
         self.assertEqual(availability["android"]["realtime"], "integrated")
 
     def test_all_routes_have_pc_quality_and_android_realtime_paths(self) -> None:
+        self.assertEqual(self.matrix["model_inventory"]["android_integrated_scales"], [2.0, 3.0, 4.0])
+        self.assertEqual(self.matrix["model_inventory"]["android_phone_qnn_validated_scales"], [2.0])
         for route in self.matrix["routes"]:
             availability = route["scale_component_availability"]
             self.assertEqual(availability["pc"]["quality"], "integrated", route["id"])
@@ -109,13 +113,22 @@ class OpenBenchmarkContractTests(unittest.TestCase):
     def test_open_assets_are_pinned_and_download_only(self) -> None:
         manifest = json.loads((HERE / "open-assets.json").read_text(encoding="utf-8"))
         self.assertEqual({asset["kind"] for asset in manifest["assets"]}, {"image", "image-sequence"})
+        image_assets = [asset for asset in manifest["assets"] if asset["kind"] == "image"]
+        self.assertEqual(len(image_assets), 3)
+        self.assertEqual(
+            {asset["license"]["spdx"] for asset in image_assets},
+            {"CC-BY-3.0", "CC-BY-4.0"},
+        )
         for asset in manifest["assets"]:
             self.assertEqual(asset["repository_policy"], "download-only-never-commit-media")
-            self.assertEqual(asset["license"]["spdx"], "CC-BY-3.0")
             self.assertTrue(asset["license"]["attribution"])
             self.assertEqual(len(asset.get("sha256", asset.get("checksum_index", {}).get("sha256", ""))), 64)
+        for asset in image_assets:
+            self.assertTrue(asset["domain"])
+            self.assertTrue(set(asset["benchmark_layouts"]).issubset({"16:9", "1:1"}))
+            self.assertTrue(asset["benchmark_layouts"])
 
-    def test_model_registry_has_all_pc_scales_and_one_android_scale(self) -> None:
+    def test_model_registry_has_all_pc_scales_and_android_2x_3x_4x(self) -> None:
         registry = json.loads((HERE / "model-registry.json").read_text(encoding="utf-8"))
         models = {model["scale"]: model for model in registry["models"]}
         self.assertEqual(set(models), {1.5, 2.0, 3.0, 4.0})
@@ -123,8 +136,12 @@ class OpenBenchmarkContractTests(unittest.TestCase):
         self.assertTrue(all(model["path"] and len(model["sha256"]) == 64 for model in models.values()))
         self.assertTrue(all(model["dynamic_path"] and len(model["dynamic_sha256"]) == 64 for model in models.values()))
         self.assertEqual(models[2.0]["integration_scope"], "pc-onnx-cpu-and-android-qnn")
-        for scale in (1.5, 3.0, 4.0):
-            self.assertEqual(models[scale]["integration_scope"], "pc-onnx-cpu")
+        self.assertEqual(models[1.5]["integration_scope"], "pc-onnx-cpu")
+        for scale in (3.0, 4.0):
+            self.assertEqual(
+                models[scale]["integration_scope"],
+                "pc-onnx-cpu-and-android-app-qnn-unverified",
+            )
 
     def test_checkpoint_sources_are_pinned_for_every_scale(self) -> None:
         sources = json.loads((HERE / "model-sources.json").read_text(encoding="utf-8"))
@@ -141,6 +158,62 @@ class OpenBenchmarkContractTests(unittest.TestCase):
         expected = (640, 360)
         for profile in [*profiles["image_profiles"], profiles["video_profile"]]:
             self.assertEqual((profile["input_width"], profile["input_height"]), expected)
+        route_profiles = {profile["id"]: profile for profile in profiles["route_image_profiles"]}
+        self.assertEqual(set(route_profiles), {"clean-lanczos", "legacy-soft-jpeg-q35"})
+        self.assertIsNone(route_profiles["clean-lanczos"]["jpeg_quality"])
+        self.assertEqual(route_profiles["legacy-soft-jpeg-q35"]["jpeg_quality"], 35)
+
+    def test_route_corpus_preserves_requested_layout_and_filters_assets(self) -> None:
+        from PIL import Image
+
+        wide = Image.new("RGB", (400, 300))
+        cropped_wide = route_runner.master_for_layout(wide, "16:9")
+        cropped_square = route_runner.master_for_layout(wide, "1:1")
+        self.assertAlmostEqual(cropped_wide.width / cropped_wide.height, 16 / 9, places=2)
+        self.assertEqual(cropped_square.size, (300, 300))
+        manifest = json.loads((HERE / "open-assets.json").read_text(encoding="utf-8"))
+        selected = route_runner.select_assets(
+            manifest,
+            ["peppercarrot-confront-the-dragon-4k", "peppercarrot-imagination-4k-square"],
+        )
+        self.assertEqual([asset["benchmark_layouts"] for asset in selected], [["16:9"], ["1:1"]])
+
+    def test_corpus_summary_groups_quality_direction(self) -> None:
+        def case(asset: str, degradation: str, quicksr_psnr: float, lanczos_psnr: float) -> dict:
+            return {
+                "asset": asset,
+                "degradation": {"id": degradation},
+                "source": {"layout": "1:1", "width": 360, "height": 360},
+                "canvas": {"width": 1920, "height": 1080},
+                "timing_ms": {"chain_total": 100.0},
+                "quality": {
+                    "quicksr_chain": {
+                        "psnr_db": quicksr_psnr,
+                        "global_ssim": 0.9,
+                        "edge_mae": 0.02,
+                    },
+                    "lanczos": {
+                        "psnr_db": lanczos_psnr,
+                        "global_ssim": 0.8,
+                        "edge_mae": 0.03,
+                    },
+                },
+            }
+
+        payload = corpus_summary.summarize(
+            {
+                "status": "observed-pc-rights-clear-image-route-corpus",
+                "assets": [{"id": "comic", "domain": "open-comic-illustration"}],
+                "cases": [
+                    case("comic", "clean-lanczos", 31.0, 30.0),
+                    case("comic", "legacy-soft-jpeg-q35", 29.0, 30.0),
+                ],
+                "limits": ["fixture"],
+            }
+        )
+        self.assertEqual(payload["overall"]["case_count"], 2)
+        self.assertEqual(payload["overall"]["quicksr_psnr_wins"], 1)
+        self.assertEqual(payload["overall"]["lanczos_psnr_wins_or_ties"], 1)
 
     def test_checksum_index_parser_accepts_coreutils_format(self) -> None:
         from tempfile import TemporaryDirectory

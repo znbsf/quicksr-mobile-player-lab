@@ -11,9 +11,10 @@ export code and reports. The exported 2x graph matched the frozen canonical
 2x ONNX exactly on the validation tensor (`max_abs_error = 0`).
 
 All 18 combinations of 360p/480p/720p, 16:9/square and
-1080p/1440p/2160p have executed on one verified CC BY 3.0 animation frame.
-Square inputs are center-cropped to a square source and fit into the target
-canvas with pillarboxing; they are never stretched.
+1080p/1440p/2160p have executed on a verified CC BY 3.0 animation frame. The
+corpus path additionally uses native 4K CC BY 4.0 Pepper&Carrot 16:9
+illustration and 1:1 comic assets. Assets declare allowed layouts; square inputs
+fit into the target canvas with pillarboxing and are never stretched.
 
 | Scale | PC fixed input/output | Clean p50 | Clean QuickSR - Lanczos PSNR | Blur + JPEG Q35 delta |
 | ---: | --- | ---: | ---: | ---: |
@@ -27,11 +28,26 @@ Lanczos won or tied on 6. Median complete-chain time was 494.8 ms and the
 slowest route, 854x480 to 4K through 3x then 1.5x, took 3313.1 ms on PC CPU.
 These timings are pipeline evidence, not mobile QNN predictions.
 
+The expanded clean-plus-degraded corpus contains 72 cases:
+
+| Slice | Cases | QuickSR PSNR wins | Median QuickSR - Lanczos PSNR |
+| --- | ---: | ---: | ---: |
+| Overall | 72 | 37 | +0.021 dB |
+| Clean Lanczos downsample | 36 | 30 | +0.905 dB |
+| Blur 0.6 + JPEG Q35 4:2:0 | 36 | 7 | -0.296 dB |
+| Open comic/illustration domain | 36 | 25 | +0.256 dB |
+| 4K square comic asset | 18 | 16 | +1.049 dB |
+
+Median complete-chain CPU time was 492.6 ms and the maximum was 3440.2 ms.
+The corpus is rights-clear and more line-art-oriented than Big Buck Bunny, but
+it is still too small and is not representative commercial Japanese anime.
+
 The result is deliberately mixed: QuickSRSmall improves clean low-resolution
-inputs, but loses to Lanczos on the current blur/JPEG degradation and on the
-720p clean routes in this single-frame check. A production anime model needs
-training or fine-tuning for compression, ringing, blur, grain and line art;
-changing only the output scale cannot solve that mismatch.
+inputs, especially the square comic asset, but usually loses to Lanczos on the
+current blur/JPEG degradation. A production route should detect strong legacy
+compression and select a degradation-trained model or Lanczos fallback rather
+than forcing QuickSRSmall. Changing only the output scale cannot solve that
+mismatch.
 
 ## Product routing
 

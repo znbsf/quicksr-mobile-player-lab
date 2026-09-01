@@ -10,7 +10,7 @@ This directory turns the product target into a reproducible host-side contract b
 - Planned neural scales: 1.5x, 2x, 3x and 4x. Non-native scales use an explicit neural-plus-linear or cascade route.
 - Current executable models: locally exported QuickSRNetSmall 1.5x, 2x, 3x and 4x models on ONNX Runtime CPU, with dynamic-shape route models and fixed 640x360 benchmark models.
 
-The generated synthetic frame is original deterministic code and may be used for pipeline checks. The open-asset path uses a SHA-256-verified Big Buck Bunny frame and 15-frame sequence under CC BY 3.0. Neither is a substitute for a representative anime evaluation set or human review.
+The generated synthetic frame is original deterministic code and may be used for pipeline checks. The open-asset path uses a SHA-256-verified Big Buck Bunny frame and 15-frame sequence under CC BY 3.0, plus native 4K Pepper&Carrot 16:9 illustration and 1:1 comic assets under CC BY 4.0. This is a rights-clear animation/comic-style corpus, not a representative sample of commercial Japanese anime or a substitute for human review.
 
 ## Generate the 18-route matrix
 
@@ -27,7 +27,7 @@ The route matrix separates the quality-oriented chain from a mobile real-time fa
 & .\build\fixed512-python-env\Scripts\python.exe .\pc-benchmark\fetch_open_assets.py
 ```
 
-Downloads stay in the Git-ignored `build/pc-benchmark/assets/` cache. The fetcher verifies the single frame by its frozen byte count and SHA-256, and verifies every sequence frame against Xiph's pinned upstream checksum index. Required attribution is stored in `open-assets.json`.
+Downloads stay in the Git-ignored `build/pc-benchmark/assets/` cache. The fetcher verifies every standalone image by frozen byte count and SHA-256, and verifies every sequence frame against Xiph's pinned upstream checksum index. Required attribution and official license-evidence pages are stored in `open-assets.json`.
 
 ## Export the 1.5x/2x/3x/4x variants
 
@@ -72,6 +72,22 @@ Repeat `run_open_image_benchmark.py` with `--model` and `--output` for the 1.5x,
 ```
 
 Reports and previews remain in `build/pc-benchmark/`. The observed results and their limits are summarized in [the model and target-resolution plan](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/docs/MODEL_VARIANT_PLAN.md).
+
+To execute the full rights-clear corpus with clean and legacy blur/JPEG degradations, repeat `--asset` and `--degradation` explicitly, then produce grouped JSON/CSV evidence:
+
+```powershell
+& .\build\fixed512-python-env\Scripts\python.exe .\pc-benchmark\run_route_matrix_benchmark.py `
+  --asset bbb-1080-frame-01000 `
+  --asset peppercarrot-confront-the-dragon-4k `
+  --asset peppercarrot-imagination-4k-square `
+  --degradation clean-lanczos `
+  --degradation legacy-soft-jpeg-q35 `
+  --output .\build\pc-benchmark\open-anime-corpus-route-matrix
+& .\build\fixed512-python-env\Scripts\python.exe .\pc-benchmark\summarize_route_corpus.py `
+  --report .\build\pc-benchmark\open-anime-corpus-route-matrix\report.json
+```
+
+Each asset declares its allowed benchmark layouts. The 4K square comic runs only the 1:1 routes, so it is never stretched into 16:9.
 
 ## Android emulator build
 

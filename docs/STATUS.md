@@ -20,10 +20,10 @@ v0.13.0 已形成可安装的图片与本地视频超分 App，并在 API 35 模
 | 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
 | 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
 | 数值正确性 | OPEN | shape/hash/finite 运行时检查存在；fixed-shape 派生模型在 PC ORT 做等价测试 | 视频路径尚缺同帧 CPU/golden 交替输入与 stale-output 专项验证 |
-| 视觉质量 | OPEN（已有 PC 观察） | SHA-256 核验的 CC BY 3.0 开源动画帧/短片已比较 QuickSR、Lanczos、bilinear；干净输入有局部优势，模糊/JPEG Q35 与视频均未稳定胜过 Lanczos | 仍缺代表性动漫集、感知指标、盲测、字幕/线条/时序专项与手机同帧输出 |
+| 视觉质量 | OPEN（已有 PC 观察） | SHA-256 核验的 CC BY 3.0 动画与 CC BY 4.0 原生 4K 漫画/插画已形成 72 案例；干净输入 QuickSR 胜 30/36、模糊/JPEG Q35 仅胜 7/36、方形漫画胜 16/18 | 仍缺更大规模代表性动漫集、LPIPS/感知指标、盲测、字幕/线条/时序专项与手机同帧输出 |
 | 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
-| PC-first 动漫路线 | PASS（开源动画管线限定） | 1.5×/2×/3×/4× 官方 checkpoint 已导出并验证；18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 路线已在开源动画帧上全部执行；15 帧 H.264 退化视频已跑通 | 素材是 3D 开源动画而非代表性日本动漫；1440p/4K reference 来自 1080p resize |
+| PC-first 动漫路线 | PASS（小型权利清晰语料限定） | 1.5×/2×/3×/4× checkpoint 已导出验证；三资产、两退化、匹配宽高比的 72 案例与 15 帧 H.264 路径已执行；方形素材不拉伸 | 语料仍非代表性日本商业动漫；合成退化不能覆盖所有编码、振铃、颗粒和字幕 |
 | Android 高分辨率档 | PASS（模拟器功能限定） | 3× `640×360→1920×1080`、4× `640×360→2560×1440` 与 `1080p neural→4K GL canvas` 均完成首帧；任意倍率 NCHW→RGBA/alpha 映射已有单测 | 未在物理 Qualcomm 设备验证 HTP placement、内存、画质、连续吞吐或热稳定性；4K 档不是原生 4K 神经输出 |
 | x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；权利清晰 640×360 H.264 clip 的 720p/1080p/1440p/4K 显示档均完成首帧，报告的画布和神经纹理尺寸符合 profile | 模拟器没有 Qualcomm HTP；CPU 单帧耗时和排队不可外推真机实时性能 |
 
@@ -68,7 +68,7 @@ local SDR video
 - QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
 - C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。
 - PC CPU 的固定 640×360 模型 p50 为 1.5× 151.7 ms、2× 188.4 ms、3× 199.8 ms、4× 232.5 ms；它们均远低于 24/30 fps 实时预算。
-- 18 路完整 PC 链路中位 494.8 ms，最慢 480p→4K 为 3313.1 ms。该结果说明高倍率级联适合离线导出，不应直接作为手机实时默认档。
+- 72 案例 PC 语料链路中位 492.6 ms，最慢为 3440.2 ms。该结果说明高倍率级联适合离线导出，不应直接作为手机实时默认档。
 
 ## 仍然开放的门禁
 

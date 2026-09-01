@@ -16,7 +16,8 @@
   ],
   "model_inventory": {
     "pc_integrated_scales": [1.5, 2.0, 3.0, 4.0],
-    "android_integrated_scales": [2.0],
+    "android_integrated_scales": [2.0, 3.0, 4.0],
+    "android_phone_qnn_validated_scales": [2.0],
     "target_scales": [1.5, 2.0, 3.0, 4.0]
   }
 }

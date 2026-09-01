@@ -117,3 +117,10 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Bug found and fixed:** the original output packer assumed every neural result was exactly 2× and used `x >> 1` / `y >> 1` for alpha. The first 3× run therefore failed with an output-buffer length mismatch. The packer now accepts rectangular arbitrary-scale output and maps alpha proportionally; 3×/4× contracts are covered by unit tests.
 - **Observed API 35 x86 CPU checks:** 1080p completed one frame at 432 ms total (`ORT 116 ms`, finite scan `172 ms`); 1440p completed at 651 ms (`ORT 168 ms`, finite scan `311 ms`); the 4K display fallback completed at 476 ms with a `1920×1080` neural texture and `3840×2160` effect canvas. No app/GL exception was observed.
 - **Boundary:** these are first-frame functional checks, not p50/p95, real-time playback proof or Qualcomm HTP evidence. The phone was disconnected, so physical-device 3×/4× placement, sustained throughput, memory pressure, quality and thermals remain open.
+
+## 2026-09-01 — Rights-clear comic/illustration corpus
+
+- **Assets:** added download-only manifests for David Revoy's native 4K `Confront the dragon` 16:9 illustration and `Imagination` square comic. The official source pages state CC BY 4.0; exact bytes, SHA-256, attribution and allowed benchmark layouts are frozen locally.
+- **Runner:** generalized the route matrix to repeated assets and degradations. It center-crops only to the declared 16:9/1:1 layout, never stretches square art, and emits grouped JSON/CSV summaries linked to the raw report hash.
+- **Observed:** 72 cases completed. QuickSR won PSNR on 30/36 clean cases but only 7/36 blur-plus-JPEG-Q35 cases. It won 16/18 cases on the square comic asset. Median chain time was 492.6 ms; maximum was 3440.2 ms.
+- **Product lesson:** current QuickSRSmall is a useful clean line-art route, not a universal legacy-restoration model. Strong compression should trigger Lanczos or a degradation-trained candidate until a larger anime corpus and human review justify a different policy.

@@ -1,5 +1,19 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "route_image_profiles": [
+    {
+      "id": "clean-lanczos",
+      "pre_blur_radius": 0.0,
+      "jpeg_quality": null,
+      "jpeg_subsampling": null
+    },
+    {
+      "id": "legacy-soft-jpeg-q35",
+      "pre_blur_radius": 0.6,
+      "jpeg_quality": 35,
+      "jpeg_subsampling": 2
+    }
+  ],
   "image_profiles": [
     {
       "id": "lanczos-clean-360p",

@@ -61,6 +61,21 @@ ignored build cache. `pc-benchmark/open-assets.json` records their URLs,
 license, attribution and frozen identities. No frame or derived video is
 committed to this source repository.
 
+## Pepper&Carrot benchmark images
+
+- Official source and license page for "Confront the dragon":
+  <https://www.peppercarrot.com/da/viewer/misc-src__2022-10-22_Confront-the-dragon_by-David-Revoy.html>
+- Official source and license page for "Imagination":
+  <https://www.peppercarrot.com/br/viewer/misc-src__2022-01-20_Pepper-and-Carrot_mini-comic_02_Imagination_by-David-Revoy.html>
+- License: Creative Commons Attribution 4.0
+- Required attribution: David Revoy; exact work titles are recorded in
+  `pc-benchmark/open-assets.json`.
+
+The benchmark downloads the native 3840x2160 illustration and 3840x3840 comic
+only into the ignored local cache. Their URLs, byte counts, SHA-256 identities,
+allowed benchmark layouts and attribution are recorded in the manifest. No
+original or derived Pepper&Carrot image is committed to this source repository.
+
 ## ONNX Runtime
 
 - Upstream: <https://github.com/microsoft/onnxruntime>

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "cache_root": "build/pc-benchmark/assets",
   "assets": [
     {
@@ -11,10 +11,50 @@
       "sha256": "93440d856853b5e13d337afc9631b5fab428790182cda561f823dd5158406b59",
       "width": 1920,
       "height": 1080,
+      "domain": "open-3d-animation",
+      "benchmark_layouts": ["16:9", "1:1"],
       "license": {
         "spdx": "CC-BY-3.0",
         "url": "https://peach.blender.org/about/",
         "attribution": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+      },
+      "repository_policy": "download-only-never-commit-media"
+    },
+    {
+      "id": "peppercarrot-confront-the-dragon-4k",
+      "kind": "image",
+      "file_name": "peppercarrot-confront-the-dragon.jpg",
+      "url": "https://www.peppercarrot.com/0_sources/0ther/misc/hi-res/2022-10-22_Confront-the-dragon_by-David-Revoy.jpg",
+      "bytes": 1891310,
+      "sha256": "880890ad26f90fef2c0a04d791fdc0fe6ec0f9fb77597612ec3db38c3ad9cac8",
+      "width": 3840,
+      "height": 2160,
+      "domain": "open-comic-illustration",
+      "benchmark_layouts": ["16:9"],
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/",
+        "evidence_url": "https://www.peppercarrot.com/da/viewer/misc-src__2022-10-22_Confront-the-dragon_by-David-Revoy.html",
+        "attribution": "Confront the dragon by David Revoy"
+      },
+      "repository_policy": "download-only-never-commit-media"
+    },
+    {
+      "id": "peppercarrot-imagination-4k-square",
+      "kind": "image",
+      "file_name": "peppercarrot-imagination.jpg",
+      "url": "https://www.peppercarrot.com/0_sources/0ther/misc/hi-res/2022-01-20_Pepper-and-Carrot_mini-comic_02_Imagination_by-David-Revoy.jpg",
+      "bytes": 3746639,
+      "sha256": "1aefe961af1c85e6d1a99fde1e23e8f8a83f1b8b2eb0d41d3ba470dc26199715",
+      "width": 3840,
+      "height": 3840,
+      "domain": "open-comic-illustration",
+      "benchmark_layouts": ["1:1"],
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/",
+        "evidence_url": "https://www.peppercarrot.com/br/viewer/misc-src__2022-01-20_Pepper-and-Carrot_mini-comic_02_Imagination_by-David-Revoy.html",
+        "attribution": "Pepper and Carrot mini comic 02 Imagination by David Revoy"
       },
       "repository_policy": "download-only-never-commit-media"
     },
