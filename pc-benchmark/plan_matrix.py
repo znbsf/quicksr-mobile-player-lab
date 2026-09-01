@@ -29,22 +29,23 @@ def _close(left: float, right: float) -> bool:
     return math.isclose(left, right, rel_tol=0.0, abs_tol=1e-9)
 
 
-def choose_strategy(scale: float, integrated: set[float]) -> dict[str, Any]:
+def choose_strategy(scale: float, inventories: dict[str, set[float]]) -> dict[str, Any]:
     canonical_scales = [1.5, 2.0, 2.25, 3.0, 4.0, 4.5, 6.0]
     snapped_scale = min(canonical_scales, key=lambda value: abs(value - scale))
     if abs(snapped_scale - scale) / scale > 0.002:
         snapped_scale = scale
-    strategy = _choose_canonical_strategy(snapped_scale, integrated)
+    strategy = _choose_canonical_strategy(snapped_scale)
     if not _close(snapped_scale, scale):
         adjustment = {"kind": "linear", "scale": scale / snapped_scale, "role": "pixel-aspect-fit"}
         strategy["quality_chain"].append(adjustment)
         strategy["realtime_fallback"].append(adjustment)
-    strategy["quality_availability"] = _chain_availability(
-        strategy["quality_chain"], integrated
-    )
-    strategy["realtime_availability"] = _chain_availability(
-        strategy["realtime_fallback"], integrated
-    )
+    strategy["scale_component_availability"] = {
+        scope: {
+            "quality": _chain_availability(strategy["quality_chain"], integrated),
+            "realtime": _chain_availability(strategy["realtime_fallback"], integrated),
+        }
+        for scope, integrated in inventories.items()
+    }
     return strategy
 
 
@@ -53,13 +54,20 @@ def _chain_availability(chain: list[dict[str, Any]], integrated: set[float]) -> 
     return "integrated" if required.issubset(integrated) else "model-needed"
 
 
-def _choose_canonical_strategy(scale: float, integrated: set[float]) -> dict[str, Any]:
+def _choose_canonical_strategy(scale: float) -> dict[str, Any]:
     exact = [1.5, 2.0, 3.0, 4.0]
     if any(_close(scale, value) for value in exact):
         model_scale = next(value for value in exact if _close(scale, value))
         return {
             "quality_chain": [{"kind": "neural", "scale": model_scale}],
-            "realtime_fallback": [{"kind": "neural", "scale": model_scale}],
+            "realtime_fallback": (
+                [{"kind": "neural", "scale": 2.0}]
+                if _close(model_scale, 2.0)
+                else [
+                    {"kind": "neural", "scale": 2.0},
+                    {"kind": "linear", "scale": model_scale / 2.0},
+                ]
+            ),
         }
 
     if _close(scale, 2.25):
@@ -81,8 +89,8 @@ def _choose_canonical_strategy(scale: float, integrated: set[float]) -> dict[str
                 {"kind": "neural", "scale": 1.5},
             ],
             "realtime_fallback": [
-                {"kind": "neural", "scale": 4.0},
-                {"kind": "linear", "scale": 1.125},
+                {"kind": "neural", "scale": 2.0},
+                {"kind": "linear", "scale": 2.25},
             ],
         }
 
@@ -93,8 +101,8 @@ def _choose_canonical_strategy(scale: float, integrated: set[float]) -> dict[str
                 {"kind": "neural", "scale": 2.0},
             ],
             "realtime_fallback": [
-                {"kind": "neural", "scale": 4.0},
-                {"kind": "linear", "scale": 1.5},
+                {"kind": "neural", "scale": 2.0},
+                {"kind": "linear", "scale": 3.0},
             ],
         }
 
@@ -112,12 +120,15 @@ def _choose_canonical_strategy(scale: float, integrated: set[float]) -> dict[str
 
 
 def build_matrix(config: dict[str, Any]) -> dict[str, Any]:
-    integrated = {float(value) for value in config["model_inventory"]["integrated_scales"]}
+    inventories = {
+        "pc": {float(value) for value in config["model_inventory"]["pc_integrated_scales"]},
+        "android": {float(value) for value in config["model_inventory"]["android_integrated_scales"]},
+    }
     routes: list[dict[str, Any]] = []
     for source in config["sources"]:
         for target in config["targets"]:
             content = fit_content(source, target)
-            strategy = choose_strategy(float(content["scale"]), integrated)
+            strategy = choose_strategy(float(content["scale"]), inventories)
             routes.append(
                 {
                     "id": f'{source["id"]}-to-{target["id"]}',
@@ -128,7 +139,7 @@ def build_matrix(config: dict[str, Any]) -> dict[str, Any]:
                 }
             )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "aspect_policy": config["aspect_policy"],
         "model_inventory": config["model_inventory"],
         "route_count": len(routes),

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "cache_root": "build/pc-benchmark/model-sources",
+  "source_repository": "https://github.com/quic/aimet-model-zoo/tree/develop/aimet_zoo_torch/quicksrnet",
+  "license": {
+    "spdx": "BSD-3-Clause",
+    "url": "https://github.com/quic/aimet-model-zoo/blob/develop/LICENSE.md"
+  },
+  "repository_policy": "download-only-never-commit-weights",
+  "checkpoints": [
+    {
+      "scale": 1.5,
+      "file_name": "quicksrnet_small_1.5x_checkpoint_float32.pth.tar",
+      "url": "https://github.com/quic/aimet-model-zoo/releases/download/phase_2_january_artifacts/quicksrnet_small_1.5x_checkpoint_float32.pth.tar",
+      "bytes": 282589,
+      "sha256": "d82f213361f4adc4e85d47728f0a59a3be3014f8013cc6219b0f20507b75487a"
+    },
+    {
+      "scale": 2.0,
+      "file_name": "quicksrnet_small_2x_checkpoint_float32.pth.tar",
+      "url": "https://github.com/quic/aimet-model-zoo/releases/download/phase_2_january_artifacts/quicksrnet_small_2x_checkpoint_float32.pth.tar",
+      "bytes": 282333,
+      "sha256": "d95d70f1d2366cb9c28d99f8c7aa5bb07e1ffeaf5d7e30d9c66ab0fa28c6d0f8"
+    },
+    {
+      "scale": 3.0,
+      "file_name": "quicksrnet_small_3x_checkpoint_float32.pth.tar",
+      "url": "https://github.com/quic/aimet-model-zoo/releases/download/phase_2_january_artifacts/quicksrnet_small_3x_checkpoint_float32.pth.tar",
+      "bytes": 334365,
+      "sha256": "447c210c1f321930f54313328f16aaad6b70fd13c128950c1f82ec2ccbb04a49"
+    },
+    {
+      "scale": 4.0,
+      "file_name": "quicksrnet_small_4x_checkpoint_float32.pth.tar",
+      "url": "https://github.com/quic/aimet-model-zoo/releases/download/phase_2_january_artifacts/quicksrnet_small_4x_checkpoint_float32.pth.tar",
+      "bytes": 407197,
+      "sha256": "e7666018b6aa9590f95b932c8ceb1869e976d93a2a632cf73484e27cc2768978"
+    }
+  ]
+}

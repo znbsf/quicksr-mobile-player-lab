@@ -43,6 +43,24 @@ Consequently, this repository records source URLs, revisions, byte counts,
 and SHA-256 values but does not publish the checkpoint, canonical ONNX model,
 fixed-shape derived ONNX models, or an APK containing those weights.
 
+The PC benchmark records and locally consumes the official QuickSRNetSmall
+1.5x, 2x, 3x and 4x release checkpoints. Their exact URLs, byte counts and
+SHA-256 values are in `pc-benchmark/model-sources.json`; the archives and all
+exported ONNX files remain ignored local inputs.
+
+## Big Buck Bunny benchmark media
+
+- Project and license information: <https://peach.blender.org/about/>
+- Frame mirror and checksum index: <https://media.xiph.org/BBB/BBB-1080-png/>
+- License: Creative Commons Attribution 3.0
+- Required attribution recorded by the project:
+  `(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org`
+
+The benchmark downloads one frame and a 15-frame sequence only into the local
+ignored build cache. `pc-benchmark/open-assets.json` records their URLs,
+license, attribution and frozen identities. No frame or derived video is
+committed to this source repository.
+
 ## ONNX Runtime
 
 - Upstream: <https://github.com/microsoft/onnxruntime>
@@ -112,6 +130,12 @@ repositories and are not vendored here. The standard Gradle 8.14 wrapper JAR
 is included; its properties use the official HTTPS distribution endpoint and
 pin the published distribution SHA-256. Their own licenses and notices
 continue to apply.
+
+The local PC benchmark additionally uses NumPy, ONNX, ONNX Runtime, Pillow,
+PyTorch and imageio-ffmpeg. These packages and imageio-ffmpeg's FFmpeg binary
+are installed only in the ignored local environment; they are not copied into
+the repository or Android package. `pc-benchmark/requirements*.txt` pins the
+versions used for reproducibility but does not relicense those dependencies.
 
 ## Project boundary
 

@@ -15,7 +15,8 @@
     {"id": "2160p", "width": 3840, "height": 2160}
   ],
   "model_inventory": {
-    "integrated_scales": [2.0],
-    "planned_scales": [1.5, 2.0, 3.0, 4.0]
+    "pc_integrated_scales": [1.5, 2.0, 3.0, 4.0],
+    "android_integrated_scales": [2.0],
+    "target_scales": [1.5, 2.0, 3.0, 4.0]
   }
 }

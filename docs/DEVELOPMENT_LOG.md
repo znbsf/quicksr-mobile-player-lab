@@ -101,3 +101,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Hot-path change:** input RGBA arrays are now pooled across frames instead of allocating one large Java byte array for every accepted frame.
 - **PC baseline:** the fixed 640×360→1280×720 model ran 20 measured CPU iterations at mean 184.4 ms, p50 178.5 ms, and nearest-rank p95 209.5 ms on the current host. The deterministic synthetic line-art pair measured 33.47 dB QuickSR PSNR versus 29.55 dB bilinear.
 - **Boundary:** the synthetic scores validate only the benchmark plumbing. Emulator timings do not predict QNN HTP, and this check does not close real-anime quality, final display latch, A/V sync or thermal gates.
+
+## 2026-09-01 — Open animation benchmark and all-scale PC execution
+
+- **Assets:** froze a CC BY 3.0 Big Buck Bunny frame plus a 15-frame sequence. The downloader checks the individual image identity and every sequence frame against Xiph's pinned SHA-256 index; media and reports stay under ignored `build/` paths.
+- **Models:** pinned the official AIMET QuickSRNetSmall 1.5×/2×/3×/4× checkpoint URLs, byte counts and hashes, then exported fixed 640×360 and dynamic-shape ONNX variants. The newly exported 2× output matched the independently frozen canonical model exactly on the validation tensor.
+- **Image result:** on the clean 640×360 frame, QuickSR beat Lanczos by +1.127/+1.039/+0.833/+0.862 dB for 1.5×/2×/3×/4×. With blur plus JPEG Q35 it lost by -0.255/-0.363/-0.460/-0.516 dB.
+- **Video result:** the deterministic 15-frame H.264 CRF28 path ran at 175.1 ms mean inference (5.71 fps) on PC CPU. QuickSR averaged 30.069 dB versus Lanczos 30.203 dB and also had a higher temporal-delta error.
+- **Route result:** all 18 source/layout/target routes executed. QuickSR won clean PSNR on 12 and lost or tied on 6; median chain time was 494.8 ms and maximum was 3313.1 ms.
+- **Lesson:** output scale coverage is no longer the main PC blocker. Degradation robustness, representative anime data, temporal quality and Android high-resolution memory/copy behavior are the next gates. A complete C player rewrite would not address those model-quality or NPU/memory costs.

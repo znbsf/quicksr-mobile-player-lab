@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "cache_root": "build/pc-benchmark/assets",
+  "assets": [
+    {
+      "id": "bbb-1080-frame-01000",
+      "kind": "image",
+      "file_name": "big_buck_bunny_01000.png",
+      "url": "https://media.xiph.org/BBB/BBB-1080-png/big_buck_bunny_01000.png",
+      "bytes": 2532155,
+      "sha256": "93440d856853b5e13d337afc9631b5fab428790182cda561f823dd5158406b59",
+      "width": 1920,
+      "height": 1080,
+      "license": {
+        "spdx": "CC-BY-3.0",
+        "url": "https://peach.blender.org/about/",
+        "attribution": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+      },
+      "repository_policy": "download-only-never-commit-media"
+    },
+    {
+      "id": "bbb-1080-sequence-01000-01014",
+      "kind": "image-sequence",
+      "directory": "bbb-1080-sequence-01000-01014",
+      "url_template": "https://media.xiph.org/BBB/BBB-1080-png/big_buck_bunny_{frame:05d}.png",
+      "file_template": "big_buck_bunny_{frame:05d}.png",
+      "start_frame": 1000,
+      "frame_count": 15,
+      "frame_step": 1,
+      "fps": 15,
+      "width": 1920,
+      "height": 1080,
+      "checksum_index": {
+        "file_name": "BBB-1080-SHA256SUMS.txt",
+        "url": "https://media.xiph.org/BBB/BBB-1080-png/SHA256SUMS.txt",
+        "bytes": 1302665,
+        "sha256": "69e90f3532d211c239422b378f5de23b722595f3cdeb0f7cfd2ff2d61c431302"
+      },
+      "license": {
+        "spdx": "CC-BY-3.0",
+        "url": "https://peach.blender.org/about/",
+        "attribution": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"
+      },
+      "repository_policy": "download-only-never-commit-media"
+    }
+  ]
+}

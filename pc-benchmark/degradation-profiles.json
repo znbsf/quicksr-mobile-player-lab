@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "image_profiles": [
+    {
+      "id": "lanczos-clean-360p",
+      "input_width": 640,
+      "input_height": 360,
+      "pre_blur_radius": 0.0,
+      "jpeg_quality": null,
+      "jpeg_subsampling": null
+    },
+    {
+      "id": "legacy-soft-jpeg-q35-360p",
+      "input_width": 640,
+      "input_height": 360,
+      "pre_blur_radius": 0.6,
+      "jpeg_quality": 35,
+      "jpeg_subsampling": 2
+    }
+  ],
+  "video_profile": {
+    "id": "h264-crf28-420-360p",
+    "input_width": 640,
+    "input_height": 360,
+    "codec": "libx264",
+    "crf": 28,
+    "preset": "medium",
+    "pixel_format": "yuv420p",
+    "scale_filter": "lanczos",
+    "b_frames": 0
+  }
+}

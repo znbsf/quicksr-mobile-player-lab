@@ -63,9 +63,9 @@ Android 端图片与视频超分实验 App。当前版本为 **v0.12.0**：使�
 
 ## PC-first 动漫目标矩阵
 
-`pc-benchmark/` 已把 16:9 360p/480p/720p 与方形低分辨率输入，到 1080p、1440p、2160p 的 18 条路线固化为机器可读计划。方形素材始终等比放大后居中留边，不拉伸；1.5×/2×/3×/4× 以直接模型为目标，2.25×/4.5×/6× 使用显式的混合缩放或级联策略。
+`pc-benchmark/` 已把 16:9 360p/480p/720p 与方形低分辨率输入，到 1080p、1440p、2160p 的 18 条路线固化为机器可读计划并在一张 SHA-256 核验的 CC BY 3.0 开源动画帧上全部执行。方形素材始终等比放大后居中留边，不拉伸；本机已导出并验证 QuickSRNetSmall 1.5×/2×/3×/4× 动态 ONNX，2.25×/4.5×/6× 使用显式的混合缩放或级联策略。
 
-该目录同时提供确定性的合成动漫风 HR/LR 对和本机 ONNX Runtime CPU 基线，用于先验证退化、推理、指标与报告链路。它不会把合成素材分数冒充真实动漫数据集结论，也不会用 PC CPU 时间推断手机 QNN HTP 性能。运行方法见 [PC-first benchmark](pc-benchmark/README.md)。
+该目录同时提供确定性的合成动漫风 HR/LR 对、权利清晰的开源动画图像/短视频、可重复退化、JSON/CSV 报告和本机 ONNX Runtime CPU 基线。18 路干净输入中 QuickSR 的 PSNR 有 12 路胜过 Lanczos、6 路持平或落后；模糊加 JPEG Q35 的四个倍率都落后，说明当前模型并不适配所有古早压缩片源。它不会把开源 3D 动画冒充日本动漫数据集，也不会用 PC CPU 时间推断手机 QNN HTP 性能。运行方法见 [PC-first benchmark](pc-benchmark/README.md)，结果和下一步见 [模型与目标分辨率计划](docs/MODEL_VARIANT_PLAN.md)。
 
 ## 为什么没有重写播放器为 C
 
@@ -123,7 +123,7 @@ sha256:  3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce
 - 所有 Qualcomm 手机或所有 720p 视频都能实时；
 - MediaCodec Render/Drop 等于最终屏幕实际显示帧率；
 - 已有完整的 p50/p95/p99、A/V sync、功耗与降频报告；
-- QuickSR 画质已经在权利清晰的 HR reference 上优于 Lanczos；
+- QuickSR 在权利清晰 HR reference 上对所有倍率、退化和动漫内容都优于 Lanczos；当前只确认干净低分辨率子集有优势，压缩退化和部分 720p 路线会落后；
 - pinned output 单项独立贡献了全部加速；
 - 当前模型权重或含权重 APK 可以公开再分发；
 - 已交付可供其他 App 直接依赖的独立 AAR。

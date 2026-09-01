@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "quicksrnet-small-2x-640x360",
+      "family": "QuickSRNetSmall",
+      "scale": 2.0,
+      "status": "integrated",
+      "path": "derived-models/quicksrnet-small-2x-fixed640x360-dcr.onnx",
+      "sha256": "ad7634d8bd831370c018c2570475cbe71b7f136ccd4da860c509f4619d0c42c1",
+      "dynamic_path": "models/quicksrnet-small-2x-opset17.onnx",
+      "dynamic_sha256": "3db92151af52808135024faf6abdec69e75ca13b5112b6521a9681a27c63f6ce",
+      "input_name": "image",
+      "input_shape": [1, 3, 360, 640],
+      "output_name": "upscaled_image",
+      "output_shape": [1, 3, 720, 1280],
+      "integration_scope": "pc-onnx-cpu-and-android-qnn",
+      "redistribution": "local-only-source-qualified-weight"
+    },
+    {
+      "id": "quicksrnet-small-1.5x-640x360",
+      "family": "QuickSRNetSmall",
+      "scale": 1.5,
+      "status": "integrated",
+      "path": "derived-models/quicksrnet-small-1p5x-fixed640x360.onnx",
+      "sha256": "88a0f965e9afc5a3a1c4ed521398c5a3ae30ef47e068be636d738560a5fe1a93",
+      "dynamic_path": "models/quicksrnet-small-1p5x-opset17.onnx",
+      "dynamic_sha256": "359487419c33d137cb9f565ab5a163ab90693c038b0b2e5ad341131eafb5e140",
+      "input_name": "image",
+      "input_shape": [1, 3, 360, 640],
+      "output_name": "upscaled_image",
+      "output_shape": [1, 3, 540, 960],
+      "integration_scope": "pc-onnx-cpu",
+      "redistribution": "local-only-source-qualified-weight"
+    },
+    {
+      "id": "quicksrnet-small-3x-640x360",
+      "family": "QuickSRNetSmall",
+      "scale": 3.0,
+      "status": "integrated",
+      "path": "derived-models/quicksrnet-small-3x-fixed640x360.onnx",
+      "sha256": "c03d551eec48f4d419290ba774164102cab964a2a65576f8d78a24a42013b077",
+      "dynamic_path": "models/quicksrnet-small-3x-opset17.onnx",
+      "dynamic_sha256": "c8167e8f5309f336ccc3d9f845e09473e88be514dad995aa55b63bcf7c9dd786",
+      "input_name": "image",
+      "input_shape": [1, 3, 360, 640],
+      "output_name": "upscaled_image",
+      "output_shape": [1, 3, 1080, 1920],
+      "integration_scope": "pc-onnx-cpu",
+      "redistribution": "local-only-source-qualified-weight"
+    },
+    {
+      "id": "quicksrnet-small-4x-640x360",
+      "family": "QuickSRNetSmall",
+      "scale": 4.0,
+      "status": "integrated",
+      "path": "derived-models/quicksrnet-small-4x-fixed640x360.onnx",
+      "sha256": "ca3afce1aaad216e30297b0ffce608304cd66e394314c4090a659a963f2f05e2",
+      "dynamic_path": "models/quicksrnet-small-4x-opset17.onnx",
+      "dynamic_sha256": "232dad79840ede9b69823468dd7532622ef3b32bf25de509aa713b92b31c8acf",
+      "input_name": "image",
+      "input_shape": [1, 3, 360, 640],
+      "output_name": "upscaled_image",
+      "output_shape": [1, 3, 1440, 2560],
+      "integration_scope": "pc-onnx-cpu",
+      "redistribution": "local-only-source-qualified-weight"
+    }
+  ]
+}

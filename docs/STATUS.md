@@ -12,7 +12,7 @@ v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 
 
 | 能力或门禁 | 状态 | 已确认 | 尚未证明 |
 | --- | --- | --- | --- |
-| 主机构建 | PASS | v0.12.0；44 个 Java 单测、lint、assemble 均通过；source/build/APK identity 已生成 | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
+| 主机构建 | PASS | v0.12.0；45 个 Java 单测、lint、assemble 均通过；source/build/APK identity 已生成 | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
 | 图片整图 2× | IMPLEMENTED | 系统选图、CPU/QNN HTP、tile/full-image、预览、取消和 PNG 保存路径已实现 | 本轮没有发布权利清晰的图片质量对比或新的数值验收 |
 | Media3 播放器 | IMPLEMENTED | 本地视频、PlayerView、原画/GPU Lanczos/QuickSR CPU/QuickSR QNN HTP 切换已实现 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
@@ -20,10 +20,10 @@ v0.12.0 已形成可安装的图片与本地视频超分 App；在一台 Xiaomi 
 | 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
 | 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
 | 数值正确性 | OPEN | shape/hash/finite 运行时检查存在；fixed-shape 派生模型在 PC ORT 做等价测试 | 视频路径尚缺同帧 CPU/golden 交替输入与 stale-output 专项验证 |
-| 视觉质量 | OPEN | App 可在原画、Lanczos 和 QNN 间切换 | 尚无权利清晰 HR reference 的 PSNR/SSIM/感知评价和盲测 |
+| 视觉质量 | OPEN（已有 PC 观察） | SHA-256 核验的 CC BY 3.0 开源动画帧/短片已比较 QuickSR、Lanczos、bilinear；干净输入有局部优势，模糊/JPEG Q35 与视频均未稳定胜过 Lanczos | 仍缺代表性动漫集、感知指标、盲测、字幕/线条/时序专项与手机同帧输出 |
 | 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
-| PC-first 动漫路线 | IN PROGRESS | 18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 的等比路线已机器化；合成 2× CPU baseline 已跑通 | 真实权利清晰动漫集、1.5×/3×/4× 模型和时间一致性评价仍待接入 |
+| PC-first 动漫路线 | PASS（开源动画管线限定） | 1.5×/2×/3×/4× 官方 checkpoint 已导出并验证；18 条 360p/480p/720p、16:9/1:1 到 1080p/1440p/2160p 路线已在开源动画帧上全部执行；15 帧 H.264 退化视频已跑通 | 素材是 3D 开源动画而非代表性日本动漫；1440p/4K reference 来自 1080p resize；Android 仍只集成 2× 720p 输出 |
 | x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；自生成 640×360/5 秒视频完成 75 帧，状态报告 1280×720 效果画布 | 模拟器没有 Qualcomm HTP；CPU 排队和耗时不可外推真机实时性能 |
 
 ## 最终 APK smoke
@@ -65,6 +65,8 @@ local SDR video
 - 下一轮最有价值的是减少 float NCHW → RGBA → GL upload 的 CPU 成本，并补 raw timing 分布、队列深度和 end-to-end latency。
 - QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
 - C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。
+- PC CPU 的固定 640×360 模型 p50 为 1.5× 151.7 ms、2× 188.4 ms、3× 199.8 ms、4× 232.5 ms；它们均远低于 24/30 fps 实时预算。
+- 18 路完整 PC 链路中位 494.8 ms，最慢 480p→4K 为 3313.1 ms。该结果说明高倍率级联适合离线导出，不应直接作为手机实时默认档。
 
 ## 仍然开放的门禁
 
