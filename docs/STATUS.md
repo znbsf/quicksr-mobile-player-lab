@@ -1,6 +1,6 @@
 # Project status
 
-状态日期：2026-09-02
+状态日期：2026-09-03
 
 本文件区分源码实现、主机构建、真机执行、播放器代理性能、数值正确性、画质、热稳定性和人工审核。任何一项 PASS 都不能代替其他项。
 
@@ -24,6 +24,7 @@ v0.14.0 已形成可安装的图片与本地视频超分 App。一个 arm64 Qual
 | 可复用 AAR | NOT IMPLEMENTED | App 内部 effect/runtime 已形成 | 尚未拆成稳定 API、独立 library module 和兼容矩阵 |
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
 | PC-first 动漫路线 | PASS（小型权利清晰语料限定） | 1.5×/2×/3×/4× checkpoint 已导出验证；三资产、两退化、匹配宽高比的 72 案例与 15 帧 H.264 路径已执行；方形素材不拉伸 | 语料仍非代表性日本商业动漫；合成退化不能覆盖所有编码、振铃、颗粒和字幕 |
+| 动漫模型实验室 | SOURCE AUDIT PASS / BENCHMARK OPEN | 11 个候选已有 commit、源码/权重/数据、I/O、参数/内存与 runtime 矩阵；source-only allowlist 只含 3 个许可和 hash 已闭环 artifact；恰好晋级 Anime4K x2 Small 与 SESR-M5 2x 到下一门禁；line-art/subtitle/edge 合同与评测器已通过协议复算 | 尚无 Anime4K/SESR 候选输出、PC timing、Android shader/QNN、完整内存、thermal 或人工画质证据；DIV2K 仅限学术研究，其他动漫权重/数据开放项见独立报告 |
 | Android 高分辨率档 | PASS（单设备功能限定） | 权利清晰子集在一台物理 Qualcomm 设备完成 1080p 主档、受门禁 1440p 实验档与 4K 显示回退档；4K 是 1080p neural→4K GL canvas | 未证明实时、热稳定、内存压力、最终显示、通用设备或原生 4K 神经输出 |
 | x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；权利清晰 640×360 H.264 clip 的 720p/1080p/1440p/4K 显示档均完成首帧，报告的画布和神经纹理尺寸符合 profile | 模拟器没有 Qualcomm HTP；CPU 单帧耗时和排队不可外推真机实时性能 |
 | 真机 QNN 自动矩阵 | PASS（单设备、离线范围） | 11/11 clip 的 720p 和 1080p 主链均功能 PASS、无报告级失败/设备错误；1440p 和 4K 显示回退在主档门禁后也功能 PASS；严格 QNN 会话配置、绑定收据、样本数和 p50/p95 已验证 | 不证明 realtime、thermal、per-node EP placement/fallback trace、屏幕 latch/A-V sync 或其他设备；详见 [移动子集验证](ANDROID_MOBILE_SUBSET_VALIDATION.md) |
@@ -86,4 +87,4 @@ local SDR video
 6. 在先达到 realtime 前提后，建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
 7. 若要复用，再拆分稳定 AAR API 和 demo app。
 
-优化经验见 [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md)，路线与门禁见 [PLAYER_ROADMAP.md](PLAYER_ROADMAP.md)，动漫模型/cadence/插帧研究与工作拆分见 [ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，发布规则见 [PUBLICATION_BOUNDARY.md](PUBLICATION_BOUNDARY.md)。
+优化经验见 [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md)，路线与门禁见 [PLAYER_ROADMAP.md](PLAYER_ROADMAP.md)，动漫模型/cadence/插帧研究与工作拆分见 [ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，动漫模型实验室结果见 [ANIME_MODEL_LAB_REPORT.md](ANIME_MODEL_LAB_REPORT.md)，发布规则见 [PUBLICATION_BOUNDARY.md](PUBLICATION_BOUNDARY.md)。

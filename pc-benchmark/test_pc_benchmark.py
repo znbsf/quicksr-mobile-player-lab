@@ -27,6 +27,9 @@ runtime = load_module("benchmark_runtime", HERE / "benchmark_runtime.py")
 fetch = load_module("fetch_open_assets", HERE / "fetch_open_assets.py")
 route_runner = load_module("run_route_matrix_benchmark", HERE / "run_route_matrix_benchmark.py")
 corpus_summary = load_module("summarize_route_corpus", HERE / "summarize_route_corpus.py")
+candidate_benchmark = load_module("anime_candidate_benchmark", HERE / "anime_candidate_benchmark.py")
+candidate_validator = load_module("validate_anime_model_candidates", HERE / "validate_anime_model_candidates.py")
+candidate_fetch = load_module("fetch_anime_candidate_artifact", HERE / "fetch_anime_candidate_artifact.py")
 
 
 class TargetMatrixTests(unittest.TestCase):
@@ -229,6 +232,76 @@ class OpenBenchmarkContractTests(unittest.TestCase):
         self.assertTrue(np.isinf(runtime.psnr(reference, reference)))
         self.assertGreater(runtime.global_ssim(reference, reference), runtime.global_ssim(reference, shifted))
         self.assertEqual(runtime.edge_mae(reference, reference), 0.0)
+
+
+class AnimeCandidateLabTests(unittest.TestCase):
+    def test_candidate_manifest_is_fail_closed_and_promotes_exactly_two(self) -> None:
+        payload = json.loads((HERE / "anime-model-candidates.json").read_text(encoding="utf-8"))
+        result = candidate_validator.validate(payload)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["gpu_shader"], "anime4k-upscale-cnn-x2-s")
+        self.assertEqual(result["mobile_neural"], "sesr-m5-2x")
+        self.assertEqual(sum(item["decision"].startswith("advance-") for item in payload["candidates"]), 2)
+
+    def test_candidate_manifest_does_not_treat_video_name_as_temporal(self) -> None:
+        payload = json.loads((HERE / "anime-model-candidates.json").read_text(encoding="utf-8"))
+        candidates = {item["id"]: item for item in payload["candidates"]}
+        self.assertFalse(candidates["realesr-animevideov3"]["temporal"])
+        self.assertEqual(candidates["realesr-animevideov3"]["decision"], "blocked")
+
+    def test_fetch_allowlist_excludes_unclear_candidate_artifacts(self) -> None:
+        payload = json.loads((HERE / "anime-model-candidates.json").read_text(encoding="utf-8"))
+        selected = candidate_fetch.select_artifact(payload, "sesr-m5-2x-float32-checkpoint")
+        self.assertEqual(selected["license"], "BSD-3-Clause")
+        with self.assertRaises(ValueError):
+            candidate_fetch.select_artifact(payload, "realesr-animevideov3")
+
+    def test_synthetic_candidate_contract_is_deterministic_and_covers_required_slices(self) -> None:
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as first_temp, TemporaryDirectory() as second_temp:
+            first = candidate_benchmark.prepare_contract(Path(first_temp), include_open_assets=False)
+            second = candidate_benchmark.prepare_contract(Path(second_temp), include_open_assets=False)
+            self.assertEqual(len(first["cases"]), 2)
+            self.assertEqual({case["degradation"]["id"] for case in first["cases"]}, set(candidate_benchmark.PROFILE_IDS))
+            self.assertTrue(all(case["source"] == "synthetic-lineart-subtitle-edge" for case in first["cases"]))
+            self.assertEqual(
+                [case["input"]["sha256"] for case in first["cases"]],
+                [case["input"]["sha256"] for case in second["cases"]],
+            )
+            self.assertEqual(
+                [case["reference"]["sha256"] for case in first["cases"]],
+                [case["reference"]["sha256"] for case in second["cases"]],
+            )
+
+    def test_candidate_evaluator_accepts_exact_rgb_outputs_and_fails_missing_cases(self) -> None:
+        from tempfile import TemporaryDirectory
+        from PIL import Image
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contract = candidate_benchmark.prepare_contract(root / "contract", include_open_assets=False)
+            outputs = root / "outputs"
+            outputs.mkdir()
+            for case in contract["cases"]:
+                with Image.open(root / "contract" / case["lanczos"]["path"]) as image:
+                    image.convert("RGB").save(outputs / f"{case['id']}.png")
+            report = candidate_benchmark.evaluate_outputs(
+                root / "contract" / "contract.json",
+                outputs,
+                "fixture-candidate",
+                root / "report.json",
+            )
+            self.assertEqual(report["case_count"], 2)
+            self.assertEqual(report["candidate_psnr_wins"], 0)
+            (outputs / f"{contract['cases'][0]['id']}.png").unlink()
+            with self.assertRaises(FileNotFoundError):
+                candidate_benchmark.evaluate_outputs(
+                    root / "contract" / "contract.json",
+                    outputs,
+                    "fixture-candidate",
+                    root / "report-again.json",
+                )
 
 
 if __name__ == "__main__":

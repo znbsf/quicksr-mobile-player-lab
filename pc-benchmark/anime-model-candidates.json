@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "status": "source-audited-device-validation-pending",
+  "audited_at": "2026-09-03",
+  "scope": "Frame-by-frame anime super-resolution only; interpolation is excluded.",
+  "evidence_levels": [
+    "confirmed-upstream",
+    "derived-from-pinned-source",
+    "local-observation",
+    "open"
+  ],
+  "artifacts": [
+    {
+      "id": "anime4k-v4.0.1-upscale-cnn-x2-s",
+      "kind": "source-with-embedded-weights",
+      "url": "https://raw.githubusercontent.com/bloc97/Anime4K/4029bf701ecaa15f163cdc49cffe5501c1acf410/glsl/Upscale/Anime4K_Upscale_CNN_x2_S.glsl",
+      "source_commit": "4029bf701ecaa15f163cdc49cffe5501c1acf410",
+      "bytes": 18638,
+      "sha256": "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4",
+      "license": "MIT",
+      "repository_policy": "download-only-never-commit-third-party-shader"
+    },
+    {
+      "id": "anime4k-v4.0.1-upscale-cnn-x2-m",
+      "kind": "source-with-embedded-weights",
+      "url": "https://raw.githubusercontent.com/bloc97/Anime4K/4029bf701ecaa15f163cdc49cffe5501c1acf410/glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl",
+      "source_commit": "4029bf701ecaa15f163cdc49cffe5501c1acf410",
+      "bytes": 37685,
+      "sha256": "716e02098a68f0d648761f2b96b4dd139e1cb09b174bb369fca3aa34328fff7e",
+      "license": "MIT",
+      "repository_policy": "download-only-never-commit-third-party-shader"
+    },
+    {
+      "id": "sesr-m5-2x-float32-checkpoint",
+      "kind": "checkpoint",
+      "url": "https://github.com/quic/aimet-model-zoo/releases/download/phase_2_february_artifacts/sesr_m5_2x_checkpoint_float32.pth.tar",
+      "source_commit": "59640d130992f984fe71339c27221aa6e3434aef",
+      "bytes": 4028066,
+      "sha256": "0b12bcbc779c5dfdd657cea091d2f12efce603e58ccb8b5cb86813e72055d98d",
+      "license": "BSD-3-Clause",
+      "repository_policy": "download-only-never-commit-weights"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "anime4k-upscale-cnn-x2-s",
+      "class": "gpu-shader",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/bloc97/Anime4K",
+        "version": "v4.0.1",
+        "commit": "4029bf701ecaa15f163cdc49cffe5501c1acf410"
+      },
+      "code_license": {
+        "spdx": "MIT",
+        "status": "confirmed-upstream",
+        "evidence": "https://github.com/bloc97/Anime4K/blob/4029bf701ecaa15f163cdc49cffe5501c1acf410/LICENSE"
+      },
+      "weights": {
+        "form": "embedded-in-shader-source",
+        "license": "MIT",
+        "status": "confirmed-upstream",
+        "artifact_id": "anime4k-v4.0.1-upscale-cnn-x2-s"
+      },
+      "training_data": {
+        "declared": "not identified for this stable shader in the pinned repository",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "dynamic RGB MAIN texture through mpv user-shader hooks",
+        "output": "2x RGB MAIN texture; residual over bilinear upscale",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": 1384,
+        "parameter_status": "derived-from-pinned-source",
+        "runtime_memory": "not published; five shader hook passes require device allocation measurement",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "mpv/libplacebo-compatible GLSL user shader",
+        "android": "proposal only: translate and validate each hook as GLES/compute passes inside a GPU-resident effect",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": true,
+        "observed_here": false,
+        "reason": "Source and embedded-weight license are explicit; no compatible PC shader runner is installed in this worktree."
+      },
+      "decision": "advance-gpu-shader"
+    },
+    {
+      "id": "anime4k-upscale-cnn-x2-m",
+      "class": "gpu-shader",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/bloc97/Anime4K",
+        "version": "v4.0.1",
+        "commit": "4029bf701ecaa15f163cdc49cffe5501c1acf410"
+      },
+      "code_license": {
+        "spdx": "MIT",
+        "status": "confirmed-upstream",
+        "evidence": "https://github.com/bloc97/Anime4K/blob/4029bf701ecaa15f163cdc49cffe5501c1acf410/LICENSE"
+      },
+      "weights": {
+        "form": "embedded-in-shader-source",
+        "license": "MIT",
+        "status": "confirmed-upstream",
+        "artifact_id": "anime4k-v4.0.1-upscale-cnn-x2-m"
+      },
+      "training_data": {
+        "declared": "not identified for this stable shader in the pinned repository",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "dynamic RGB MAIN texture through mpv user-shader hooks",
+        "output": "2x RGB MAIN texture; residual over bilinear upscale",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": 2548,
+        "parameter_status": "confirmed-upstream",
+        "runtime_memory": "not published; nine shader hook passes require device allocation measurement",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "mpv/libplacebo-compatible GLSL user shader",
+        "android": "proposal only: GLES/compute port after the Small timing gate",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": true,
+        "observed_here": false,
+        "reason": "Retained as a quality A/B only; Small has the lower first-device risk."
+      },
+      "decision": "hold-gpu-quality-ab"
+    },
+    {
+      "id": "fsrcnnx-x2-8-0-4-1-small",
+      "class": "gpu-shader",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/igv/FSRCNN-TensorFlow",
+        "version": "release-1.1",
+        "commit": "1aa11ab0e1fc12741fdb84cef31da5619a478670"
+      },
+      "code_license": {
+        "spdx": "NOASSERTION",
+        "status": "open",
+        "evidence": "The repository contains GPL-3.0 and MIT license files without a file mapping."
+      },
+      "weights": {
+        "form": "embedded-in-release-shader",
+        "license": "LGPL-3.0-or-later",
+        "status": "confirmed-upstream",
+        "evidence": "The release shader carries its own LGPL-3.0-or-later header."
+      },
+      "training_data": {
+        "declared": "repository mentions General-100 and classic SR test sets",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "dynamic LUMA texture; TensorFlow training graph is NHWC single-channel",
+        "output": "2x LUMA through sub-pixel convolution",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": 2948,
+        "parameter_status": "derived-from-pinned-source",
+        "runtime_memory": "not published",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "mpv/libplacebo-compatible GLSL release shader",
+        "android": "no validated GLES/Media3 port",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Training-data rights and repository-wide license mapping are unresolved."
+      },
+      "decision": "blocked"
+    },
+    {
+      "id": "fsrcnnx-x2-8-0-4-1-lineart",
+      "class": "gpu-shader",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/igv/FSRCNN-TensorFlow",
+        "version": "release-1.1-archive",
+        "commit": "1aa11ab0e1fc12741fdb84cef31da5619a478670"
+      },
+      "code_license": {
+        "spdx": "NOASSERTION",
+        "status": "open",
+        "evidence": "The repository contains GPL-3.0 and MIT license files without a file mapping."
+      },
+      "weights": {
+        "form": "embedded in checkpoints_params.7z release archive",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "not independently identified for LineArt",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "expected LUMA user-shader path",
+        "output": "expected 2x LUMA",
+        "status": "open"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "not published",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "release archive user shader",
+        "android": "no validated GLES/Media3 port",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "The LineArt artifact was not downloaded because its independent license, hash and training provenance are incomplete."
+      },
+      "decision": "blocked"
+    },
+    {
+      "id": "realesr-animevideov3",
+      "class": "mobile-sisr",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/xinntao/Real-ESRGAN",
+        "version": "v0.2.5.0-model",
+        "commit": "685d429c81888252bdb10f56c7754baededc3823"
+      },
+      "code_license": {
+        "spdx": "BSD-3-Clause",
+        "status": "confirmed-upstream",
+        "evidence": "https://github.com/xinntao/Real-ESRGAN/blob/685d429c81888252bdb10f56c7754baededc3823/LICENSE"
+      },
+      "weights": {
+        "form": "PyTorch release checkpoint and ncnn model",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "not disclosed for AnimeVideo-v3",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "NCHW float RGB frame in PyTorch",
+        "output": "4x NCHW float RGB frame; x1/x2/x3 are post-resize, not native temporal outputs",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": 621424,
+        "parameter_status": "derived-from-pinned-source",
+        "runtime_memory": "not published for Android full-frame use",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "PyTorch or ncnn Vulkan, frame by frame",
+        "android": "ncnn Vulkan is plausible but has no project-device evidence",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "The upstream filename contains video, but the model consumes frames independently; weight and anime-data rights are unresolved."
+      },
+      "decision": "blocked"
+    },
+    {
+      "id": "real-cugan",
+      "class": "mobile-sisr",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/bilibili/ailab/tree/main/Real-CUGAN",
+        "version": "main-audit",
+        "commit": "2799af78ef105b414cc4b796c67c8511acdcdf6f"
+      },
+      "code_license": {
+        "spdx": "MIT",
+        "status": "confirmed-upstream",
+        "evidence": "https://github.com/bilibili/ailab/blob/2799af78ef105b414cc4b796c67c8511acdcdf6f/Real-CUGAN/LICENSE"
+      },
+      "weights": {
+        "form": "separate PyTorch and ncnn model files",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "million-scale high-quality anime patches; identities and rights are not disclosed",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "io": {
+        "input": "frame RGB, PyTorch NCHW",
+        "output": "2x/3x/4x frame RGB",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "tile-dependent; no Android full-frame measurement",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "PyTorch; third-party ncnn Vulkan implementation",
+        "android": "ncnn Vulkan claimed by upstream, not validated in this project",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Tracked ncnn weights exist upstream but have no independent weight/data license closure."
+      },
+      "decision": "blocked"
+    },
+    {
+      "id": "sesr-m5-2x",
+      "class": "mobile-sisr",
+      "temporal": false,
+      "upstream": {
+        "repository": "https://github.com/qualcomm/ai-hub-models/tree/main/src/qai_hub_models/models/sesr_m5",
+        "version": "model-asset-v3",
+        "commit": "b703d5bed55658f85d9259d596a984e81fb4a986"
+      },
+      "code_license": {
+        "spdx": "BSD-3-Clause",
+        "status": "confirmed-upstream",
+        "evidence": "The Qualcomm recipe is BSD-3-Clause; the original Arm implementation is Apache-2.0."
+      },
+      "weights": {
+        "form": "AIMET Model Zoo PyTorch checkpoint",
+        "license": "BSD-3-Clause",
+        "status": "confirmed-upstream",
+        "artifact_id": "sesr-m5-2x-float32-checkpoint"
+      },
+      "training_data": {
+        "declared": "DIV2K",
+        "license": "academic-research-only",
+        "status": "confirmed-upstream"
+      },
+      "io": {
+        "input": "NCHW float32 RGB [0,1], dynamic H/W in the source recipe; runtime channel reordering is enabled",
+        "output": "NCHW float32 RGB [0,1], native 2x for the selected checkpoint",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": 343000,
+        "parameter_status": "confirmed-upstream",
+        "runtime_memory": "AI Hub reports 0-1 MB estimated inference peak only for a 128x128 QCS8550 proxy job; full-frame memory is open",
+        "memory_status": "confirmed-upstream"
+      },
+      "runtime": {
+        "pc": "PyTorch recipe; exportable through Qualcomm AI Hub",
+        "android": "candidate export to ONNX Runtime/QNN or LiteRT QNN delegate; no project-device run",
+        "status": "confirmed-upstream"
+      },
+      "benchmark": {
+        "eligible": true,
+        "observed_here": false,
+        "reason": "Source and checkpoint coordinates are hash-pinned, but safe export and common-corpus inference have not run."
+      },
+      "decision": "advance-mobile-neural"
+    },
+    {
+      "id": "mobile-rrn",
+      "class": "temporal-reference",
+      "temporal": true,
+      "upstream": {
+        "repository": "https://github.com/MediaTek-NeuroPilot/mai22-real-time-video-sr",
+        "version": "main-audit",
+        "commit": "f49d6f56f7eb8f86fcbacdb22487f5638766ab87"
+      },
+      "code_license": {
+        "spdx": "Apache-2.0",
+        "status": "confirmed-upstream"
+      },
+      "weights": {
+        "form": "training output; no hash-pinned official checkpoint established",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "REDS challenge data, registration required",
+        "license": "challenge-terms",
+        "status": "open"
+      },
+      "io": {
+        "input": "NHWC current/previous frame channels [1,320,180,6] plus recurrent state [1,320,180,16]",
+        "output": "4x frame plus updated recurrent state",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "state and device peak not independently established",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "TensorFlow",
+        "android": "TFLite with MediaTek Neuron delegate reference",
+        "status": "confirmed-upstream"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Architecture reference only; recurrent state/PTS semantics are outside this SISR lab."
+      },
+      "decision": "reference-only"
+    },
+    {
+      "id": "fani",
+      "class": "temporal-reference",
+      "temporal": true,
+      "upstream": {
+        "repository": "https://github.com/kyrie2to11/FANI",
+        "version": "main-audit",
+        "commit": "4286315b446de995aacb3fd7463d3a5ed39d96fb"
+      },
+      "code_license": {
+        "spdx": "MIT",
+        "status": "confirmed-upstream"
+      },
+      "weights": {
+        "form": "training output; no hash-pinned official checkpoint established",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "REDS",
+        "license": "challenge-terms",
+        "status": "open"
+      },
+      "io": {
+        "input": "multi-frame TensorFlow input with inter-frame feature aggregation",
+        "output": "super-resolved frame and internal temporal features",
+        "status": "open"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "not independently established",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "TensorFlow 2.11",
+        "android": "TFLite/AI Benchmark reference",
+        "status": "confirmed-upstream"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Architecture reference only; no interpolation or temporal integration is in scope."
+      },
+      "decision": "reference-only"
+    },
+    {
+      "id": "animesr",
+      "class": "temporal-reference",
+      "temporal": true,
+      "upstream": {
+        "repository": "https://github.com/TencentARC/AnimeSR",
+        "version": "main-audit",
+        "commit": "80a24bf7a5270907c703158ff6affb3248bf0dc2"
+      },
+      "code_license": {
+        "spdx": "Apache-2.0",
+        "status": "confirmed-upstream"
+      },
+      "weights": {
+        "form": "Google Drive checkpoints without frozen byte/hash evidence here",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "AVC-Train/AVC-Test available only after signed license agreement",
+        "license": "custom-agreement",
+        "status": "confirmed-upstream"
+      },
+      "io": {
+        "input": "frame sequence, PyTorch/CUDA",
+        "output": "native 4x frame sequence; other scales are post-resize",
+        "status": "confirmed-upstream"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "not independently established",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "PyTorch/CUDA research stack",
+        "android": "no official mobile runtime path",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Quality/training reference only; checkpoint and dataset agreements are not accepted in this task."
+      },
+      "decision": "reference-only"
+    },
+    {
+      "id": "vqd-sr",
+      "class": "temporal-reference",
+      "temporal": true,
+      "upstream": {
+        "repository": "https://github.com/researchmm/VQD-SR",
+        "version": "main-audit",
+        "commit": "d7fd5e0d97ef08c5c329e3c55870899f7cd9f473"
+      },
+      "code_license": {
+        "spdx": "NOASSERTION",
+        "status": "open",
+        "evidence": "No top-level license file was found at the pinned commit."
+      },
+      "weights": {
+        "form": "Google Drive checkpoints without frozen byte/hash evidence here",
+        "license": "NOASSERTION",
+        "status": "open"
+      },
+      "training_data": {
+        "declared": "RAL plus AVC-Train under separate request agreements",
+        "license": "custom-agreement",
+        "status": "confirmed-upstream"
+      },
+      "io": {
+        "input": "animation frame sequence plus learned degradation prior",
+        "output": "4x restored frame sequence",
+        "status": "open"
+      },
+      "size": {
+        "parameters": null,
+        "parameter_status": "open",
+        "runtime_memory": "paper training uses eight V100 GPUs; mobile peak is not established",
+        "memory_status": "open"
+      },
+      "runtime": {
+        "pc": "PyTorch/CUDA research stack",
+        "android": "no official mobile runtime path",
+        "status": "open"
+      },
+      "benchmark": {
+        "eligible": false,
+        "observed_here": false,
+        "reason": "Quality/training reference only; source, checkpoint and dataset gates remain open."
+      },
+      "decision": "reference-only"
+    }
+  ],
+  "promotion": {
+    "gpu_shader": "anime4k-upscale-cnn-x2-s",
+    "mobile_neural": "sesr-m5-2x",
+    "meaning": "Advance to the next PC/export and device gates only; no Android integration or realtime claim."
+  }
+}

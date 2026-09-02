@@ -2,6 +2,12 @@
 
 This directory turns the product target into a reproducible host-side contract before adding more Android/QNN variants.
 
+The separate anime candidate lab is documented in
+`docs/ANIME_MODEL_LAB_REPORT.md`. Its
+machine-readable license/source/layout/runtime audit is
+`anime-model-candidates.json`; it advances only Anime4K x2 Small and SESR-M5
+2x to their next evidence gates.
+
 ## Scope
 
 - Inputs: 16:9 360p, 480p, 720p and square 360/480/720 sources.
@@ -11,6 +17,35 @@ This directory turns the product target into a reproducible host-side contract b
 - Current executable models: locally exported QuickSRNetSmall 1.5x, 2x, 3x and 4x models on ONNX Runtime CPU, with dynamic-shape route models and fixed 640x360 benchmark models.
 
 The generated synthetic frame is original deterministic code and may be used for pipeline checks. The open-asset path uses a SHA-256-verified Big Buck Bunny frame and 15-frame sequence under CC BY 3.0, plus native 4K Pepper&Carrot 16:9 illustration and 1:1 comic assets under CC BY 4.0. This is a rights-clear animation/comic-style corpus, not a representative sample of commercial Japanese anime or a substitute for human review.
+
+## Anime candidate contract
+
+Validate the candidate audit and prepare the original line-art/subtitle/edge
+fixture with the same clean and blur/JPEG profiles:
+
+```powershell
+python .\pc-benchmark\validate_anime_model_candidates.py
+python .\pc-benchmark\anime_candidate_benchmark.py prepare `
+  --output .\build\pc-benchmark\anime-candidate-contract
+```
+
+Candidate adapters write one exact RGB 2x PNG per case. The evaluator fails on
+missing files, mode or dimensions and compares against Lanczos with the same
+PSNR, global SSIM and edge MAE implementation:
+
+```powershell
+python .\pc-benchmark\anime_candidate_benchmark.py evaluate `
+  --contract .\build\pc-benchmark\anime-candidate-contract\contract.json `
+  --outputs .\build\pc-benchmark\candidate-outputs `
+  --candidate-id example `
+  --output .\build\pc-benchmark\candidate-report.json
+```
+
+This protocol measures supplied frame outputs, not runtime, memory, temporal
+stability or Android compatibility. Add `--include-open-assets` only after the
+existing hash-verified asset fetch step. License-cleared candidate artifacts
+can be fetched individually with `fetch_anime_candidate_artifact.py`; the
+allowlist deliberately excludes candidates with unresolved weight rights.
 
 ## Generate the 18-route matrix
 
