@@ -185,6 +185,29 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual("FAIL", result["functional_gate"])
         self.assertTrue(any("bounded worker queue" in failure for failure in result["failures"]))
 
+    def test_missing_frame_event_is_rejected(self):
+        events = self.events()
+        del events[2]["samples"][1]
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("missing or out of order" in failure for failure in result["failures"]))
+
+    def test_out_of_order_frame_event_is_rejected(self):
+        events = self.events()
+        events[2]["samples"][1], events[2]["samples"][2] = (
+            events[2]["samples"][2], events[2]["samples"][1]
+        )
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("missing or out of order" in failure for failure in result["failures"]))
+
+    def test_duplicate_frame_event_is_rejected(self):
+        events = self.events()
+        events[2]["samples"].append(dict(events[2]["samples"][1]))
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("duplicate frameId" in failure for failure in result["failures"]))
+
     def test_unmeasured_final_display_cannot_be_claimed_measured(self):
         events = self.events()
         events[0]["finalDisplayMeasurement"] = "measured"
@@ -199,6 +222,14 @@ class ValidatorTests(unittest.TestCase):
             events, errors = validator.load_events(path, "run-1")
         self.assertEqual(1, len(events))
         self.assertEqual([], errors)
+
+    def test_log_loader_rejects_truncated_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "device.log"
+            path.write_text('{"schemaVersion":2,"event":"frame_batch"\n', encoding="utf-8")
+            events, errors = validator.load_events(path, "run-1")
+        self.assertEqual([], events)
+        self.assertTrue(any("line 1" in error for error in errors))
 
     def test_cli_records_plan_and_raw_log_hashes(self):
         with tempfile.TemporaryDirectory() as directory:

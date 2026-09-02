@@ -232,6 +232,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                 )
 
     samples_by_frame: dict[int, dict[str, Any]] = {}
+    ordered_samples: list[dict[str, Any]] = []
     for batch in (event for event in events if event.get("event") == "frame_batch"):
         for field, expected in {
             "schemaVersion": 2,
@@ -258,6 +259,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                 failures.append(f"duplicate frameId: {frame_id}")
                 continue
             samples_by_frame[frame_id] = sample
+            ordered_samples.append(sample)
 
             for field in RAW_TIMESTAMP_FIELDS:
                 value = sample.get(field)
@@ -297,10 +299,17 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                     and sample["maxQueueDepth"] > MEASUREMENT_CONTRACT["workerQueueCapacity"]:
                 failures.append(f"frame {frame_id} exceeds bounded worker queue capacity")
 
-    ordered = [samples_by_frame[key] for key in sorted(samples_by_frame)]
+    ordered = ordered_samples
+    if ordered and ordered[0]["frameId"] != 1:
+        failures.append(
+            f"processed frame sequence must start at frameId 1, got {ordered[0]['frameId']}"
+        )
     for previous, current in zip(ordered, ordered[1:]):
-        if current["frameId"] <= previous["frameId"]:
-            failures.append("frame identities are not strictly increasing")
+        if current["frameId"] != previous["frameId"] + 1:
+            failures.append(
+                "processed frame identities are missing or out of order: "
+                f"{previous['frameId']} -> {current['frameId']}"
+            )
         if current.get("generation") == previous.get("generation"):
             if current.get("generationFrameId", 0) <= previous.get("generationFrameId", 0):
                 failures.append("generation-local frame identities are not strictly increasing")
@@ -391,8 +400,8 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         for field in COUNTER_FIELDS:
             if is_int(latest.get(field)):
                 latest_counters[field] = latest[field]
-        if latest_counters.get("processedCount", -1) < len(ordered):
-            failures.append("processed counter is smaller than emitted processed frame samples")
+        if latest_counters.get("processedCount", -1) != len(ordered):
+            failures.append("processed counter does not equal emitted processed frame samples")
         accepted_count = latest_counters.get("acceptedCount")
         terminal_count = sum(latest_counters.get(field, 0)
                              for field in ("processedCount", "droppedCount", "bypassedCount"))
@@ -400,6 +409,10 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             failures.append("terminal frame counters exceed acceptedCount")
         if latest_counters.get("lateCount", 0) > latest_counters.get("processedCount", 0):
             failures.append("lateCount exceeds processedCount")
+        if latest_counters.get("droppedCount", 0) != 0:
+            failures.append("resolution-matrix run contains dropped frames")
+        if latest_counters.get("bypassedCount", 0) != 0:
+            failures.append("resolution-matrix run contains bypassed frames")
 
     return {
         "schema_version": 3,

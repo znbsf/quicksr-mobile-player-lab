@@ -43,6 +43,8 @@ public final class VideoBenchmarkTelemetryTest {
     public void frameBatchKeepsRawStageTimingsAndMonotonicObservation() {
         String value = VideoBenchmarkTelemetry.frameBatchJson("run-frames",
                 Arrays.asList(stats(1, 0L, 17L, 9L), stats(2, 41_667L, 18L, 10L)));
+        assertEquals(1, VideoBenchmarkTelemetry.FRAME_BATCH_SIZE);
+        assertTrue(value.length() <= VideoBenchmarkTelemetry.MAX_LOGCAT_MESSAGE_CHARS);
         assertTrue(value.contains("\"event\":\"frame_batch\""));
         assertTrue(value.contains("\"mode\":\"QNN_HTP\""));
         assertTrue(value.contains("\"tuning\":\"SUSTAINED\""));
@@ -99,6 +101,21 @@ public final class VideoBenchmarkTelemetryTest {
     public void benchmarkPlaybackRepeatModeNeverLeaksToNormalPlayback() {
         assertEquals(Player.REPEAT_MODE_ONE, SuperResolutionActivity.repeatModeForBenchmark(true));
         assertEquals(Player.REPEAT_MODE_OFF, SuperResolutionActivity.repeatModeForBenchmark(false));
+    }
+
+    @Test
+    public void identicalVideoEffectConfigurationIsNotAppliedTwice() {
+        assertTrue(SuperResolutionActivity.shouldApplyVideoEffect(null, "QNN:720p:run-1"));
+        assertFalse(SuperResolutionActivity.shouldApplyVideoEffect(
+                "QNN:720p:run-1",
+                "QNN:720p:run-1"));
+        assertTrue(SuperResolutionActivity.shouldApplyVideoEffect(
+                "QNN:720p:run-1",
+                "QNN:1080p:run-1"));
+        assertTrue(SuperResolutionActivity.shouldApplyVideoEffect(
+                "QNN:720p:run-1",
+                "QNN:720p:run-2"));
+        assertEquals(5_000L, SuperResolutionActivity.PLAYER_RELEASE_TIMEOUT_MS);
     }
 
     @Test

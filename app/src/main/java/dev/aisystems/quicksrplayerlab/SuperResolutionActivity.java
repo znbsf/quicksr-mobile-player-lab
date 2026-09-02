@@ -56,6 +56,7 @@ public final class SuperResolutionActivity extends Activity {
     private static final int REQUEST_IMAGE = 5101;
     private static final int REQUEST_SAVE_IMAGE = 5102;
     private static final int REQUEST_VIDEO = 5103;
+    static final long PLAYER_RELEASE_TIMEOUT_MS = 5_000L;
     private static final String PLAYER_PREFERENCES = "quicksr-player";
     private static final String LAST_VIDEO_URI = "last-video-uri";
     private static final String LAST_VIDEO_NAME = "last-video-name";
@@ -101,6 +102,7 @@ public final class SuperResolutionActivity extends Activity {
     private TextView videoStatus;
     private PlayerView playerView;
     private ExoPlayer player;
+    private String appliedVideoEffectKey;
     private Future<?> activeImageTask;
     private Future<?> activeSaveTask;
     private Bitmap latestSource;
@@ -135,7 +137,12 @@ public final class SuperResolutionActivity extends Activity {
             imageBackendSpinner.setSelection(QuickSrSession.Mode.CPU.ordinal());
             imageStatus.setText("x86_64 模拟器构建：使用 CPU 验证 UI/Media3；不提供 QNN HTP。");
         }
-        player = new ExoPlayer.Builder(this).build();
+        // Releasing an active 1080p QNN frame and closing the HTP session takes longer than
+        // Media3's short default release window on the physical target. Keep the bound finite,
+        // but allow the shader's orderly worker cleanup to complete without a false player error.
+        player = new ExoPlayer.Builder(this)
+                .setReleaseTimeoutMs(PLAYER_RELEASE_TIMEOUT_MS)
+                .build();
         playerView.setPlayer(player);
         player.addListener(new Player.Listener() {
             @Override
@@ -1064,7 +1071,12 @@ public final class SuperResolutionActivity extends Activity {
         videoQnnTuningSpinner.setEnabled(videoMode == VideoMode.QUICKSR_QNN);
         videoTargetSpinner.setEnabled(videoMode == VideoMode.GPU_LANCZOS);
         if (videoMode == VideoMode.ORIGINAL) {
+            String effectKey = "ORIGINAL";
+            if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
+                return;
+            }
             player.setVideoEffects(Collections.emptyList());
+            appliedVideoEffectKey = effectKey;
             updateVideoStatus("原始视频路径：未应用上采样效果。");
             return;
         }
@@ -1092,6 +1104,15 @@ public final class SuperResolutionActivity extends Activity {
             final VideoEvidenceStore.CaptureSpec effectCaptureSpec = effectBenchmarkRunId == null
                     ? VideoEvidenceStore.CaptureSpec.none()
                     : benchmarkCaptureSpec;
+            String effectKey = neuralVideoEffectKey(
+                    backend,
+                    profile,
+                    tuning,
+                    effectBenchmarkRunId,
+                    effectCaptureSpec);
+            if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
+                return;
+            }
             Effect effect = new QuickSrVideoEffect(
                     getApplicationContext(),
                     backend,
@@ -1192,6 +1213,7 @@ public final class SuperResolutionActivity extends Activity {
                     profile.canvasHeight(),
                     Presentation.LAYOUT_SCALE_TO_FIT);
             player.setVideoEffects(Arrays.asList(outputCanvas, effect));
+            appliedVideoEffectKey = effectKey;
             updateVideoStatus(
                     backend + " · " + tuning + " 已开启：每帧 " + profile +
                             "，输出画布 " + profile.canvasWidth() + "×" + profile.canvasHeight() + "。" +
@@ -1204,12 +1226,36 @@ public final class SuperResolutionActivity extends Activity {
         }
         int position = Math.max(0, videoTargetSpinner.getSelectedItemPosition());
         int[] target = VIDEO_TARGETS[position];
+        String effectKey = "GPU_LANCZOS:" + target[0] + "x" + target[1];
+        if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
+            return;
+        }
         Effect effect = LanczosResample.scaleToFitWithFlexibleOrientation(
                 target[0],
                 target[1]);
         player.setVideoEffects(Collections.singletonList(effect));
+        appliedVideoEffectKey = effectKey;
         updateVideoStatus(
                 "GPU Lanczos 已开启，目标边界 " + target[0] + "×" + target[1] + "。");
+    }
+
+    static boolean shouldApplyVideoEffect(String appliedKey, String requestedKey) {
+        return !requestedKey.equals(appliedKey);
+    }
+
+    private static String neuralVideoEffectKey(
+            QuickSrSession.Mode backend,
+            QuickSrVideoEffect.Profile profile,
+            QuickSrSession.Tuning tuning,
+            String benchmarkRunId,
+            VideoEvidenceStore.CaptureSpec captureSpec) {
+        return "NEURAL:"
+                + backend + ':'
+                + profile + ':'
+                + tuning + ':'
+                + (benchmarkRunId == null ? "interactive" : benchmarkRunId) + ':'
+                + captureSpec.telemetryKind() + ':'
+                + captureSpec.value();
     }
 
     private void updateVideoEffectButton() {

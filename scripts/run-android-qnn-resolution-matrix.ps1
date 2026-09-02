@@ -235,16 +235,42 @@ function Wait-WithTelemetryDrains {
     if ($RunSeconds -le 0 -or $DrainIntervalSeconds -le 0) {
         throw 'Telemetry drain duration and interval must be positive.'
     }
-    $remainingSeconds = $RunSeconds
-    while ($remainingSeconds -gt 0) {
-        $sleepSeconds = [Math]::Min($DrainIntervalSeconds, $remainingSeconds)
-        Start-Sleep -Seconds $sleepSeconds
-        $drainStatus = Save-CaseRawLog -TargetDeviceArguments $TargetDeviceArguments `
-            -RawLogPath $RawLogPath -TelemetryTag $TelemetryTag -Append -ClearAfterCapture
-        if ($drainStatus -ne 'CAPTURED') {
-            return $drainStatus
+    # Stream continuously instead of alternating `logcat -d` and `logcat -c`. The old
+    # dump-then-clear sequence had an unavoidable gap where complete frame events written after
+    # the dump but before the clear were lost. Start after the case-specific logcat clear; logcat
+    # first drains the already-buffered configuration event and then follows new events.
+    $stderrPath = "$RawLogPath.stderr.log"
+    $captureArguments = $TargetDeviceArguments + @(
+        'logcat', '-v', 'raw', '-s', "${TelemetryTag}:V", '*:S'
+    )
+    try {
+        $capture = Start-Process -FilePath $script:adb -ArgumentList $captureArguments `
+            -RedirectStandardOutput $RawLogPath -RedirectStandardError $stderrPath `
+            -PassThru -WindowStyle Hidden
+        $remainingSeconds = $RunSeconds
+        while ($remainingSeconds -gt 0) {
+            $sleepSeconds = [Math]::Min($DrainIntervalSeconds, $remainingSeconds)
+            Start-Sleep -Seconds $sleepSeconds
+            if ($capture.HasExited) {
+                return "CAPTURE_FAILED_EXIT_$($capture.ExitCode)"
+            }
+            $remainingSeconds -= $sleepSeconds
         }
-        $remainingSeconds -= $sleepSeconds
+    } catch {
+        Add-Content -LiteralPath $RawLogPath -Encoding UTF8 -Value (
+            "raw log streaming exception: $(Get-FailureMessage $_)"
+        )
+        return 'CAPTURE_FAILED_EXCEPTION'
+    } finally {
+        if ($null -ne $capture -and -not $capture.HasExited) {
+            $capture.Kill()
+            $capture.WaitForExit()
+        }
+    }
+    if ((Test-Path -LiteralPath $stderrPath -PathType Leaf) -and
+            (Get-Item -LiteralPath $stderrPath).Length -gt 0) {
+        Get-Content -LiteralPath $stderrPath | Add-Content -LiteralPath $RawLogPath -Encoding UTF8
+        return 'CAPTURE_FAILED_STDERR'
     }
     return 'CAPTURED'
 }
@@ -845,8 +871,7 @@ foreach ($case in $cases) {
         $phase = 'force-stop-after-wait'
         Invoke-Adb ($deviceArgs + @('shell', 'am', 'force-stop', $plan.app_package)) | Out-Null
         $phase = 'extract'
-        $rawLogCaptureStatus = Save-CaseRawLog -TargetDeviceArguments $deviceArgs -RawLogPath $rawLog `
-            -TelemetryTag $plan.telemetry_tag -Append
+        $rawLogCaptureStatus = $periodicDrainStatus
         if ($CaptureOnly) {
             $phase = 'capture-only-pointer'
             $captureObservation = if ($rawLogCaptureStatus -eq 'CAPTURED') {

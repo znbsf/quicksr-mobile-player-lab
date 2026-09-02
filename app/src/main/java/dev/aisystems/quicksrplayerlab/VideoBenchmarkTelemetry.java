@@ -15,7 +15,10 @@ final class VideoBenchmarkTelemetry {
     static final String EXTRA_VIDEO_TUNING = "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING";
     static final String EXTRA_CAPTURE_FRAME = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_FRAME";
     static final String EXTRA_CAPTURE_PTS_US = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_PTS_US";
-    static final int FRAME_BATCH_SIZE = 10;
+    // Android's logger truncates messages around 4 KiB. One fully instrumented frame is already
+    // roughly 1.5 KiB, so emit it alone and fail closed if future schema growth crosses the guard.
+    static final int FRAME_BATCH_SIZE = 1;
+    static final int MAX_LOGCAT_MESSAGE_CHARS = 3_800;
 
     private VideoBenchmarkTelemetry() {}
 
@@ -176,7 +179,12 @@ final class VideoBenchmarkTelemetry {
             value.append('}');
         }
         value.append(']');
-        return finish(value);
+        String json = finish(value);
+        if (json.length() > MAX_LOGCAT_MESSAGE_CHARS) {
+            throw new IllegalStateException(
+                    "benchmark frame event exceeds the safe logcat payload: " + json.length());
+        }
+        return json;
     }
 
     static String pipelineSnapshotJson(
