@@ -650,6 +650,98 @@ public final class QuickSrVideoEffectTest {
     }
 
     @Test
+    public void cadenceReuseWaitsForTheExactCompletedInferenceReference() {
+        assertFalse(QuickSrVideoEffect.cadenceCacheMatches(0, 0L, 1L, 0, 0L, 2L));
+        assertTrue(QuickSrVideoEffect.cadenceCacheMatches(0, 0L, 2L, 0, 0L, 2L));
+        assertFalse(QuickSrVideoEffect.cadenceCacheMatches(0, 0L, 2L, 1, 0L, 2L));
+        assertFalse(QuickSrVideoEffect.cadenceCacheMatches(0, 0L, 2L, 0, 1L, 2L));
+    }
+
+    @Test
+    public void cadencePixelCacheIsAllocatedOnceAndOverwrittenInPlace() {
+        byte[] firstSource = {1, 2, 3, 4};
+        byte[] cache = QuickSrVideoEffect.copyIntoCadenceCache(firstSource, null);
+        byte[] secondSource = {5, 6, 7, 8};
+        byte[] reused = QuickSrVideoEffect.copyIntoCadenceCache(secondSource, cache);
+
+        assertSame(cache, reused);
+        assertTrue(Arrays.equals(secondSource, reused));
+    }
+
+    @Test
+    public void flushAndReleaseClearCadenceCacheAndReferenceIdentity() throws Exception {
+        Class<?> processorClass = Arrays.stream(QuickSrVideoEffect.class.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("ProcessorImpl"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> processorConstructor = processorClass.getDeclaredConstructor(
+                Context.class,
+                QuickSrSession.Mode.class,
+                QuickSrVideoEffect.Profile.class,
+                QuickSrVideoEffect.StatsListener.class);
+        processorConstructor.setAccessible(true);
+        Object processor = processorConstructor.newInstance(
+                null,
+                QuickSrSession.Mode.CPU,
+                QuickSrVideoEffect.Profile.FAST_64,
+                null);
+        Class<?> cacheClass = Arrays.stream(processorClass.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("CachedSrOutput"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> cacheConstructor = cacheClass.getDeclaredConstructor(
+                byte[].class, int.class, long.class, long.class, String.class);
+        cacheConstructor.setAccessible(true);
+        Field cacheField = processorClass.getDeclaredField("cachedSrOutput");
+        Field cachePixelsField = processorClass.getDeclaredField("cadenceCachePixels");
+        Field latestGeneration = processorClass.getDeclaredField("latestInferredGeneration");
+        Field latestStreamEpoch = processorClass.getDeclaredField("latestInferredStreamEpoch");
+        Field latestFrame = processorClass.getDeclaredField("latestInferredFrameId");
+        cacheField.setAccessible(true);
+        cachePixelsField.setAccessible(true);
+        latestGeneration.setAccessible(true);
+        latestStreamEpoch.setAccessible(true);
+        latestFrame.setAccessible(true);
+        Method flush = processorClass.getDeclaredMethod("advanceGenerationForFlush");
+        flush.setAccessible(true);
+        Method release = processorClass.getDeclaredMethod("release");
+        release.setAccessible(true);
+
+        Object cache = cacheConstructor.newInstance(new byte[16], 0, 0L, 7L, "crc");
+        cacheField.set(processor, cache);
+        cachePixelsField.set(processor, new byte[16]);
+        latestGeneration.setInt(processor, 0);
+        latestStreamEpoch.setLong(processor, 0L);
+        latestFrame.setLong(processor, 7L);
+        flush.invoke(processor);
+
+        assertEquals(null, cacheField.get(processor));
+        assertEquals(null, cachePixelsField.get(processor));
+        assertEquals(Integer.MIN_VALUE, latestGeneration.getInt(processor));
+        assertEquals(-1L, latestStreamEpoch.getLong(processor));
+        assertEquals(-1L, latestFrame.getLong(processor));
+
+        cacheField.set(processor, cacheConstructor.newInstance(
+                new byte[16], 1, 1L, 8L, "crc2"));
+        cachePixelsField.set(processor, new byte[16]);
+        release.invoke(processor);
+        assertEquals(null, cacheField.get(processor));
+        assertEquals(null, cachePixelsField.get(processor));
+        release.invoke(processor);
+        assertEquals(null, cacheField.get(processor));
+    }
+
+    @Test
+    public void serialInputStreamBoundaryForcesFirstFrameToProcessWithoutFlush() throws Exception {
+        assertInputStreamBoundaryIsolation(false);
+    }
+
+    @Test
+    public void overlapInputStreamBoundaryForcesFirstFrameToProcessWithoutFlush() throws Exception {
+        assertInputStreamBoundaryIsolation(true);
+    }
+
+    @Test
     public void overlapTensorAllocationFailureReturnsSemaphorePermit() throws Exception {
         Object processor = newOverlapProcessor();
         Class<?> processorClass = processor.getClass();
@@ -823,6 +915,113 @@ public final class QuickSrVideoEffectTest {
                 true,
                 null,
                 (LongSupplier) System::nanoTime);
+    }
+
+    private static void assertInputStreamBoundaryIsolation(boolean overlap) throws Exception {
+        Class<?> processorClass = Arrays.stream(QuickSrVideoEffect.class.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("ProcessorImpl"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> constructor = processorClass.getDeclaredConstructor(
+                Context.class,
+                QuickSrSession.Mode.class,
+                QuickSrVideoEffect.Profile.class,
+                QuickSrSession.Tuning.class,
+                String.class,
+                VideoEvidenceStore.CaptureSpec.class,
+                boolean.class,
+                AnimeCadenceAnalyzer.Mode.class,
+                QuickSrVideoEffect.StatsListener.class,
+                LongSupplier.class);
+        constructor.setAccessible(true);
+        Object processor = constructor.newInstance(
+                null,
+                QuickSrSession.Mode.CPU,
+                QuickSrVideoEffect.Profile.FAST_64,
+                QuickSrSession.Tuning.BASELINE,
+                null,
+                VideoEvidenceStore.CaptureSpec.none(),
+                overlap,
+                AnimeCadenceAnalyzer.Mode.CONTENT_AWARE_V1,
+                null,
+                (LongSupplier) System::nanoTime);
+        Field analyzerField = processorClass.getDeclaredField("cadenceAnalyzer");
+        analyzerField.setAccessible(true);
+        AnimeCadenceAnalyzer analyzer = (AnimeCadenceAnalyzer) analyzerField.get(processor);
+        byte[] rgba = new byte[INPUT_SIDE * INPUT_SIDE * 4];
+        AnimeCadenceAnalyzer.Result first = analyzer.analyze(
+                AnimeCadenceAnalyzer.Mode.CONTENT_AWARE_V1,
+                rgba,
+                INPUT_SIDE,
+                INPUT_SIDE,
+                "same",
+                0L);
+        analyzer.markInferenceAvailable(0L);
+        AnimeCadenceAnalyzer.Result held = analyzer.analyze(
+                AnimeCadenceAnalyzer.Mode.CONTENT_AWARE_V1,
+                rgba,
+                INPUT_SIDE,
+                INPUT_SIDE,
+                "same",
+                0L);
+        assertEquals(AnimeCadenceAnalyzer.Decision.PROCESS, first.decision);
+        assertEquals(AnimeCadenceAnalyzer.Decision.REUSE, held.decision);
+
+        Class<?> cacheClass = Arrays.stream(processorClass.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("CachedSrOutput"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> cacheConstructor = cacheClass.getDeclaredConstructor(
+                byte[].class, int.class, long.class, long.class, String.class);
+        cacheConstructor.setAccessible(true);
+        Field cacheField = processorClass.getDeclaredField("cachedSrOutput");
+        Field cachePixelsField = processorClass.getDeclaredField("cadenceCachePixels");
+        Field latestGeneration = processorClass.getDeclaredField("latestInferredGeneration");
+        Field latestStreamEpoch = processorClass.getDeclaredField("latestInferredStreamEpoch");
+        Field latestFrame = processorClass.getDeclaredField("latestInferredFrameId");
+        cacheField.setAccessible(true);
+        cachePixelsField.setAccessible(true);
+        latestGeneration.setAccessible(true);
+        latestStreamEpoch.setAccessible(true);
+        latestFrame.setAccessible(true);
+        byte[] cachedPixels = new byte[16];
+        cacheField.set(processor, cacheConstructor.newInstance(
+                cachedPixels, 0, 0L, 1L, "cached"));
+        cachePixelsField.set(processor, cachedPixels);
+        latestGeneration.setInt(processor, 0);
+        latestStreamEpoch.setLong(processor, 0L);
+        latestFrame.setLong(processor, 1L);
+
+        Method boundary = processorClass.getDeclaredMethod("advanceCadenceStreamBoundary");
+        boundary.setAccessible(true);
+        boundary.invoke(processor);
+
+        Field epochField = processorClass.getDeclaredField("cadenceStreamEpoch");
+        epochField.setAccessible(true);
+        long nextEpoch = epochField.getLong(processor);
+        AnimeCadenceAnalyzer.Result nextStreamFirst = analyzer.analyze(
+                AnimeCadenceAnalyzer.Mode.CONTENT_AWARE_V1,
+                rgba,
+                INPUT_SIDE,
+                INPUT_SIDE,
+                "same",
+                nextEpoch);
+        Field telemetryField = processorClass.getDeclaredField("pipelineTelemetry");
+        telemetryField.setAccessible(true);
+        VideoPipelineTelemetry.Snapshot snapshot = ((VideoPipelineTelemetry) telemetryField.get(
+                processor)).snapshot(System.nanoTime(), 0);
+
+        assertEquals(1L, nextEpoch);
+        assertEquals(AnimeCadenceAnalyzer.Decision.PROCESS, nextStreamFirst.decision);
+        assertEquals(AnimeCadenceAnalyzer.Reason.GENERATION_START, nextStreamFirst.reason);
+        assertEquals(0, snapshot.generation);
+        assertEquals(0L, snapshot.flushCount);
+        assertEquals(null, cacheField.get(processor));
+        assertEquals(null, cachePixelsField.get(processor));
+        assertEquals(Integer.MIN_VALUE, latestGeneration.getInt(processor));
+        assertEquals(-1L, latestStreamEpoch.getLong(processor));
+        assertEquals(-1L, latestFrame.getLong(processor));
+        processorClass.getDeclaredMethod("release").invoke(processor);
     }
 
     @Test

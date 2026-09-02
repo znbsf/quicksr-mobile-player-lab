@@ -32,6 +32,16 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"workerQueueCapacity\":2"));
         assertTrue(value.contains("\"workerCleanupReservedSlots\":1"));
         assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
+        assertTrue(value.contains("\"cadenceMode\":\"OFF\""));
+        assertTrue(value.contains(
+                "\"cadenceAnalyzerVersion\":\"anime-cadence-analyzer-v1\""));
+        assertTrue(value.contains("\"cadenceMaxReuseStreak\":2"));
+        assertTrue(value.contains("\"cadenceSubtitleDenseLumaDeltaThreshold\":48"));
+        assertTrue(value.contains("\"cadenceSubtitleDenseEdgeDeltaThreshold\":32"));
+        assertTrue(value.contains("\"cadenceSubtitleDenseLocalContrastThreshold\":24"));
+        assertTrue(value.contains("\"cadenceSubtitleDenseMinChangedPixels\":1"));
+        assertTrue(value.contains("\"cadenceSubtitleDenseMinHighContrastPixels\":1"));
+        assertTrue(value.contains("\"cadenceCacheBytes\":0"));
         assertTrue(value.contains("\"postprocessQueueCapacity\":0"));
         assertTrue(value.contains("\"outputTensorSlotCount\":1"));
         assertTrue(value.contains("\"outputTensorBytesPerSlot\":24883200"));
@@ -42,6 +52,25 @@ public final class VideoBenchmarkTelemetryTest {
                 + "\"proxy_process_image_callback_after_media3_readback\""));
         assertTrue(value.contains("\"surfaceFlingerLatchMeasurement\":\"unmeasured\""));
         assertTrue(value.contains("\"finalDisplayMeasurement\":\"unmeasured\""));
+        assertTrue(value.contains(
+                "\"cadenceQualityMeasurement\":\"proxy_not_final_display_or_quality\""));
+    }
+
+    @Test
+    public void configurationMakesEnabledCadenceAndOwnedCacheExplicit() {
+        String value = VideoBenchmarkTelemetry.configurationJson(
+                "run-cadence",
+                "QUICKSR_QNN",
+                QuickSrSession.Tuning.SUSTAINED,
+                QuickSrVideoEffect.Profile.FULL_720P,
+                true,
+                VideoEvidenceStore.CaptureSpec.none(),
+                false,
+                AnimeCadenceAnalyzer.Mode.CONTENT_AWARE_V1);
+
+        assertTrue(value.contains("\"cadenceMode\":\"CONTENT_AWARE_V1\""));
+        assertTrue(value.contains("\"cadenceCacheBytes\":3686400"));
+        assertTrue(value.contains("\"cadenceMaxReuseStreak\":2"));
     }
 
     @Test
@@ -55,6 +84,7 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"tuning\":\"SUSTAINED\""));
         assertTrue(value.contains("\"profile\":\"FULL_1080P_3X\""));
         assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
+        assertTrue(value.contains("\"cadenceMode\":\"OFF\""));
         assertTrue(value.contains("\"frame\":1,\"frameId\":1"));
         assertTrue(value.contains("\"ptsUs\":0"));
         assertTrue(value.contains("\"totalProcessingMs\":17"));
@@ -62,6 +92,13 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"frame\":2,\"frameId\":2"));
         assertTrue(value.contains("\"ptsUs\":41667"));
         assertTrue(value.contains("\"finiteScanExecuted\":false"));
+        assertTrue(value.contains("\"cadenceDecision\":\"PROCESS\""));
+        assertTrue(value.contains("\"cadenceReason\":\"DISABLED\""));
+        assertTrue(value.contains("\"cadenceReferenceGeneration\":-1"));
+        assertTrue(value.contains("\"cadenceReferenceStreamEpoch\":-1"));
+        assertTrue(value.contains("\"cadenceReferenceFrameId\":-1"));
+        assertTrue(value.contains("\"cadenceProcessedCount\":1"));
+        assertTrue(value.contains("\"cadenceReusedCount\":0"));
         assertTrue(value.contains("\"acceptedNs\":-1"));
         assertTrue(value.contains("\"acceptedCount\":1"));
         assertTrue(value.contains("\"bypassedCount\":0"));

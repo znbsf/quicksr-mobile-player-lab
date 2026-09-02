@@ -23,6 +23,7 @@ final class VideoPipelineTelemetry {
         final long presentationTimeUs;
         final long acceptedNs;
         final long frameBudgetNs;
+        long cadenceStreamEpoch;
         long readbackReadyProxyNs;
         private boolean terminal;
 

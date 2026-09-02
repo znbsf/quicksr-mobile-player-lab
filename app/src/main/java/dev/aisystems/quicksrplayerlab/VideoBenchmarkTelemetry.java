@@ -13,6 +13,7 @@ final class VideoBenchmarkTelemetry {
     static final String EXTRA_VIDEO_MODE = "dev.aisystems.quicksrplayerlab.extra.VIDEO_MODE";
     static final String EXTRA_VIDEO_PROFILE = "dev.aisystems.quicksrplayerlab.extra.VIDEO_PROFILE";
     static final String EXTRA_VIDEO_TUNING = "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING";
+    static final String EXTRA_CADENCE_MODE = "dev.aisystems.quicksrplayerlab.extra.CADENCE_MODE";
     static final String EXTRA_CAPTURE_FRAME = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_FRAME";
     static final String EXTRA_CAPTURE_PTS_US = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_PTS_US";
     // Android's logger truncates messages around 4 KiB. One fully instrumented frame is already
@@ -49,6 +50,21 @@ final class VideoBenchmarkTelemetry {
     static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
             QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
             VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap) {
+        return configurationJson(
+                runId,
+                mode,
+                tuning,
+                profile,
+                qnnRuntimeExpected,
+                captureSpec,
+                postprocessOverlap,
+                AnimeCadenceAnalyzer.Mode.OFF);
+    }
+
+    static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
+            QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
+            VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap,
+            AnimeCadenceAnalyzer.Mode cadenceMode) {
         StringBuilder value = envelope("configuration", runId);
         stringField(value, "mode", mode);
         stringField(value, "tuning", tuning.name());
@@ -57,6 +73,39 @@ final class VideoBenchmarkTelemetry {
                 value,
                 "postprocessMode",
                 postprocessOverlap ? "OVERLAP" : "SERIAL");
+        stringField(value, "cadenceMode", cadenceMode.name());
+        stringField(value, "cadenceAnalyzerVersion", AnimeCadenceAnalyzer.VERSION);
+        numberField(value, "cadenceMaxReuseStreak", AnimeCadenceAnalyzer.MAX_REUSE_STREAK);
+        numberField(
+                value,
+                "cadenceSubtitleDenseLumaDeltaThreshold",
+                AnimeCadenceAnalyzer.DENSE_SUBTITLE_LUMA_DELTA);
+        numberField(
+                value,
+                "cadenceSubtitleDenseEdgeDeltaThreshold",
+                AnimeCadenceAnalyzer.DENSE_SUBTITLE_EDGE_DELTA);
+        numberField(
+                value,
+                "cadenceSubtitleDenseLocalContrastThreshold",
+                AnimeCadenceAnalyzer.DENSE_SUBTITLE_EDGE_CONTRAST);
+        numberField(
+                value,
+                "cadenceSubtitleDenseMinChangedPixels",
+                AnimeCadenceAnalyzer.DENSE_SUBTITLE_CHANGED_PIXELS);
+        numberField(
+                value,
+                "cadenceSubtitleDenseMinHighContrastPixels",
+                AnimeCadenceAnalyzer.DENSE_SUBTITLE_HIGH_CONTRAST_PIXELS);
+        numberField(
+                value,
+                "cadenceCacheBytes",
+                cadenceMode == AnimeCadenceAnalyzer.Mode.OFF
+                        ? 0L
+                        : Math.multiplyExact(
+                                Math.multiplyExact(
+                                        (long) profile.outputWidth(),
+                                        (long) profile.outputHeight()),
+                                4L));
         numberField(
                 value,
                 "postprocessQueueCapacity",
@@ -119,6 +168,11 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "outputTensorPrepareMeasurement", "measured_pool_or_allocation_time");
         stringField(value, "ortMeasurement", "measured_caller_wall_ns_not_npu_kernel");
         stringField(value, "outputPackMeasurement", "measured_cpu_elapsed_realtime_ns");
+        stringField(
+                value,
+                "cadenceAnalysisMeasurement",
+                "fixed_16x9_luma_edge_plus_dense_bottom_third_input_proxy");
+        stringField(value, "cadenceQualityMeasurement", "proxy_not_final_display_or_quality");
         stringField(value, "directBufferCopyMeasurement", "measured_cpu_elapsed_realtime_ns");
         stringField(value, "glUploadMeasurement", "proxy_cpu_gl_submission_not_gpu_completion");
         stringField(value, "outputSubmitMeasurement", "proxy_finish_processing_callback");
@@ -142,6 +196,7 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "tuning", first.tuning.name());
         stringField(value, "profile", first.profile.name());
         stringField(value, "postprocessMode", first.postprocessMode.name());
+        stringField(value, "cadenceMode", first.cadenceMode.name());
         numberField(value, "effectInputWidth", first.effectInputWidth);
         numberField(value, "effectInputHeight", first.effectInputHeight);
         numberField(value, "modelInputWidth", first.modelInputWidth);
@@ -153,9 +208,10 @@ final class VideoBenchmarkTelemetry {
             QuickSrVideoEffect.FrameStats sample = samples.get(index);
             if (sample.mode != first.mode || sample.tuning != first.tuning
                     || sample.profile != first.profile
-                    || sample.postprocessMode != first.postprocessMode) {
+                    || sample.postprocessMode != first.postprocessMode
+                    || sample.cadenceMode != first.cadenceMode) {
                 throw new IllegalArgumentException(
-                        "benchmark frame batch mixes mode, tuning, profile or postprocess mode");
+                        "benchmark frame batch mixes mode, tuning, profile, postprocess or cadence mode");
             }
             if (index > 0) value.append(',');
             value.append('{');
@@ -166,6 +222,23 @@ final class VideoBenchmarkTelemetry {
             numberField(value, "ptsUs", sample.presentationTimeUs);
             stringField(value, "inputCrc32", sample.inputCrc32);
             stringField(value, "outputCrc32", sample.outputCrc32);
+            stringField(value, "cadenceDecision", sample.cadenceDecision.name());
+            stringField(value, "cadenceReason", sample.cadenceReason.name());
+            numberField(value, "cadenceStreamEpoch", sample.cadenceStreamEpoch);
+            numberField(
+                    value,
+                    "cadenceReferenceGeneration",
+                    sample.cadenceReferenceGeneration);
+            numberField(
+                    value,
+                    "cadenceReferenceStreamEpoch",
+                    sample.cadenceReferenceStreamEpoch);
+            numberField(value, "cadenceReferenceFrameId", sample.cadenceReferenceFrameId);
+            numberField(value, "reuseStreak", sample.reuseStreak);
+            numberField(value, "cadenceAnalysisNs", sample.cadenceAnalysisNs);
+            decimalField(value, "sceneScore", sample.cadenceSceneScore);
+            decimalField(value, "subtitleScore", sample.cadenceSubtitleScore);
+            decimalField(value, "motionScore", sample.cadenceMotionScore);
             booleanField(value, "late", sample.late);
             numberField(value, "ptsWallClockDriftNs", sample.ptsWallClockDriftNs);
             numberField(value, "observedNs", sample.observedMonotonicNs);
@@ -199,6 +272,8 @@ final class VideoBenchmarkTelemetry {
             numberField(value, "finiteScanNs", sample.finiteScanNs);
             numberField(value, "acceptedCount", sample.acceptedCount);
             numberField(value, "processedCount", sample.processedCount);
+            numberField(value, "cadenceProcessedCount", sample.cadenceProcessedCount);
+            numberField(value, "cadenceReusedCount", sample.cadenceReusedCount);
             numberField(value, "lateCount", sample.lateCount);
             numberField(value, "droppedCount", sample.droppedCount);
             numberField(value, "bypassedCount", sample.bypassedCount);
@@ -363,6 +438,15 @@ final class VideoBenchmarkTelemetry {
 
     private static void booleanField(StringBuilder value, String name, boolean fieldValue) {
         separator(value); quoted(value, name); value.append(':').append(fieldValue);
+    }
+
+    private static void decimalField(StringBuilder value, String name, float fieldValue) {
+        if (!Float.isFinite(fieldValue)) {
+            throw new IllegalArgumentException("Non-finite telemetry field: " + name);
+        }
+        separator(value);
+        quoted(value, name);
+        value.append(':').append(Float.toString(fieldValue));
     }
 
     private static void jsonField(StringBuilder value, String name, JSONObject fieldValue) {

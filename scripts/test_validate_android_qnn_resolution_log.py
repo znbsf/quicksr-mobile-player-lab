@@ -115,6 +115,108 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual("unmeasured", result["final_display_status"])
         self.assertIn("p99", result["metrics"]["outputPackNs"])
 
+    def test_cadence_run_is_validated_but_never_uses_full_inference_realtime_class(self):
+        events = self.events()
+        events[0].update({
+            "cadenceMode": "CONTENT_AWARE_V1",
+            "cadenceAnalyzerVersion": "anime-cadence-analyzer-v1",
+            "cadenceMaxReuseStreak": 2,
+            "cadenceSubtitleDenseLumaDeltaThreshold": 48,
+            "cadenceSubtitleDenseEdgeDeltaThreshold": 32,
+            "cadenceSubtitleDenseLocalContrastThreshold": 24,
+            "cadenceSubtitleDenseMinChangedPixels": 1,
+            "cadenceSubtitleDenseMinHighContrastPixels": 1,
+        })
+        events[2]["cadenceMode"] = "CONTENT_AWARE_V1"
+        for sample in events[2]["samples"]:
+            sample.update({
+                "cadenceDecision": "PROCESS",
+                "cadenceReason": "MOTION",
+                "cadenceStreamEpoch": 0,
+                "cadenceReferenceGeneration": -1,
+                "cadenceReferenceStreamEpoch": -1,
+                "cadenceReferenceFrameId": -1,
+                "reuseStreak": 0,
+                "cadenceAnalysisNs": 1_000,
+                "sceneScore": 0.0,
+                "subtitleScore": 0.0,
+                "motionScore": 0.01,
+            })
+        events[2]["samples"][1].update({
+            "cadenceDecision": "REUSE",
+            "cadenceReason": "SMALL_CHANGE",
+            "cadenceReferenceGeneration": 0,
+            "cadenceReferenceStreamEpoch": 0,
+            "cadenceReferenceFrameId": 1,
+            "reuseStreak": 1,
+        })
+
+        result = self.validate(events)
+
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertEqual("cadence_effect_proxy_unclassified", result["performance_class"])
+        self.assertEqual(1, result["metrics"]["cadence_reused_count"])
+        self.assertIn("not_realtime_classified", result["performance_scope"])
+
+    def test_cadence_cross_stream_reference_is_rejected(self):
+        events = self.events()
+        events[0].update({
+            "cadenceMode": "CONTENT_AWARE_V1",
+            "cadenceAnalyzerVersion": "anime-cadence-analyzer-v1",
+            "cadenceMaxReuseStreak": 2,
+            "cadenceSubtitleDenseLumaDeltaThreshold": 48,
+            "cadenceSubtitleDenseEdgeDeltaThreshold": 32,
+            "cadenceSubtitleDenseLocalContrastThreshold": 24,
+            "cadenceSubtitleDenseMinChangedPixels": 1,
+            "cadenceSubtitleDenseMinHighContrastPixels": 1,
+        })
+        events[2]["cadenceMode"] = "CONTENT_AWARE_V1"
+        for sample in events[2]["samples"]:
+            sample.update({
+                "cadenceDecision": "PROCESS",
+                "cadenceReason": "MOTION",
+                "cadenceStreamEpoch": 1,
+                "cadenceReferenceGeneration": -1,
+                "cadenceReferenceStreamEpoch": -1,
+                "cadenceReferenceFrameId": -1,
+                "reuseStreak": 0,
+                "cadenceAnalysisNs": 1_000,
+                "sceneScore": 0.0,
+                "subtitleScore": 0.0,
+                "motionScore": 0.01,
+            })
+        events[2]["samples"][1].update({
+            "cadenceDecision": "REUSE",
+            "cadenceReason": "SMALL_CHANGE",
+            "cadenceReferenceGeneration": 0,
+            "cadenceReferenceStreamEpoch": 0,
+            "cadenceReferenceFrameId": 1,
+            "reuseStreak": 1,
+        })
+
+        result = self.validate(events)
+
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("crosses input stream" in failure for failure in result["failures"]))
+
+    def test_cadence_threshold_configuration_is_pinned(self):
+        events = self.events()
+        events[0]["cadenceMode"] = "CONTENT_AWARE_V1"
+        events[2]["cadenceMode"] = "CONTENT_AWARE_V1"
+        for sample in events[2]["samples"]:
+            sample.update({
+                "cadenceDecision": "PROCESS", "cadenceReason": "MOTION",
+                "cadenceStreamEpoch": 0, "cadenceReferenceGeneration": -1,
+                "cadenceReferenceStreamEpoch": -1, "cadenceReferenceFrameId": -1,
+                "reuseStreak": 0, "cadenceAnalysisNs": 1_000,
+                "sceneScore": 0.0, "subtitleScore": 0.0, "motionScore": 0.01,
+            })
+
+        result = self.validate(events)
+
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("cadenceAnalyzerVersion" in item for item in result["failures"]))
+
     def test_cpu_batch_is_rejected(self):
         events = self.events()
         events[2]["mode"] = "CPU"

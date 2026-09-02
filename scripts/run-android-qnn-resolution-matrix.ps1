@@ -12,6 +12,8 @@ param(
     [switch]$IncludeExperimental,
     [string]$PrimaryReportPath,
     [string]$MediaRegistrationReceipt,
+    [ValidateSet('OFF', 'CONTENT_AWARE_V1')]
+    [string]$CadenceMode = 'OFF',
     [int]$CaptureFrame,
     [switch]$CaptureOnly,
     [string]$DeviceSerial,
@@ -21,6 +23,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($CaptureOnly -and $CadenceMode -ne 'OFF') {
+    throw 'CaptureOnly requires CadenceMode OFF so the selected input is inferred.'
+}
 $script:scriptDirectory = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($script:scriptDirectory)) {
     throw 'Could not resolve the runner script directory.'
@@ -847,7 +852,8 @@ foreach ($case in $cases) {
             '--es', $plan.intent_extras.run_id, $runId,
             '--es', $plan.intent_extras.video_mode, 'QUICKSR_QNN',
             '--es', $plan.intent_extras.video_profile, $case.profile,
-            '--es', $plan.intent_extras.video_tuning, 'SUSTAINED'
+            '--es', $plan.intent_extras.video_tuning, 'SUSTAINED',
+            '--es', 'dev.aisystems.quicksrplayerlab.extra.CADENCE_MODE', $CadenceMode
         )
         if ($captureFrameRequested) {
             # Capture-only has a separate non-performance contract and may select any

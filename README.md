@@ -11,6 +11,7 @@
 - 输出路线覆盖 1080p、1440p 和 4K 显示；
 - 集成 QuickSRNetSmall 1.5×、2×、3×、4× 模型流程；
 - 支持 ONNX Runtime CPU、GPU Lanczos、GPU-resident Anime4K x2 Small 和 Qualcomm QNN HTP/NPU；
+- 提供默认关闭的动漫 cadence 感知超分复用实验：不插帧、不改 PTS，最多连续复用 2 帧；
 - 建立 18 条 PC 动漫超分路线和 72 个权利清晰评测案例；
 - 自动统计 PSNR、SSIM、边缘误差、阶段耗时、p50/p95 以及 24/30 FPS 性能等级。
 
@@ -50,6 +51,7 @@
 - 由实际 Java 适配器生成的五段 model fragment 与 `mediump` fallback 已在 Android Emulator 随附的 SwiftShader OpenGL ES 3 环境 6/6 compile+link PASS；同一宿主 context 的 half-float 扩展预检和 RGBA16F FBO completeness 也通过。这仍只是 DLL 级主机 smoke，不是模拟器 App 或目标手机执行。
 
 完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
+cadence 实验的队列、generation、缓存所有权、运行时开关和代理指标边界见 [动漫 cadence 感知复用说明](docs/ANIME_CADENCE_REUSE.md)。
 
 ## 支持机型与系统
 

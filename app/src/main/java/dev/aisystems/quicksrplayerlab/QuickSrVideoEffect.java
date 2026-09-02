@@ -241,6 +241,18 @@ final class QuickSrVideoEffect implements GlEffect {
         final QuickSrSession.Tuning tuning;
         final Profile profile;
         final PostprocessMode postprocessMode;
+        final AnimeCadenceAnalyzer.Mode cadenceMode;
+        final AnimeCadenceAnalyzer.Decision cadenceDecision;
+        final AnimeCadenceAnalyzer.Reason cadenceReason;
+        final long cadenceStreamEpoch;
+        final int cadenceReferenceGeneration;
+        final long cadenceReferenceStreamEpoch;
+        final long cadenceReferenceFrameId;
+        final int reuseStreak;
+        final long cadenceAnalysisNs;
+        final float cadenceSceneScore;
+        final float cadenceSubtitleScore;
+        final float cadenceMotionScore;
         final int frameNumber;
         final int effectInputWidth;
         final int effectInputHeight;
@@ -301,6 +313,8 @@ final class QuickSrVideoEffect implements GlEffect {
         final long finiteScanNs;
         final long acceptedCount;
         final long processedCount;
+        final long cadenceProcessedCount;
+        final long cadenceReusedCount;
         final long lateCount;
         final long droppedCount;
         final long bypassedCount;
@@ -369,6 +383,18 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.profile = profile;
             this.postprocessMode = PostprocessMode.SERIAL;
+            this.cadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
+            this.cadenceDecision = AnimeCadenceAnalyzer.Decision.PROCESS;
+            this.cadenceReason = AnimeCadenceAnalyzer.Reason.DISABLED;
+            this.cadenceStreamEpoch = 0L;
+            this.cadenceReferenceGeneration = -1;
+            this.cadenceReferenceStreamEpoch = -1L;
+            this.cadenceReferenceFrameId = -1L;
+            this.reuseStreak = 0;
+            this.cadenceAnalysisNs = 0L;
+            this.cadenceSceneScore = 0.0f;
+            this.cadenceSubtitleScore = 0.0f;
+            this.cadenceMotionScore = 0.0f;
             this.frameNumber = frameNumber;
             this.effectInputWidth = effectInputWidth;
             this.effectInputHeight = effectInputHeight;
@@ -429,6 +455,8 @@ final class QuickSrVideoEffect implements GlEffect {
             this.finiteScanNs = TimeUnit.MILLISECONDS.toNanos(finiteScanMs);
             this.acceptedCount = frameNumber;
             this.processedCount = frameNumber;
+            this.cadenceProcessedCount = frameNumber;
+            this.cadenceReusedCount = 0L;
             this.lateCount = 0L;
             this.droppedCount = 0L;
             this.bypassedCount = 0L;
@@ -451,6 +479,19 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.profile = profile;
             this.postprocessMode = postprocessMode;
+            this.cadenceMode = timings.cadenceMode;
+            this.cadenceDecision = timings.cadenceDecision;
+            this.cadenceReason = timings.cadenceReason;
+            this.cadenceStreamEpoch = timings.token.cadenceStreamEpoch;
+            this.cadenceReferenceGeneration = timings.cadenceReferenceGeneration;
+            this.cadenceReferenceStreamEpoch = timings.cadenceReferenceStreamEpoch;
+            this.cadenceReferenceFrameId = timings.cadenceReferenceFrameId;
+            this.reuseStreak = timings.reuseStreak;
+            this.cadenceAnalysisNs = timings.cadenceAnalysisFinishedNs
+                    - timings.cadenceAnalysisStartedNs;
+            this.cadenceSceneScore = timings.cadenceSceneScore;
+            this.cadenceSubtitleScore = timings.cadenceSubtitleScore;
+            this.cadenceMotionScore = timings.cadenceMotionScore;
             this.frameNumber = Math.toIntExact(timings.token.frameId);
             this.effectInputWidth = effectInputWidth;
             this.effectInputHeight = effectInputHeight;
@@ -517,6 +558,8 @@ final class QuickSrVideoEffect implements GlEffect {
             VideoPipelineTelemetry.Snapshot snapshot = completion.snapshot;
             this.acceptedCount = snapshot.accepted;
             this.processedCount = snapshot.processed;
+            this.cadenceProcessedCount = timings.cadenceProcessedCount;
+            this.cadenceReusedCount = timings.cadenceReusedCount;
             this.lateCount = snapshot.late;
             this.droppedCount = snapshot.dropped;
             this.bypassedCount = snapshot.bypassed;
@@ -558,6 +601,20 @@ final class QuickSrVideoEffect implements GlEffect {
         long tensorOutputCopyNs;
         long finiteScanNs;
         boolean finiteScanExecuted;
+        AnimeCadenceAnalyzer.Mode cadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
+        AnimeCadenceAnalyzer.Decision cadenceDecision = AnimeCadenceAnalyzer.Decision.PROCESS;
+        AnimeCadenceAnalyzer.Reason cadenceReason = AnimeCadenceAnalyzer.Reason.DISABLED;
+        int cadenceReferenceGeneration = -1;
+        long cadenceReferenceStreamEpoch = -1L;
+        long cadenceReferenceFrameId = -1L;
+        int reuseStreak;
+        long cadenceAnalysisStartedNs;
+        long cadenceAnalysisFinishedNs;
+        float cadenceSceneScore;
+        float cadenceSubtitleScore;
+        float cadenceMotionScore;
+        long cadenceProcessedCount;
+        long cadenceReusedCount;
 
         FrameTimings(VideoPipelineTelemetry.FrameToken token) {
             this.token = token;
@@ -591,6 +648,29 @@ final class QuickSrVideoEffect implements GlEffect {
 
     static long additionalOverlapTensorBytes(Profile profile, boolean overlap) {
         return overlap ? outputTensorBytesPerSlot(profile) : 0L;
+    }
+
+    static boolean cadenceCacheMatches(
+            int cacheGeneration,
+            long cacheStreamEpoch,
+            long cacheSourceFrameId,
+            int expectedGeneration,
+            long expectedStreamEpoch,
+            long expectedSourceFrameId) {
+        return cacheGeneration == expectedGeneration
+                && cacheStreamEpoch == expectedStreamEpoch
+                && cacheSourceFrameId == expectedSourceFrameId;
+    }
+
+    static byte[] copyIntoCadenceCache(byte[] source, byte[] existing) {
+        if (source == null) {
+            throw new IllegalArgumentException("Cadence cache source is required");
+        }
+        byte[] target = existing != null && existing.length == source.length
+                ? existing
+                : new byte[source.length];
+        System.arraycopy(source, 0, target, 0, source.length);
+        return target;
     }
 
     QuickSrVideoEffect(
@@ -671,6 +751,28 @@ final class QuickSrVideoEffect implements GlEffect {
             VideoEvidenceStore.CaptureSpec captureSpec,
             boolean postprocessOverlap,
             StatsListener listener) {
+        this(
+                context,
+                mode,
+                profile,
+                tuning,
+                benchmarkRunId,
+                captureSpec,
+                postprocessOverlap,
+                AnimeCadenceAnalyzer.Mode.OFF,
+                listener);
+    }
+
+    QuickSrVideoEffect(
+            Context context,
+            QuickSrSession.Mode mode,
+            Profile profile,
+            QuickSrSession.Tuning tuning,
+            String benchmarkRunId,
+            VideoEvidenceStore.CaptureSpec captureSpec,
+            boolean postprocessOverlap,
+            AnimeCadenceAnalyzer.Mode cadenceMode,
+            StatsListener listener) {
         processor = new ProcessorImpl(
                 context.getApplicationContext(),
                 mode,
@@ -679,6 +781,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 benchmarkRunId,
                 captureSpec,
                 postprocessOverlap,
+                cadenceMode,
                 listener);
     }
 
@@ -775,6 +878,7 @@ final class QuickSrVideoEffect implements GlEffect {
         @Override
         public void signalEndOfCurrentInputStream() {
             delegate.signalEndOfCurrentInputStream();
+            processor.advanceCadenceStreamBoundary();
             processor.publishPipelineSnapshot("end_of_input_stream");
         }
 
@@ -825,6 +929,7 @@ final class QuickSrVideoEffect implements GlEffect {
         private final String benchmarkRunId;
         private final VideoEvidenceStore.CaptureSpec captureSpec;
         private final PostprocessMode postprocessMode;
+        private final AnimeCadenceAnalyzer.Mode cadenceMode;
         private final StatsListener listener;
         private final LongSupplier monotonicClock;
         private final ThreadPoolExecutor inferenceExecutor;
@@ -845,6 +950,29 @@ final class QuickSrVideoEffect implements GlEffect {
         private final Set<FrameResult> outstandingFrameResults =
                 Collections.newSetFromMap(new IdentityHashMap<>());
         private final Object lifecycleLock = new Object();
+        private final AnimeCadenceAnalyzer cadenceAnalyzer = new AnimeCadenceAnalyzer();
+        private final Object cadenceCacheLock = new Object();
+
+        private static final class CachedSrOutput {
+            final byte[] pixels;
+            final int generation;
+            final long streamEpoch;
+            final long sourceFrameId;
+            final String outputCrc32;
+
+            CachedSrOutput(
+                    byte[] pixels,
+                    int generation,
+                    long streamEpoch,
+                    long sourceFrameId,
+                    String outputCrc32) {
+                this.pixels = pixels;
+                this.generation = generation;
+                this.streamEpoch = streamEpoch;
+                this.sourceFrameId = sourceFrameId;
+                this.outputCrc32 = outputCrc32;
+            }
+        }
 
         private volatile boolean released;
         private volatile Thread inferenceThread;
@@ -865,6 +993,14 @@ final class QuickSrVideoEffect implements GlEffect {
         private boolean qnnStrictEvidenceReported;
         private boolean evidenceCaptureReserved;
         private int frameNumber;
+        private long cadenceProcessedCount;
+        private long cadenceReusedCount;
+        private volatile int latestInferredGeneration = Integer.MIN_VALUE;
+        private volatile long latestInferredStreamEpoch = -1L;
+        private volatile long latestInferredFrameId = -1L;
+        private volatile long cadenceStreamEpoch;
+        private byte[] cadenceCachePixels;
+        private CachedSrOutput cachedSrOutput;
         private int neuralTextureId;
         private int neuralFboId;
 
@@ -913,6 +1049,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     null,
                     VideoEvidenceStore.CaptureSpec.none(),
                     false,
+                    AnimeCadenceAnalyzer.Mode.OFF,
                     listener,
                     System::nanoTime);
         }
@@ -934,6 +1071,29 @@ final class QuickSrVideoEffect implements GlEffect {
                     benchmarkRunId,
                     captureSpec,
                     postprocessOverlap,
+                    AnimeCadenceAnalyzer.Mode.OFF,
+                    listener);
+        }
+
+        ProcessorImpl(
+                Context context,
+                QuickSrSession.Mode mode,
+                Profile profile,
+                QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
+                AnimeCadenceAnalyzer.Mode cadenceMode,
+                StatsListener listener) {
+            this(
+                    context,
+                    mode,
+                    profile,
+                    tuning,
+                    benchmarkRunId,
+                    captureSpec,
+                    postprocessOverlap,
+                    cadenceMode,
                     listener,
                     SystemClock::elapsedRealtimeNanos);
         }
@@ -948,8 +1108,35 @@ final class QuickSrVideoEffect implements GlEffect {
                 boolean postprocessOverlap,
                 StatsListener listener,
                 LongSupplier monotonicClock) {
+            this(
+                    context,
+                    mode,
+                    profile,
+                    tuning,
+                    benchmarkRunId,
+                    captureSpec,
+                    postprocessOverlap,
+                    AnimeCadenceAnalyzer.Mode.OFF,
+                    listener,
+                    monotonicClock);
+        }
+
+        private ProcessorImpl(
+                Context context,
+                QuickSrSession.Mode mode,
+                Profile profile,
+                QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
+                AnimeCadenceAnalyzer.Mode cadenceMode,
+                StatsListener listener,
+                LongSupplier monotonicClock) {
             if (captureSpec == null) {
                 captureSpec = VideoEvidenceStore.CaptureSpec.none();
+            }
+            if (cadenceMode == null) {
+                cadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
             }
             if (captureSpec.isRequested()) {
                 if (mode != QuickSrSession.Mode.QNN_HTP) {
@@ -970,6 +1157,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.postprocessMode = postprocessOverlap
                     ? PostprocessMode.OVERLAP
                     : PostprocessMode.SERIAL;
+            this.cadenceMode = cadenceMode;
             this.listener = listener;
             this.monotonicClock = monotonicClock;
             ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -1085,9 +1273,11 @@ final class QuickSrVideoEffect implements GlEffect {
             if (released) {
                 throw new IllegalStateException("QuickSR video effect released");
             }
-            return pipelineTelemetry.accept(
+            VideoPipelineTelemetry.FrameToken token = pipelineTelemetry.accept(
                     presentationTimeUs,
                     nowNs());
+            token.cadenceStreamEpoch = cadenceStreamEpoch;
+            return token;
         }
 
         void onFrameAcceptanceFailed(VideoPipelineTelemetry.FrameToken token) {
@@ -1101,6 +1291,28 @@ final class QuickSrVideoEffect implements GlEffect {
             pipelineTelemetry.flush(
                     nowNs(),
                     workerQueueDepth());
+            cadenceStreamEpoch++;
+            cadenceAnalyzer.reset(cadenceStreamEpoch);
+            latestInferredGeneration = Integer.MIN_VALUE;
+            latestInferredStreamEpoch = -1L;
+            latestInferredFrameId = -1L;
+            clearCadenceCache();
+        }
+
+        void advanceCadenceStreamBoundary() {
+            cadenceStreamEpoch++;
+            cadenceAnalyzer.reset(cadenceStreamEpoch);
+            latestInferredGeneration = Integer.MIN_VALUE;
+            latestInferredStreamEpoch = -1L;
+            latestInferredFrameId = -1L;
+            clearCadenceCache();
+        }
+
+        private void clearCadenceCache() {
+            synchronized (cadenceCacheLock) {
+                cachedSrOutput = null;
+                cadenceCachePixels = null;
+            }
         }
 
         void publishPipelineSnapshot(String reason) {
@@ -1225,6 +1437,88 @@ final class QuickSrVideoEffect implements GlEffect {
                 pipelineTelemetry.observeQueueDepth(workerQueueDepth());
                 int inputPixels = checkedPixels(profile.inputWidth(), profile.inputHeight());
                 int outputPixels = checkedPixels(profile.outputWidth(), profile.outputHeight());
+                timings.cadenceMode = cadenceMode;
+                timings.cadenceAnalysisStartedNs = nowNs();
+                boolean currentCadenceStream = timings.token.cadenceStreamEpoch
+                        == cadenceStreamEpoch;
+                AnimeCadenceAnalyzer.Result cadence = currentCadenceStream
+                        ? cadenceAnalyzer.analyze(
+                                cadenceMode,
+                                rgba,
+                                profile.inputWidth(),
+                                profile.inputHeight(),
+                                timings.inputCrc32,
+                                timings.token.cadenceStreamEpoch)
+                        : cadenceAnalyzer.processWithoutState(
+                                AnimeCadenceAnalyzer.Reason.STREAM_BOUNDARY);
+                timings.cadenceAnalysisFinishedNs = nowNs();
+                if (!pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            timings.cadenceAnalysisFinishedNs,
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
+                if (cadence.decision == AnimeCadenceAnalyzer.Decision.REUSE) {
+                    long expectedReferenceFrameId = latestInferredFrameId;
+                    int expectedReferenceGeneration = latestInferredGeneration;
+                    long expectedReferenceStreamEpoch = latestInferredStreamEpoch;
+                    CachedSrOutput availableCache;
+                    synchronized (cadenceCacheLock) {
+                        availableCache = cachedSrOutput;
+                    }
+                    if (expectedReferenceFrameId < 0
+                            || expectedReferenceGeneration != timings.token.generation
+                            || expectedReferenceStreamEpoch
+                                    != timings.token.cadenceStreamEpoch
+                            || availableCache == null
+                            || !cadenceCacheMatches(
+                                    availableCache.generation,
+                                    availableCache.streamEpoch,
+                                    availableCache.sourceFrameId,
+                                    expectedReferenceGeneration,
+                                    expectedReferenceStreamEpoch,
+                                    expectedReferenceFrameId)) {
+                        cadence = cadenceAnalyzer.forceProcess(
+                                cadence,
+                                AnimeCadenceAnalyzer.Reason.CACHE_NOT_READY);
+                    } else {
+                        timings.cadenceDecision = cadence.decision;
+                        timings.cadenceReason = cadence.reason;
+                        timings.reuseStreak = cadence.reuseStreak;
+                        timings.cadenceSceneScore = cadence.sceneScore;
+                        timings.cadenceSubtitleScore = cadence.subtitleScore;
+                        timings.cadenceMotionScore = cadence.motionScore;
+                        timings.cadenceReferenceGeneration = expectedReferenceGeneration;
+                        timings.cadenceReferenceStreamEpoch = expectedReferenceStreamEpoch;
+                        timings.cadenceReferenceFrameId = expectedReferenceFrameId;
+                        cadenceReusedCount++;
+                        timings.cadenceProcessedCount = cadenceProcessedCount;
+                        timings.cadenceReusedCount = cadenceReusedCount;
+                        if (postprocessMode == PostprocessMode.OVERLAP) {
+                            submitPostprocessTask(() -> completeReuse(
+                                    rgba,
+                                    timings,
+                                    resultFuture,
+                                    availableCache));
+                        } else {
+                            completeReuse(
+                                rgba,
+                                timings,
+                                resultFuture,
+                                availableCache);
+                        }
+                        handedToPostprocess = true;
+                        return;
+                    }
+                }
+                timings.cadenceDecision = cadence.decision;
+                timings.cadenceReason = cadence.reason;
+                timings.reuseStreak = cadence.reuseStreak;
+                timings.cadenceSceneScore = cadence.sceneScore;
+                timings.cadenceSubtitleScore = cadence.subtitleScore;
+                timings.cadenceMotionScore = cadence.motionScore;
                 if (inputTensorScratch == null) {
                     inputTensorScratch = new float[3 * inputPixels];
                     outputRgbaScratch = new byte[outputPixels * RGBA_BYTES_PER_PIXEL];
@@ -1306,6 +1600,15 @@ final class QuickSrVideoEffect implements GlEffect {
                     }
                 }
                 frameNumber = candidateFrame;
+                cadenceProcessedCount++;
+                timings.cadenceProcessedCount = cadenceProcessedCount;
+                timings.cadenceReusedCount = cadenceReusedCount;
+                if (timings.token.cadenceStreamEpoch == cadenceStreamEpoch) {
+                    latestInferredGeneration = timings.token.generation;
+                    latestInferredStreamEpoch = timings.token.cadenceStreamEpoch;
+                    latestInferredFrameId = timings.token.frameId;
+                    cadenceAnalyzer.markInferenceAvailable(timings.token.cadenceStreamEpoch);
+                }
                 if (postprocessMode == PostprocessMode.OVERLAP) {
                     float[] leasedOutputTensor = outputTensor;
                     submitPostprocessTask(() -> completePostprocess(
@@ -1360,6 +1663,77 @@ final class QuickSrVideoEffect implements GlEffect {
             target.execute(task);
         }
 
+        private void completeReuse(
+                byte[] rgba,
+                FrameTimings timings,
+                SettableFuture<FrameResult> resultFuture,
+                CachedSrOutput cached) {
+            try {
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
+                if (cached.generation != timings.token.generation
+                        || cached.generation != timings.cadenceReferenceGeneration
+                        || cached.streamEpoch != timings.token.cadenceStreamEpoch
+                        || cached.streamEpoch != timings.cadenceReferenceStreamEpoch
+                        || cached.sourceFrameId != timings.cadenceReferenceFrameId) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
+                long zeroStageNs = nowNs();
+                timings.outputTensorAcquireStartedNs = zeroStageNs;
+                timings.outputTensorSlotAcquiredNs = zeroStageNs;
+                timings.outputTensorReadyNs = zeroStageNs;
+                timings.preprocessFinishedNs = zeroStageNs;
+                timings.sessionReadyNs = zeroStageNs;
+                timings.inferenceStartedNs = zeroStageNs;
+                timings.inferenceFinishedNs = zeroStageNs;
+                timings.outputPackStartedNs = zeroStageNs;
+                timings.outputPackFinishedNs = zeroStageNs;
+                timings.outputHashStartedNs = zeroStageNs;
+                timings.outputHashFinishedNs = zeroStageNs;
+                timings.outputCrc32 = cached.outputCrc32;
+                timings.directBufferCopyStartedNs = nowNs();
+                ByteBuffer directRgba = acquireOutputBuffer();
+                directRgba.put(cached.pixels);
+                directRgba.flip();
+                timings.directBufferCopyFinishedNs = nowNs();
+                timings.outputReadyNs = timings.directBufferCopyFinishedNs;
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    recycleOutputBuffer(directRgba);
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            timings.outputReadyNs,
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
+                FrameResult frameResult = new FrameResult(
+                        directRgba,
+                        timings,
+                        this::recycleFrameResult);
+                synchronized (outputBufferPoolLock) {
+                    outstandingFrameResults.add(frameResult);
+                }
+                if (!resultFuture.set(frameResult)) {
+                    frameResult.recycle();
+                }
+            } catch (Throwable failure) {
+                failFrame("video-cadence-reuse", timings, resultFuture, failure);
+            } finally {
+                recycleInputBuffer(rgba);
+            }
+        }
+
         private void completePostprocess(
                 float[] outputTensor,
                 byte[] rgba,
@@ -1405,6 +1779,20 @@ final class QuickSrVideoEffect implements GlEffect {
                             workerQueueDepth());
                     resultFuture.cancel(false);
                     return;
+                }
+                if (cadenceMode != AnimeCadenceAnalyzer.Mode.OFF
+                        && timings.token.cadenceStreamEpoch == cadenceStreamEpoch) {
+                    synchronized (cadenceCacheLock) {
+                        cadenceCachePixels = copyIntoCadenceCache(
+                                outputRgbaScratch,
+                                cadenceCachePixels);
+                        cachedSrOutput = new CachedSrOutput(
+                                cadenceCachePixels,
+                                timings.token.generation,
+                                timings.token.cadenceStreamEpoch,
+                                timings.token.frameId,
+                                timings.outputCrc32);
+                    }
                 }
                 FrameResult frameResult = new FrameResult(
                         directRgba,
@@ -1818,6 +2206,10 @@ final class QuickSrVideoEffect implements GlEffect {
             synchronized (outputTensorPoolLock) {
                 outputTensorPool.clear();
             }
+            clearCadenceCache();
+            latestInferredGeneration = Integer.MIN_VALUE;
+            latestInferredStreamEpoch = -1L;
+            latestInferredFrameId = -1L;
             boolean postprocessTerminated = postprocessExecutor == null;
             if (postprocessExecutor != null) {
                 postprocessExecutor.shutdown();

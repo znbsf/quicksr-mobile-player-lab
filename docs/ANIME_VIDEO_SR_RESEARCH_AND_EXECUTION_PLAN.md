@@ -157,7 +157,7 @@ decoded frame + PTS
   -> changed: run SR and replace anchor texture
 ```
 
-编码 motion vector 和 residual 可以作为辅助特征，但不能单独代表动漫语义。摄像机平移、字幕变化和不同角色采用不同 cadence 时必须 fail toward processing，而不是错误复用。
+编码 motion vector 和 residual 可以作为辅助特征，但不能单独代表动漫语义。摄像机平移、命中可靠高对比阈值的字幕变化，以及不同角色采用不同 cadence 时必须 fail toward processing，而不是错误复用；低对比或亚阈值文字不属于当前保护可证明范围。
 
 ### 5.2 需要保存的证据
 

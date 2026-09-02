@@ -102,7 +102,7 @@ MEASUREMENT_CONTRACT = {
     "finalDisplayMeasurement": "unmeasured",
 }
 
-VALIDATOR_VERSION = "android-qnn-resolution-validator-v5"
+VALIDATOR_VERSION = "android-qnn-resolution-validator-v6"
 
 # These values are emitted only by the post-session ``qnn_strict`` event.
 # Configuration and frame-mode labels are application intent, not evidence that
@@ -167,6 +167,7 @@ def find_case(plan: dict[str, Any], case_id: str) -> dict[str, Any]:
 def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, Any]],
              run_id: str, parse_errors: list[str]) -> dict[str, Any]:
     failures: list[str] = []
+    cadence_mode = "OFF"
     configurations = [event for event in events if event.get("event") == "configuration"]
     errors = [event for event in events if event.get("event") == "error"]
     if len(configurations) != 1:
@@ -186,6 +187,9 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     }
     if configurations:
         configuration = configurations[0]
+        cadence_mode = configuration.get("cadenceMode", "OFF")
+        if cadence_mode not in {"OFF", "CONTENT_AWARE_V1"}:
+            failures.append(f"configuration cadenceMode is invalid: {cadence_mode!r}")
         postprocess_mode = configuration.get("postprocessMode")
         if postprocess_mode not in {"SERIAL", "OVERLAP"}:
             failures.append(
@@ -219,6 +223,22 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         for field in ("modelVariant", "prototypeBuildId", "targetAbi"):
             if not isinstance(configuration.get(field), str) or not configuration[field].strip():
                 failures.append(f"configuration {field}: expected non-empty string")
+        if cadence_mode == "CONTENT_AWARE_V1":
+            expected_cadence_configuration = {
+                "cadenceAnalyzerVersion": "anime-cadence-analyzer-v1",
+                "cadenceMaxReuseStreak": 2,
+                "cadenceSubtitleDenseLumaDeltaThreshold": 48,
+                "cadenceSubtitleDenseEdgeDeltaThreshold": 32,
+                "cadenceSubtitleDenseLocalContrastThreshold": 24,
+                "cadenceSubtitleDenseMinChangedPixels": 1,
+                "cadenceSubtitleDenseMinHighContrastPixels": 1,
+            }
+            for field, expected in expected_cadence_configuration.items():
+                if configuration.get(field) != expected:
+                    failures.append(
+                        f"configuration {field}: expected {expected!r}, "
+                        f"got {configuration.get(field)!r}"
+                    )
 
     strict_events = [event for event in events if event.get("event") == "qnn_strict"]
     if len(strict_events) != 1:
@@ -258,6 +278,9 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         configured_postprocess_mode = (
             configurations[0].get("postprocessMode") if configurations else None
         )
+        configured_cadence_mode = (
+            configurations[0].get("cadenceMode", "OFF") if configurations else "OFF"
+        )
         for field, expected in {
             "schemaVersion": 2,
             "mode": "QNN_HTP",
@@ -271,6 +294,11 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         }.items():
             if batch.get(field) != expected:
                 failures.append(f"frame batch {field}: expected {expected!r}, got {batch.get(field)!r}")
+        if batch.get("cadenceMode", "OFF") != configured_cadence_mode:
+            failures.append(
+                "frame batch cadenceMode: expected "
+                f"{configured_cadence_mode!r}, got {batch.get('cadenceMode')!r}"
+            )
         samples = batch.get("samples")
         if not isinstance(samples, list):
             failures.append("frame batch samples are missing or not an array")
@@ -323,6 +351,33 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             if is_int(sample.get("maxQueueDepth")) \
                     and sample["maxQueueDepth"] > MEASUREMENT_CONTRACT["workerQueueCapacity"]:
                 failures.append(f"frame {frame_id} exceeds bounded worker queue capacity")
+            if configured_cadence_mode == "CONTENT_AWARE_V1":
+                decision = sample.get("cadenceDecision")
+                if decision not in {"PROCESS", "REUSE"}:
+                    failures.append(f"frame {frame_id} has invalid cadenceDecision")
+                if not isinstance(sample.get("cadenceReason"), str):
+                    failures.append(f"frame {frame_id} has invalid cadenceReason")
+                streak = sample.get("reuseStreak")
+                if not is_int(streak) or streak < 0 or streak > 2:
+                    failures.append(f"frame {frame_id} exceeds cadence reuse streak")
+                if not is_int(sample.get("cadenceAnalysisNs")) \
+                        or sample["cadenceAnalysisNs"] < 0:
+                    failures.append(f"frame {frame_id} has invalid cadenceAnalysisNs")
+                for score_field in ("sceneScore", "subtitleScore", "motionScore"):
+                    score = sample.get(score_field)
+                    if not isinstance(score, (int, float)) or isinstance(score, bool) \
+                            or not math.isfinite(score) or score < 0:
+                        failures.append(f"frame {frame_id} has invalid {score_field}")
+                if decision == "REUSE":
+                    if sample.get("cadenceReferenceGeneration") != sample.get("generation"):
+                        failures.append(f"frame {frame_id} cadence reuse crosses generation")
+                    if sample.get("cadenceReferenceStreamEpoch") \
+                            != sample.get("cadenceStreamEpoch"):
+                        failures.append(f"frame {frame_id} cadence reuse crosses input stream")
+                    reference_frame = sample.get("cadenceReferenceFrameId")
+                    if not is_int(reference_frame) or reference_frame <= 0 \
+                            or reference_frame >= frame_id:
+                        failures.append(f"frame {frame_id} has invalid cadence reference frame")
 
     ordered = ordered_samples
     if ordered and ordered[0]["frameId"] != 1:
@@ -370,6 +425,13 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "measured_frame_count": len(measured),
     }
     if measured:
+        if cadence_mode == "CONTENT_AWARE_V1":
+            cadence_decisions = [sample.get("cadenceDecision") for sample in measured]
+            metrics["cadence_processed_count"] = cadence_decisions.count("PROCESS")
+            metrics["cadence_reused_count"] = cadence_decisions.count("REUSE")
+            metrics["cadence_inference_reduction_fraction"] = (
+                cadence_decisions.count("REUSE") / len(cadence_decisions)
+            )
         for metric_name, (start_field, end_field) in STAGE_INTERVALS.items():
             values = [float(sample[end_field] - sample[start_field]) for sample in measured
                       if is_int(sample.get(start_field)) and is_int(sample.get(end_field))]
@@ -398,7 +460,9 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             metrics["sampled_pts_fps"] = (len(measured) - 1) * 1_000_000 / pts_delta
 
     performance_class = "unclassified"
-    if "effectTotalToOutputSubmitProxyNs" in metrics and "observed_fps" in metrics:
+    if cadence_mode == "CONTENT_AWARE_V1":
+        performance_class = "cadence_effect_proxy_unclassified"
+    elif "effectTotalToOutputSubmitProxyNs" in metrics and "observed_fps" in metrics:
         total_p95 = metrics["effectTotalToOutputSubmitProxyNs"]["p95"] / 1_000_000
         observed_fps = metrics["observed_fps"]
         realtime_30 = plan["performance_classes"]["realtime_30"]
@@ -445,9 +509,14 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "case_id": case["id"],
         "run_id": run_id,
         "postprocess_mode": configurations[0].get("postprocessMode") if configurations else None,
+        "cadence_mode": cadence_mode,
         "functional_gate": "PASS" if not failures else "FAIL",
         "performance_class": performance_class,
-        "performance_scope": "effect_output_submit_proxy_not_gpu_completion_or_final_display",
+        "performance_scope": (
+            "mixed_inference_and_reuse_effect_output_submit_proxy_not_realtime_classified"
+            if cadence_mode == "CONTENT_AWARE_V1"
+            else "effect_output_submit_proxy_not_gpu_completion_or_final_display"
+        ),
         "final_display_status": "unmeasured",
         "metrics": metrics,
         "pipeline_counters": latest_counters,

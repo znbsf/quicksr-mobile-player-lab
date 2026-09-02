@@ -123,6 +123,7 @@ public final class SuperResolutionActivity extends Activity {
     private QuickSrSession.Mode benchmarkMode;
     private QuickSrSession.Tuning benchmarkTuning;
     private QuickSrVideoEffect.Profile benchmarkProfile;
+    private AnimeCadenceAnalyzer.Mode benchmarkCadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
     private VideoEvidenceStore.CaptureSpec benchmarkCaptureSpec =
             VideoEvidenceStore.CaptureSpec.none();
     private JSONObject benchmarkQnnStrictEvidence;
@@ -813,6 +814,7 @@ public final class SuperResolutionActivity extends Activity {
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_MODE)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_PROFILE)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_TUNING)
+                        || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_CADENCE_MODE)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_CAPTURE_FRAME)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_CAPTURE_PTS_US));
         if (!requested) {
@@ -826,6 +828,8 @@ public final class SuperResolutionActivity extends Activity {
                 VideoBenchmarkTelemetry.EXTRA_VIDEO_PROFILE);
         String requestedTuning = intent.getStringExtra(
                 VideoBenchmarkTelemetry.EXTRA_VIDEO_TUNING);
+        String requestedCadence = intent.getStringExtra(
+                VideoBenchmarkTelemetry.EXTRA_CADENCE_MODE);
         boolean captureFrameRequested = intent.hasExtra(
                 VideoBenchmarkTelemetry.EXTRA_CAPTURE_FRAME);
         boolean capturePtsRequested = intent.hasExtra(
@@ -833,6 +837,7 @@ public final class SuperResolutionActivity extends Activity {
         benchmarkIntentActive = true;
         benchmarkRunId = validBenchmarkRunId(runId) ? runId : "invalid-run-id";
         benchmarkCaptureSpec = VideoEvidenceStore.CaptureSpec.none();
+        benchmarkCadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
         benchmarkQnnStrictEvidence = null;
         if (!validBenchmarkRunId(runId)
                 || requestedMode == null
@@ -847,6 +852,9 @@ public final class SuperResolutionActivity extends Activity {
                     QuickSrVideoEffect.Profile.valueOf(requestedProfile);
             QuickSrSession.Tuning selectedTuning =
                     QuickSrSession.Tuning.valueOf(requestedTuning);
+            AnimeCadenceAnalyzer.Mode selectedCadence = requestedCadence == null
+                    ? AnimeCadenceAnalyzer.Mode.OFF
+                    : AnimeCadenceAnalyzer.Mode.valueOf(requestedCadence);
             if (captureFrameRequested && capturePtsRequested) {
                 return benchmarkConfigurationFailure(
                         "Specify at most one video evidence selector: frame or ptsUs");
@@ -876,6 +884,10 @@ public final class SuperResolutionActivity extends Activity {
                 return benchmarkConfigurationFailure(
                         "Video tensor capture is restricted to QUICKSR_QNN");
             }
+            if (captureSpec.isRequested() && selectedCadence != AnimeCadenceAnalyzer.Mode.OFF) {
+                return benchmarkConfigurationFailure(
+                        "Tensor capture requires cadence mode OFF so the selected input is inferred");
+            }
             videoMode = selectedMode;
             videoNeuralProfileSpinner.setSelection(selectedProfile.ordinal());
             videoQnnTuningSpinner.setSelection(selectedTuning.ordinal());
@@ -886,6 +898,7 @@ public final class SuperResolutionActivity extends Activity {
                     ? selectedTuning
                     : QuickSrSession.Tuning.BASELINE;
             benchmarkProfile = selectedProfile;
+            benchmarkCadenceMode = selectedCadence;
             benchmarkCaptureSpec = captureSpec;
             setBenchmarkPlaybackRepeats(true);
             synchronized (benchmarkStatsLock) {
@@ -901,7 +914,8 @@ public final class SuperResolutionActivity extends Activity {
                             benchmarkProfile,
                             BuildConfig.QNN_RUNTIME_EXPECTED,
                             benchmarkCaptureSpec,
-                            BuildConfig.QUICKSR_POSTPROCESS_OVERLAP));
+                            BuildConfig.QUICKSR_POSTPROCESS_OVERLAP,
+                            benchmarkCadenceMode));
             return true;
         } catch (IllegalArgumentException failure) {
             return benchmarkConfigurationFailure(
@@ -1062,6 +1076,7 @@ public final class SuperResolutionActivity extends Activity {
         benchmarkMode = null;
         benchmarkTuning = null;
         benchmarkProfile = null;
+        benchmarkCadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
         benchmarkCaptureSpec = VideoEvidenceStore.CaptureSpec.none();
         benchmarkQnnStrictEvidence = null;
         synchronized (benchmarkStatsLock) {
@@ -1126,13 +1141,17 @@ public final class SuperResolutionActivity extends Activity {
             final VideoEvidenceStore.CaptureSpec effectCaptureSpec = effectBenchmarkRunId == null
                     ? VideoEvidenceStore.CaptureSpec.none()
                     : benchmarkCaptureSpec;
+            final AnimeCadenceAnalyzer.Mode effectCadenceMode = effectBenchmarkRunId == null
+                    ? AnimeCadenceAnalyzer.Mode.OFF
+                    : benchmarkCadenceMode;
             String effectKey = neuralVideoEffectKey(
                     backend,
                     profile,
                     tuning,
                     effectBenchmarkRunId,
                     effectCaptureSpec,
-                    BuildConfig.QUICKSR_POSTPROCESS_OVERLAP);
+                    BuildConfig.QUICKSR_POSTPROCESS_OVERLAP,
+                    effectCadenceMode);
             if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
                 return;
             }
@@ -1144,6 +1163,7 @@ public final class SuperResolutionActivity extends Activity {
                     effectBenchmarkRunId,
                     effectCaptureSpec,
                     BuildConfig.QUICKSR_POSTPROCESS_OVERLAP,
+                    effectCadenceMode,
                     new QuickSrVideoEffect.StatsListener() {
                         @Override
                         public void onFrameProcessed(QuickSrVideoEffect.FrameStats stats) {
@@ -1442,7 +1462,8 @@ public final class SuperResolutionActivity extends Activity {
             QuickSrSession.Tuning tuning,
             String benchmarkRunId,
             VideoEvidenceStore.CaptureSpec captureSpec,
-            boolean postprocessOverlap) {
+            boolean postprocessOverlap,
+            AnimeCadenceAnalyzer.Mode cadenceMode) {
         return "NEURAL:"
                 + backend + ':'
                 + profile + ':'
@@ -1450,7 +1471,8 @@ public final class SuperResolutionActivity extends Activity {
                 + (benchmarkRunId == null ? "interactive" : benchmarkRunId) + ':'
                 + captureSpec.telemetryKind() + ':'
                 + captureSpec.value() + ':'
-                + (postprocessOverlap ? "overlap" : "serial");
+                + (postprocessOverlap ? "overlap" : "serial") + ':'
+                + cadenceMode.name();
     }
 
     private void updateVideoEffectButton() {
