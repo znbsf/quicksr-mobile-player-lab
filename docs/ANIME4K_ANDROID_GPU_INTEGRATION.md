@@ -87,6 +87,15 @@ mpv shader remains open until a same-frame pixel comparison passes.
   creation, Media3 output-pool allocation or fallback drawing still fails,
   the Activity removes Anime4K, installs GPU Lanczos, prepares again and seeks
   back to the previous playback position.
+- App-level recovery accepts only Media3's video-frame-processing error for the
+  currently applied Anime4K key and graph generation. URI, DRM, audio and
+  decoder errors remain ordinary playback failures. Once recovery succeeds,
+  Lanczos is latched across target changes and new intents; only an explicit
+  user mode cycle can retry Anime4K, and the button/status identify the
+  effective Lanczos path.
+- Program cleanup mirrors Media3 1.11.0's API 28 workaround by skipping
+  `glDeleteProgram` on that SDK level, including partial-construction cleanup
+  and normal/fallback release paths. Other SDK levels still delete programs.
 - Intermediate FBOs, RGBA16F textures, all five model programs, the fallback
   program and Media3's output pool are explicitly released.
 
@@ -121,6 +130,41 @@ error and mismatching-pixel count. Threshold acceptance is deliberately not
 invented before the first paired capture; until a reviewed threshold or exact
 match passes, mpv equivalence remains open.
 
+## 2026-09-03 bounded physical-device result
+
+One authorized Android 16 device reported a Qualcomm Adreno 740 renderer and
+OpenGL ES 3.2. SurfaceFlinger directly exposed both
+`GL_EXT_color_buffer_half_float` and `GL_EXT_color_buffer_float`. All three
+Anime4K targets reported their five-pass first frame as model-active, which
+also means the effect's RGBA16F allocation and FBO-completeness gate passed;
+none selected internal bilinear or app-level Lanczos fallback.
+
+The same registered rights-clear 1280x720, 24 fps, 7.5-second animation was
+restarted once per valid sample. `SF buffers` is a SurfaceFlinger layer-counter
+delta, not GPU shader timing or Media3's official dropped-frame counter. The
+vendor MediaCodec five-second windows independently reported `Drop:0` for all
+six cases.
+
+| Route | Target | SF buffers / 7.5 s | Derived display proxy | Whole-process PSS peak | Battery-temperature proxy |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Anime4K x2 Small | 720p | 180 | 24.0 fps | 179,193 KiB | 39.0 -> 39.0 C |
+| Anime4K x2 Small | 1080p | 179 | 23.87 fps | 177,443 KiB | 39.0 -> 38.9 C |
+| Anime4K x2 Small | 1440p | 179 | 23.87 fps | 179,664 KiB | 38.9 -> 38.9 C |
+| GPU Lanczos | 720p | 177 | 23.60 fps | 179,497 KiB | 38.9 -> 39.0 C |
+| GPU Lanczos | 1080p | 179 | 23.87 fps | 179,508 KiB | 39.0 -> 38.9 C |
+| GPU Lanczos | 1440p | 177 | 23.60 fps | 179,938 KiB | 39.0 -> 38.9 C |
+
+Pause, seek from about one second to about five seconds, resume, HOME/resume,
+and three play-during-back/reopen cycles completed. Each back cycle produced
+codec/player release records, left no resumed App Activity and had no crash,
+ANR, GL or Media3 error marker.
+
+The attempted same-position Anime4K/Lanczos screenshots were invalid because
+the OEM picker/scroll state displaced the PlayerView. They are raw ignored
+artifacts and are not quality evidence. The registered BBB clip also has no
+subtitle/line-art contract, so visual equivalence, subtitle edges and human
+quality review remain open.
+
 ## Evidence status
 
 Confirmed by source inspection and host tests:
@@ -140,15 +184,13 @@ Confirmed by source inspection and host tests:
   exposes a half-float color-buffer extension and reports an RGBA16F probe FBO
   complete. This is a DLL-level host shader smoke, not an App run.
 
-Still open until a device is available:
+Still open:
 
-- actual GLES compile/link and texture execution on the target GPU;
 - execution of the prepared fixed opaque-frame comparison, followed by clean,
   compressed, subtitle and edge fixtures;
-- evidence that RGBA16F allocation succeeds for every target;
-- per-pass and end-to-end GPU timings, allocation peak, sustained thermals,
-  dropped frames and final displayed-frame inspection;
+- per-pass and end-to-end GPU timings, longer sustained thermals, p50/p95/p99,
+  power and final displayed-frame inspection;
 - HDR behavior beyond the declared fallback.
 
-No physical-device command, APK installation or adb action belongs to this
-host-only preparation round.
+Raw device logs, screenshots, APKs and media remain under ignored local paths;
+this document contains only the reviewed aggregate summary.

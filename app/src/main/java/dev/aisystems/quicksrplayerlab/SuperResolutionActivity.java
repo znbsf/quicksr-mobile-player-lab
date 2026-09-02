@@ -105,6 +105,10 @@ public final class SuperResolutionActivity extends Activity {
     private ExoPlayer player;
     private String appliedVideoEffectKey;
     private boolean anime4kRecoveryInProgress;
+    private boolean anime4kAppFallbackActive;
+    private String anime4kAppFallbackDetail;
+    private long videoEffectGeneration;
+    private long activeAnime4kGeneration = -1L;
     private Future<?> activeImageTask;
     private Future<?> activeSaveTask;
     private Bitmap latestSource;
@@ -154,8 +158,7 @@ public final class SuperResolutionActivity extends Activity {
 
             @Override
             public void onPlayerError(PlaybackException error) {
-                if (recoverFromAnime4kPipelineFailure(
-                        "Media3 video pipeline failed: " + safeMessage(error))) {
+                if (recoverFromAnime4kPipelineFailure(error)) {
                     return;
                 }
                 logBenchmarkError("player", safeMessage(error));
@@ -1067,9 +1070,15 @@ public final class SuperResolutionActivity extends Activity {
     }
 
     private void toggleVideoEffect() {
+        VideoMode previousMode = videoMode;
         do {
             videoMode = videoMode.next();
         } while (!BuildConfig.QNN_RUNTIME_EXPECTED && videoMode == VideoMode.QUICKSR_QNN);
+        if (videoMode != VideoMode.GPU_ANIME4K || previousMode != VideoMode.GPU_ANIME4K) {
+            anime4kRecoveryInProgress = false;
+            anime4kAppFallbackActive = false;
+            anime4kAppFallbackDetail = null;
+        }
         applyVideoEffects();
         updateVideoEffectButton();
     }
@@ -1089,7 +1098,7 @@ public final class SuperResolutionActivity extends Activity {
                 return;
             }
             player.setVideoEffects(Collections.emptyList());
-            appliedVideoEffectKey = effectKey;
+            recordAppliedVideoEffect(effectKey, false);
             updateVideoStatus("原始视频路径：未应用上采样效果。");
             return;
         }
@@ -1230,7 +1239,7 @@ public final class SuperResolutionActivity extends Activity {
                     profile.canvasHeight(),
                     Presentation.LAYOUT_SCALE_TO_FIT);
             player.setVideoEffects(Arrays.asList(outputCanvas, effect));
-            appliedVideoEffectKey = effectKey;
+            recordAppliedVideoEffect(effectKey, false);
             updateVideoStatus(
                     backend + " · " + tuning + " 已开启：每帧 " + profile +
                             "，输出画布 " + profile.canvasWidth() + "×" + profile.canvasHeight() + "。" +
@@ -1244,6 +1253,24 @@ public final class SuperResolutionActivity extends Activity {
         int position = Math.max(0, videoTargetSpinner.getSelectedItemPosition());
         int[] target = VIDEO_TARGETS[position];
         if (videoMode == VideoMode.GPU_ANIME4K) {
+            if (anime4kAppFallbackActive) {
+                String fallbackKey = anime4kAppFallbackKey(target[0], target[1]);
+                if (shouldApplyVideoEffect(appliedVideoEffectKey, fallbackKey)) {
+                    Effect fallback = LanczosResample.scaleToFitWithFlexibleOrientation(
+                            target[0], target[1]);
+                    player.setVideoEffects(Collections.singletonList(fallback));
+                    recordAppliedVideoEffect(fallbackKey, false);
+                }
+                updateVideoEffectButton();
+                updateVideoStatus(
+                        "Anime4K app-level fallback 保持生效：GPU Lanczos "
+                                + target[0] + "×" + target[1]
+                                + "。只有显式切走并重新选择 Anime4K 才会重试模型。"
+                                + (anime4kAppFallbackDetail == null
+                                        ? ""
+                                        : " 原因：" + anime4kAppFallbackDetail));
+                return;
+            }
             int[] input = Anime4kSmallEffect.inputSizeForTarget(target[0], target[1]);
             String effectKey = anime4kVideoEffectKey(target[0], target[1]);
             if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
@@ -1254,13 +1281,15 @@ public final class SuperResolutionActivity extends Activity {
                     input[1],
                     Presentation.LAYOUT_SCALE_TO_FIT);
             anime4kRecoveryInProgress = false;
+            final long effectGeneration = videoEffectGeneration + 1L;
             Effect anime4k = new Anime4kSmallEffect(new Anime4kSmallEffect.StatusListener() {
                 @Override
                 public void onStatus(boolean modelActive, String detail) {
                     runOnUiThread(() -> {
                         if (!activityDestroyed
                                 && videoMode == VideoMode.GPU_ANIME4K
-                                && effectKey.equals(appliedVideoEffectKey)) {
+                                && effectKey.equals(appliedVideoEffectKey)
+                                && effectGeneration == activeAnime4kGeneration) {
                             if (modelActive) {
                                 updateVideoStatus(
                                         "Anime4K v4.0.1 x2 Small 首帧 GL 路径已完成："
@@ -1282,7 +1311,8 @@ public final class SuperResolutionActivity extends Activity {
                     runOnUiThread(() -> {
                         if (!activityDestroyed
                                 && videoMode == VideoMode.GPU_ANIME4K
-                                && effectKey.equals(appliedVideoEffectKey)) {
+                                && effectKey.equals(appliedVideoEffectKey)
+                                && effectGeneration == activeAnime4kGeneration) {
                             updateVideoStatus(
                                     "Anime4K effect 内 fallback 已失败，等待 Media3 error "
                                             + "触发一次 app-level 恢复：" + detail);
@@ -1291,7 +1321,7 @@ public final class SuperResolutionActivity extends Activity {
                 }
             });
             player.setVideoEffects(Arrays.asList(inputCanvas, anime4k));
-            appliedVideoEffectKey = effectKey;
+            recordAppliedVideoEffect(effectKey, true);
             updateVideoStatus(
                     "Anime4K v4.0.1 x2 Small 已请求：GPU "
                             + input[0] + "×" + input[1] + "→"
@@ -1307,7 +1337,7 @@ public final class SuperResolutionActivity extends Activity {
                 target[0],
                 target[1]);
         player.setVideoEffects(Collections.singletonList(effect));
-        appliedVideoEffectKey = effectKey;
+        recordAppliedVideoEffect(effectKey, false);
         updateVideoStatus(
                 "GPU Lanczos 已开启，目标边界 " + target[0] + "×" + target[1] + "。");
     }
@@ -1325,30 +1355,77 @@ public final class SuperResolutionActivity extends Activity {
         return "GPU_ANIME4K_APP_FALLBACK_LANCZOS:" + targetWidth + "x" + targetHeight;
     }
 
-    private boolean recoverFromAnime4kPipelineFailure(String detail) {
-        if (activityDestroyed
-                || player == null
-                || videoMode != VideoMode.GPU_ANIME4K) {
-            return false;
-        }
-        if (anime4kRecoveryInProgress) {
+    static boolean shouldRecoverAnime4kPipelineFailure(
+            int errorCode,
+            boolean activityDestroyed,
+            boolean playerPresent,
+            boolean animeMode,
+            boolean recoveryInProgress,
+            boolean appFallbackActive,
+            String appliedEffectKey,
+            String expectedAnimeEffectKey,
+            long activeAnimeGeneration,
+            long currentEffectGeneration) {
+        return errorCode == PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED
+                && !activityDestroyed
+                && playerPresent
+                && animeMode
+                && !recoveryInProgress
+                && !appFallbackActive
+                && expectedAnimeEffectKey.equals(appliedEffectKey)
+                && activeAnimeGeneration > 0L
+                && activeAnimeGeneration == currentEffectGeneration;
+    }
+
+    static String effectiveAnime4kEffectKey(
+            boolean appFallbackActive,
+            int targetWidth,
+            int targetHeight) {
+        return appFallbackActive
+                ? anime4kAppFallbackKey(targetWidth, targetHeight)
+                : anime4kVideoEffectKey(targetWidth, targetHeight);
+    }
+
+    private void recordAppliedVideoEffect(String effectKey, boolean anime4kActive) {
+        videoEffectGeneration++;
+        appliedVideoEffectKey = effectKey;
+        activeAnime4kGeneration = anime4kActive ? videoEffectGeneration : -1L;
+    }
+
+    private boolean recoverFromAnime4kPipelineFailure(PlaybackException error) {
+        int position = Math.max(0, videoTargetSpinner.getSelectedItemPosition());
+        int[] target = VIDEO_TARGETS[position];
+        String expectedAnimeKey = anime4kVideoEffectKey(target[0], target[1]);
+        if (!shouldRecoverAnime4kPipelineFailure(
+                error.errorCode,
+                activityDestroyed,
+                player != null,
+                videoMode == VideoMode.GPU_ANIME4K,
+                anime4kRecoveryInProgress,
+                anime4kAppFallbackActive,
+                appliedVideoEffectKey,
+                expectedAnimeKey,
+                activeAnime4kGeneration,
+                videoEffectGeneration)) {
             return false;
         }
         anime4kRecoveryInProgress = true;
-        int position = Math.max(0, videoTargetSpinner.getSelectedItemPosition());
-        int[] target = VIDEO_TARGETS[position];
+        String detail = "Media3 video pipeline failed: " + safeMessage(error);
         long playbackPositionMs = Math.max(0L, player.getCurrentPosition());
         boolean resumePlayback = player.getPlayWhenReady();
         try {
             Effect appFallback = LanczosResample.scaleToFitWithFlexibleOrientation(
                     target[0], target[1]);
             player.setVideoEffects(Collections.singletonList(appFallback));
-            appliedVideoEffectKey = anime4kAppFallbackKey(target[0], target[1]);
+            recordAppliedVideoEffect(anime4kAppFallbackKey(target[0], target[1]), false);
+            anime4kAppFallbackActive = true;
+            anime4kAppFallbackDetail = detail;
             player.prepare();
             player.seekTo(playbackPositionMs);
             if (resumePlayback) {
                 player.play();
             }
+            updateVideoEffectButton();
             updateVideoStatus(
                     "Anime4K 与 effect 内双线性均未能继续；已移除 Anime4K，"
                             + "改用 app-level GPU Lanczos 并从原位置重试：" + detail);
@@ -1389,7 +1466,9 @@ public final class SuperResolutionActivity extends Activity {
             case QUICKSR_CPU:
                 return "QuickSR CPU · 真实逐帧/很慢";
             case GPU_ANIME4K:
-                return "Anime4K x2 Small · GPU-resident/待真机 A/B";
+                return anime4kAppFallbackActive
+                        ? "GPU Lanczos · Anime4K app fallback/需显式重试"
+                        : "Anime4K x2 Small · GPU-resident/待真机 A/B";
             case GPU_LANCZOS:
                 return "GPU Lanczos · 实时传统上采样";
             case ORIGINAL:

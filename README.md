@@ -31,7 +31,7 @@
 - **ONNX Runtime：**PC、Android CPU 和 QNN 共用 ONNX 模型与 Java API，便于先做 PC golden/质量筛选，再迁移到手机。
 - **Qualcomm QNN HTP：**直接使用 Snapdragon 平台的 NPU/HTP，目标是降低逐帧 CPU 负载和功耗。
 - **QuickSRNetSmall：**模型体积较小，并有 1.5×/2×/3×/4× 上游 checkpoint，适合移动端多倍率实验。
-- **Anime4K x2 Small：**五个 shader pass 全程保留在 GL texture 中，作为不经过 CPU readback/NPU round trip 的动漫线稿候选；当前只有主机源码/构建证据，真机画质与速度仍待 A/B。
+- **Anime4K x2 Small：**五个 shader pass 全程保留在 GL texture 中，作为不经过 CPU readback/NPU round trip 的动漫线稿候选；单台 Adreno 740 已完成三档 model-active 功能样本，真机同帧画质、GPU timing 与跨设备兼容仍待 A/B。
 - **固定 Shape 模型：**减少运行时图变化，便于 QNN graph finalization、Tensor 复用和稳定的内存规划。
 - **Media3 `Presentation`：**在推理前建立真正的目标纹理尺寸，避免模型生成 1080p/1440p 后又被缩回源视频尺寸。
 - **PC-first：**手机调试成本高，先在 PC 上淘汰画质差、退化不稳或明显无法实时的路线，再进入设备验证。
@@ -46,7 +46,7 @@
 - 已存档的 v0.12.0 单机 720p QNN smoke：`645 帧 / 26.860 秒 = 24.0134 FPS`，四个约 5 秒 MediaCodec 窗口 Drop=0。
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
 - v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
-- v0.15.0 已接入 hash 固定的 Anime4K v4.0.1 x2 Small 五-pass GL effect、显式 Media3 默认非线性 SDR working color、事务性 GL 资源、模式选择与两级失败恢复；本轮没有调用 adb，因此还没有目标 GPU 的 compile/link、像素、速度或 thermal 结果，也不声称与 mpv 输出等价。
+- v0.15.0 的 Anime4K v4.0.1 x2 Small 已在一台 Android 16 / Adreno 740 设备完成 720p/1080p/1440p 有界播放：三档首帧均 model-active、MediaCodec Drop=0、PSS 峰值约 173-175 MiB、温度代理保持 38.9-39.0 C；同位置视觉 A/B 未可靠取得，仍不声称与 mpv 输出等价或具有通用实时性能。
 - 由实际 Java 适配器生成的五段 model fragment 与 `mediump` fallback 已在 Android Emulator 随附的 SwiftShader OpenGL ES 3 环境 6/6 compile+link PASS；同一宿主 context 的 half-float 扩展预检和 RGBA16F FBO completeness 也通过。这仍只是 DLL 级主机 smoke，不是模拟器 App 或目标手机执行。
 
 完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
@@ -57,7 +57,7 @@
 
 | 环境 | 支持状态 | 后端与限制 |
 | --- | --- | --- |
-| Android 8.1+、arm64-v8a、兼容 Qualcomm HTP/CDSP | 目标平台；720p 已有单机 smoke | CPU、GPU Lanczos、QNN HTP；Anime4K 与 1080p/1440p 需逐机验证性能和内存 |
+| Android 8.1+、arm64-v8a、兼容 Qualcomm HTP/CDSP | 目标平台；单台 Adreno 740 已有 Anime4K 三档功能 smoke | CPU、GPU Lanczos、QNN HTP、Anime4K；画质、长时热稳与其他设备仍需逐机验证 |
 | Android 8.1+、其他 arm64-v8a 设备 | 可构建，未形成多厂商兼容矩阵 | 以 ONNX Runtime CPU、GPU Lanczos 和待验证 Anime4K 为主；QNN 初始化失败时不能声称 NPU 支持 |
 | Android Studio API 35 x86_64 模拟器 | 已验证功能路径 | CPU 与 GPU 功能检查；没有 Qualcomm HTP，不能测试 QNN 性能 |
 | armeabi-v7a、32 位 x86、iOS | 不支持 | 当前构建只接受 `arm64-v8a` 或 `x86_64` |

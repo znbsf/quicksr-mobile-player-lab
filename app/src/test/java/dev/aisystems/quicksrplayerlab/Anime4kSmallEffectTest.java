@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import androidx.media3.common.PlaybackException;
 import androidx.media3.common.util.Size;
 import androidx.media3.common.util.GlUtil;
 import androidx.media3.effect.DefaultVideoFrameProcessor;
@@ -91,6 +92,86 @@ public final class Anime4kSmallEffectTest {
                 "precision mediump float;"));
         assertFalse(Anime4kSmallEffect.FALLBACK_FRAGMENT_SHADER.contains(
                 "precision highp float;"));
+    }
+
+    @Test
+    public void programDeletionMatchesMedia3Api28DriverWorkaround() {
+        assertFalse(Anime4kSmallEffect.shouldSkipProgramDeletion(27));
+        assertTrue(Anime4kSmallEffect.shouldSkipProgramDeletion(28));
+        assertFalse(Anime4kSmallEffect.shouldSkipProgramDeletion(29));
+    }
+
+    @Test
+    public void appFallbackAcceptsOnlyCurrentAnimeVideoFrameProcessingFailure() {
+        String animeKey = SuperResolutionActivity.anime4kVideoEffectKey(1920, 1080);
+        assertTrue(SuperResolutionActivity.shouldRecoverAnime4kPipelineFailure(
+                PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED,
+                false,
+                true,
+                true,
+                false,
+                false,
+                animeKey,
+                animeKey,
+                7L,
+                7L));
+        assertFalse(SuperResolutionActivity.shouldRecoverAnime4kPipelineFailure(
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                false,
+                true,
+                true,
+                false,
+                false,
+                animeKey,
+                animeKey,
+                7L,
+                7L));
+        assertFalse(SuperResolutionActivity.shouldRecoverAnime4kPipelineFailure(
+                PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED,
+                false,
+                true,
+                true,
+                false,
+                false,
+                "GPU_LANCZOS:1920x1080",
+                animeKey,
+                7L,
+                7L));
+        assertFalse(SuperResolutionActivity.shouldRecoverAnime4kPipelineFailure(
+                PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED,
+                false,
+                true,
+                true,
+                false,
+                false,
+                animeKey,
+                animeKey,
+                6L,
+                7L));
+    }
+
+    @Test
+    public void appFallbackIsLatchedAndASecondErrorDoesNotRetry() {
+        String animeKey = SuperResolutionActivity.anime4kVideoEffectKey(1280, 720);
+        assertFalse(SuperResolutionActivity.shouldRecoverAnime4kPipelineFailure(
+                PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED,
+                false,
+                true,
+                true,
+                true,
+                true,
+                SuperResolutionActivity.anime4kAppFallbackKey(1280, 720),
+                animeKey,
+                -1L,
+                8L));
+        assertEquals(
+                SuperResolutionActivity.anime4kAppFallbackKey(2560, 1440),
+                SuperResolutionActivity.effectiveAnime4kEffectKey(
+                        true, 2560, 1440));
+        assertEquals(
+                SuperResolutionActivity.anime4kVideoEffectKey(2560, 1440),
+                SuperResolutionActivity.effectiveAnime4kEffectKey(
+                        false, 2560, 1440));
     }
 
     @Test

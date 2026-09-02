@@ -3,6 +3,7 @@ package dev.aisystems.quicksrplayerlab;
 import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLES30;
+import android.os.Build;
 
 import androidx.media3.common.VideoFrameProcessingException;
 import androidx.media3.common.util.GlUtil;
@@ -408,8 +409,10 @@ public final class Anime4kSmallEffect implements GlEffect {
             if (deleted) {
                 return;
             }
-            GLES20.glDeleteProgram(programId);
-            GlUtil.checkGlError();
+            if (!shouldSkipProgramDeletion(Build.VERSION.SDK_INT)) {
+                GLES20.glDeleteProgram(programId);
+                GlUtil.checkGlError();
+            }
             deleted = true;
         }
 
@@ -430,7 +433,7 @@ public final class Anime4kSmallEffect implements GlEffect {
         }
 
         private static void deleteProgramQuietly(int programId, Throwable failure) {
-            if (programId == 0) {
+            if (programId == 0 || shouldSkipProgramDeletion(Build.VERSION.SDK_INT)) {
                 return;
             }
             try {
@@ -440,6 +443,11 @@ public final class Anime4kSmallEffect implements GlEffect {
                 failure.addSuppressed(cleanupFailure);
             }
         }
+    }
+
+    /** Mirrors the Media3 1.11.0 GlProgram workaround for API 28 driver crashes. */
+    static boolean shouldSkipProgramDeletion(int sdkInt) {
+        return sdkInt == 28;
     }
 
     interface IntermediateAllocator {
