@@ -152,18 +152,24 @@ QNN 的 `enable_htp_shared_memory_allocator=1` 可能减少 B/C 中的部分搬�
 
 ## 6. 颜色空间合同
 
-Media3 的 `GlEffect.toGlShaderProgram(context, useHdr)` 官方说明：`useHdr=false` 时，输入 texture 是 linear RGB BT.709；`useHdr=true` 时是 linear RGB BT.2020。QuickSR 的图片预处理则需要按模型实现查证其 RGB / range / transfer function，不能默认 texture 值等同于 PNG 的 sRGB byte。
+颜色合同取决于 `DefaultVideoFrameProcessor` 的 working-color 配置，不能只从
+`GlEffect.toGlShaderProgram(context, useHdr)` 的旧式概括推断。Media3 1.11.0
+实际默认 `WORKING_COLOR_SPACE_DEFAULT`：SDR/SRGB 中间 effect 保留输入的非线性
+电信号 RGB；只有显式 `WORKING_COLOR_SPACE_LINEAR` 才执行 SDR EOTF，而且视频
+SDR 使用 SMPTE 170M，不是 sRGB。当前 App 显式固定默认模式。QuickSR 的图片
+预处理仍需按模型实现查证 RGB/range/transfer，不能把任何 GL 值无证据地当成
+PNG sRGB byte 或 linear RGB。
 
 首版只支持 SDR，并在运行前冻结以下合同：
 
 ```text
-Media3 linear RGB BT.709 texture
+Media3 default-working-color nonlinear SDR texture
   → 明确的 transfer function / quantization
   → 模型要求的 RGB8 或 float RGB
   → NCHW/NHWC layout
   → QuickSR output
   → 逆 transfer function
-  → Media3 linear RGB BT.709 output texture
+  → Media3 default-working-color nonlinear SDR output texture
 ```
 
 必须验证：

@@ -46,8 +46,8 @@
 - 已存档的 v0.12.0 单机 720p QNN smoke：`645 帧 / 26.860 秒 = 24.0134 FPS`，四个约 5 秒 MediaCodec 窗口 Drop=0。
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
 - v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
-- v0.15.0 已接入 hash 固定的 Anime4K v4.0.1 x2 Small 五-pass GL effect、模式选择与 shader 失败回退；本轮没有调用 adb，因此还没有目标 GPU 的 compile/link、像素、速度或 thermal 结果。
-- 由实际 Java 适配器生成的五段 fragment source 已在 Android Emulator 随附的 SwiftShader OpenGL ES 2 环境 5/5 compile+link PASS；这只是主机 shader smoke，不是模拟器 App 或目标手机执行。
+- v0.15.0 已接入 hash 固定的 Anime4K v4.0.1 x2 Small 五-pass GL effect、显式 Media3 默认非线性 SDR working color、事务性 GL 资源、模式选择与两级失败恢复；本轮没有调用 adb，因此还没有目标 GPU 的 compile/link、像素、速度或 thermal 结果，也不声称与 mpv 输出等价。
+- 由实际 Java 适配器生成的五段 model fragment 与 `mediump` fallback 已在 Android Emulator 随附的 SwiftShader OpenGL ES 3 环境 6/6 compile+link PASS；同一宿主 context 的 half-float 扩展预检和 RGBA16F FBO completeness 也通过。这仍只是 DLL 级主机 smoke，不是模拟器 App 或目标手机执行。
 
 完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
 
