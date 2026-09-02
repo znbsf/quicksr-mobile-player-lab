@@ -133,3 +133,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Runner:** the PowerShell matrix runner requires exactly one authorized arm64 physical device, rejects `ro.kernel.qemu=1`, installs the explicitly supplied APK, starts each case by Intent and preserves raw logs/reports only under ignored `device-results/`.
 - **Observed emulator regression:** API 35 x86_64 emitted one CPU configuration plus 49 1080p frame samples. A QNN request emitted a structured `configuration` error because the x86 build has no QNN runtime. This proves the control/telemetry and fail-closed paths only; it does not produce Qualcomm HTP evidence.
 - **Status:** host and emulator automation are ready. The phone was disconnected, so physical v0.14.0 QNN measurements remain pending rather than inferred.
+
+## 2026-09-03 — Anime real-time SR, cadence reuse and interpolation execution split
+
+- **Observed:** the rights-clear physical-device matrix classified 720p and 1080p as offline; 1080p recorded median queue/ORT/output-conversion/total p50 of 329/43/37/414 ms and median observed throughput of 11.69 fps. The effect still serializes inference and output packing, while Media3 readback and final GL/display stages are not covered by one end-to-end clock.
+- **Decision:** keep Media3/hardware decode, close the observability gap first, then A/B a bounded inference/postprocess pipeline and native/direct output packing. Evaluate GPU-resident Anime4K/FSRCNNX and mobile model candidates in an independent workstream.
+- **Cadence boundary:** do not implement fixed every-third-frame SR. Inspect every decoded frame cheaply, run SR only on adaptive anchors, preserve original PTS, reset on cuts/seeks/flushes and record processed/reused/drop/bypass decisions.
+- **Interpolation boundary:** keep VFI optional and last; deduplicate/detect cuts before interpolation and require anime line/temporal quality review.
+- **Execution:** immediately parallelize only the real-time pipeline and model-lab workstreams. Create cadence-aware SR from the merged runtime contract, then create VFI after performance and model selection stabilize.
+- **Details:** see [ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md).

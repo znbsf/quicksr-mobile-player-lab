@@ -46,7 +46,7 @@
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
 - v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
 
-完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。
+完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
 
 ## 支持机型与系统
 
@@ -258,4 +258,4 @@ Android 依赖从 Google Maven/Maven Central 获取；PC 依赖完整列表位�
 - 当前开放语料不是所有商业日本动漫、字幕、编码和时序缺陷的代表；
 - 当前还不是可供其他 App 直接依赖的稳定 AAR。
 
-优化过程见 [实时视频超分经验总结](docs/REALTIME_VIDEO_SR_LESSONS.md)，整体路线见 [播放器路线图](docs/PLAYER_ROADMAP.md)。
+优化过程见 [实时视频超分经验总结](docs/REALTIME_VIDEO_SR_LESSONS.md)，整体路线见 [播放器路线图](docs/PLAYER_ROADMAP.md)，下一阶段拆分见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
