@@ -28,6 +28,7 @@ v0.14.0 已形成可安装的图片与本地视频超分 App。一个 arm64 Qual
 | Android 高分辨率档 | PASS（单设备功能限定） | 权利清晰子集在一台物理 Qualcomm 设备完成 1080p 主档、受门禁 1440p 实验档与 4K 显示回退档；4K 是 1080p neural→4K GL canvas | 未证明实时、热稳定、内存压力、最终显示、通用设备或原生 4K 神经输出 |
 | x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；权利清晰 640×360 H.264 clip 的 720p/1080p/1440p/4K 显示档均完成首帧，报告的画布和神经纹理尺寸符合 profile | 模拟器没有 Qualcomm HTP；CPU 单帧耗时和排队不可外推真机实时性能 |
 | 真机 QNN 自动矩阵 | PASS（单设备、离线范围） | 11/11 clip 的 720p 和 1080p 主链均功能 PASS、无报告级失败/设备错误；1440p 和 4K 显示回退在主档门禁后也功能 PASS；严格 QNN 会话配置、绑定收据、样本数和 p50/p95 已验证 | 不证明 realtime、thermal、per-node EP placement/fallback trace、屏幕 latch/A-V sync 或其他设备；详见 [移动子集验证](ANDROID_MOBILE_SUBSET_VALIDATION.md) |
+| 实时流水线 P0 观测 | IMPLEMENTED（主机范围） | raw ns 时间线、逐帧 generation/PTS/输入输出 CRC32、accepted/processed/late/dropped/bypassed、worker queue depth、flush/seek proxy、报告 p50/p95/p99/max 与 fail-closed 验证已实现；worker 队列固定为容量 2 的阻塞背压 | 尚未在物理设备运行；readback、GL submit 与 PTS-wall drift 是明确代理，Media3 内部队列深度及 SurfaceFlinger/final display 未测；没有吞吐 A/B 结论 |
 
 ## 已存档的 v0.12.0 物理机 720p smoke
 
@@ -86,5 +87,8 @@ local SDR video
 5. 将 27 个张量级数值比较扩展为冻结的 real-image/SSIM、视频时序与人工质量审查；
 6. 在先达到 realtime 前提后，建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
 7. 若要复用，再拆分稳定 AAR API 和 demo app。
+
+P0 观测字段、代理/未测边界和下一轮单变量 A/B 门禁见
+[REALTIME_PIPELINE_TELEMETRY.md](REALTIME_PIPELINE_TELEMETRY.md)。
 
 优化经验见 [REALTIME_VIDEO_SR_LESSONS.md](REALTIME_VIDEO_SR_LESSONS.md)，路线与门禁见 [PLAYER_ROADMAP.md](PLAYER_ROADMAP.md)，动漫模型/cadence/插帧研究与工作拆分见 [ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，动漫模型实验室结果见 [ANIME_MODEL_LAB_REPORT.md](ANIME_MODEL_LAB_REPORT.md)，发布规则见 [PUBLICATION_BOUNDARY.md](PUBLICATION_BOUNDARY.md)。

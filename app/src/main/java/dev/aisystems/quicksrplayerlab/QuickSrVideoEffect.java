@@ -26,15 +26,20 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
+import java.util.zip.CRC32;
 
 /**
  * Experimental per-frame neural video effect with an explicit model-resolution profile.
@@ -219,6 +224,11 @@ final class QuickSrVideoEffect implements GlEffect {
 
         default void onProcessingError(String stage, Throwable failure) {
         }
+
+        default void onPipelineSnapshot(
+                VideoPipelineTelemetry.Snapshot snapshot,
+                String reason) {
+        }
     }
 
     static final class FrameStats {
@@ -248,6 +258,47 @@ final class QuickSrVideoEffect implements GlEffect {
         final long totalProcessingMs;
         final long presentationTimeUs;
         final long observedMonotonicNs;
+        final long frameId;
+        final int generation;
+        final long generationFrameId;
+        final String inputCrc32;
+        final String outputCrc32;
+        final boolean late;
+        final long ptsWallClockDriftNs;
+        final long acceptedNs;
+        final long readbackReadyProxyNs;
+        final long inputCopyStartedNs;
+        final long inputCopiedNs;
+        final long inputHashStartedNs;
+        final long inputHashFinishedNs;
+        final long workerStartedNs;
+        final long preprocessFinishedNs;
+        final long sessionReadyNs;
+        final long inferenceStartedNs;
+        final long inferenceFinishedNs;
+        final long outputPackStartedNs;
+        final long outputPackFinishedNs;
+        final long outputHashStartedNs;
+        final long outputHashFinishedNs;
+        final long directBufferCopyStartedNs;
+        final long directBufferCopyFinishedNs;
+        final long outputReadyNs;
+        final long glUploadStartedNs;
+        final long glUploadFinishedNs;
+        final long outputSubmittedProxyNs;
+        final long tensorInputCopyNs;
+        final long ortRunNs;
+        final long tensorOutputCopyNs;
+        final long finiteScanNs;
+        final long acceptedCount;
+        final long processedCount;
+        final long lateCount;
+        final long droppedCount;
+        final long bypassedCount;
+        final int currentQueueDepth;
+        final int maxQueueDepth;
+        final long flushCount;
+        final long seekProxyCount;
 
         FrameStats(
                 QuickSrSession.Mode mode,
@@ -331,6 +382,164 @@ final class QuickSrVideoEffect implements GlEffect {
             this.totalProcessingMs = totalProcessingMs;
             this.presentationTimeUs = presentationTimeUs;
             this.observedMonotonicNs = System.nanoTime();
+            this.frameId = frameNumber;
+            this.generation = 0;
+            this.generationFrameId = frameNumber;
+            this.inputCrc32 = "unavailable";
+            this.outputCrc32 = "unavailable";
+            this.late = false;
+            this.ptsWallClockDriftNs = Long.MIN_VALUE;
+            this.acceptedNs = -1L;
+            this.readbackReadyProxyNs = -1L;
+            this.inputCopyStartedNs = -1L;
+            this.inputCopiedNs = -1L;
+            this.inputHashStartedNs = -1L;
+            this.inputHashFinishedNs = -1L;
+            this.workerStartedNs = -1L;
+            this.preprocessFinishedNs = -1L;
+            this.sessionReadyNs = -1L;
+            this.inferenceStartedNs = -1L;
+            this.inferenceFinishedNs = -1L;
+            this.outputPackStartedNs = -1L;
+            this.outputPackFinishedNs = -1L;
+            this.outputHashStartedNs = -1L;
+            this.outputHashFinishedNs = -1L;
+            this.directBufferCopyStartedNs = -1L;
+            this.directBufferCopyFinishedNs = -1L;
+            this.outputReadyNs = -1L;
+            this.glUploadStartedNs = -1L;
+            this.glUploadFinishedNs = -1L;
+            this.outputSubmittedProxyNs = -1L;
+            this.tensorInputCopyNs = TimeUnit.MILLISECONDS.toNanos(tensorInputCopyMs);
+            this.ortRunNs = TimeUnit.MILLISECONDS.toNanos(ortRunMs);
+            this.tensorOutputCopyNs = TimeUnit.MILLISECONDS.toNanos(tensorOutputCopyMs);
+            this.finiteScanNs = TimeUnit.MILLISECONDS.toNanos(finiteScanMs);
+            this.acceptedCount = frameNumber;
+            this.processedCount = frameNumber;
+            this.lateCount = 0L;
+            this.droppedCount = 0L;
+            this.bypassedCount = 0L;
+            this.currentQueueDepth = 0;
+            this.maxQueueDepth = 0;
+            this.flushCount = 0L;
+            this.seekProxyCount = 0L;
+        }
+
+        FrameStats(
+                QuickSrSession.Mode mode,
+                QuickSrSession.Tuning tuning,
+                Profile profile,
+                int effectInputWidth,
+                int effectInputHeight,
+                FrameTimings timings,
+                VideoPipelineTelemetry.Completion completion) {
+            this.mode = mode;
+            this.tuning = tuning;
+            this.profile = profile;
+            this.frameNumber = Math.toIntExact(timings.token.frameId);
+            this.effectInputWidth = effectInputWidth;
+            this.effectInputHeight = effectInputHeight;
+            this.modelInputWidth = profile.inputWidth();
+            this.modelInputHeight = profile.inputHeight();
+            this.modelOutputWidth = profile.outputWidth();
+            this.modelOutputHeight = profile.outputHeight();
+            this.modelInputSide = modelInputWidth == modelInputHeight ? modelInputWidth : -1;
+            this.modelOutputSide = modelOutputWidth == modelOutputHeight ? modelOutputWidth : -1;
+            this.frameId = timings.token.frameId;
+            this.generation = timings.token.generation;
+            this.generationFrameId = timings.token.generationFrameId;
+            this.presentationTimeUs = timings.token.presentationTimeUs;
+            this.inputCrc32 = timings.inputCrc32;
+            this.outputCrc32 = timings.outputCrc32;
+            this.late = completion.late;
+            this.ptsWallClockDriftNs = completion.ptsWallClockDriftNs;
+            this.acceptedNs = timings.token.acceptedNs;
+            this.readbackReadyProxyNs = timings.token.readbackReadyProxyNs;
+            this.inputCopyStartedNs = timings.inputCopyStartedNs;
+            this.inputCopiedNs = timings.inputCopiedNs;
+            this.inputHashStartedNs = timings.inputHashStartedNs;
+            this.inputHashFinishedNs = timings.inputHashFinishedNs;
+            this.workerStartedNs = timings.workerStartedNs;
+            this.preprocessFinishedNs = timings.preprocessFinishedNs;
+            this.sessionReadyNs = timings.sessionReadyNs;
+            this.inferenceStartedNs = timings.inferenceStartedNs;
+            this.inferenceFinishedNs = timings.inferenceFinishedNs;
+            this.outputPackStartedNs = timings.outputPackStartedNs;
+            this.outputPackFinishedNs = timings.outputPackFinishedNs;
+            this.outputHashStartedNs = timings.outputHashStartedNs;
+            this.outputHashFinishedNs = timings.outputHashFinishedNs;
+            this.directBufferCopyStartedNs = timings.directBufferCopyStartedNs;
+            this.directBufferCopyFinishedNs = timings.directBufferCopyFinishedNs;
+            this.outputReadyNs = timings.outputReadyNs;
+            this.glUploadStartedNs = timings.glUploadStartedNs;
+            this.glUploadFinishedNs = timings.glUploadFinishedNs;
+            this.outputSubmittedProxyNs = timings.outputSubmittedProxyNs;
+            this.observedMonotonicNs = timings.outputSubmittedProxyNs;
+            this.tensorInputCopyNs = timings.tensorInputCopyNs;
+            this.ortRunNs = timings.ortRunNs;
+            this.tensorOutputCopyNs = timings.tensorOutputCopyNs;
+            this.finiteScanNs = timings.finiteScanNs;
+            this.finiteScanExecuted = timings.finiteScanExecuted;
+            this.copyMs = nanosToMs(timings.inputCopiedNs - timings.inputCopyStartedNs);
+            this.queueMs = nanosToMs(timings.workerStartedNs - timings.inputHashFinishedNs);
+            this.inputConversionMs = nanosToMs(
+                    timings.preprocessFinishedNs - timings.workerStartedNs);
+            this.sessionSetupMs = nanosToMs(
+                    timings.sessionReadyNs - timings.preprocessFinishedNs);
+            this.inferenceMs = nanosToMs(
+                    timings.inferenceFinishedNs - timings.inferenceStartedNs);
+            this.tensorInputCopyMs = nanosToMs(timings.tensorInputCopyNs);
+            this.ortRunMs = nanosToMs(timings.ortRunNs);
+            this.tensorOutputCopyMs = nanosToMs(timings.tensorOutputCopyNs);
+            this.finiteScanMs = nanosToMs(timings.finiteScanNs);
+            this.outputConversionMs = nanosToMs(
+                    timings.directBufferCopyFinishedNs - timings.outputPackStartedNs);
+            this.totalProcessingMs = nanosToMs(
+                    timings.outputSubmittedProxyNs - timings.token.acceptedNs);
+            VideoPipelineTelemetry.Snapshot snapshot = completion.snapshot;
+            this.acceptedCount = snapshot.accepted;
+            this.processedCount = snapshot.processed;
+            this.lateCount = snapshot.late;
+            this.droppedCount = snapshot.dropped;
+            this.bypassedCount = snapshot.bypassed;
+            this.currentQueueDepth = snapshot.currentQueueDepth;
+            this.maxQueueDepth = snapshot.maxQueueDepth;
+            this.flushCount = snapshot.flushCount;
+            this.seekProxyCount = snapshot.seekProxyCount;
+        }
+    }
+
+    static final class FrameTimings {
+        final VideoPipelineTelemetry.FrameToken token;
+        String inputCrc32;
+        String outputCrc32;
+        long inputCopyStartedNs;
+        long inputCopiedNs;
+        long inputHashStartedNs;
+        long inputHashFinishedNs;
+        long workerStartedNs;
+        long preprocessFinishedNs;
+        long sessionReadyNs;
+        long inferenceStartedNs;
+        long inferenceFinishedNs;
+        long outputPackStartedNs;
+        long outputPackFinishedNs;
+        long outputHashStartedNs;
+        long outputHashFinishedNs;
+        long directBufferCopyStartedNs;
+        long directBufferCopyFinishedNs;
+        long outputReadyNs;
+        long glUploadStartedNs;
+        long glUploadFinishedNs;
+        long outputSubmittedProxyNs;
+        long tensorInputCopyNs;
+        long ortRunNs;
+        long tensorOutputCopyNs;
+        long finiteScanNs;
+        boolean finiteScanExecuted;
+
+        FrameTimings(VideoPipelineTelemetry.FrameToken token) {
+            this.token = token;
         }
     }
 
@@ -424,11 +633,17 @@ final class QuickSrVideoEffect implements GlEffect {
         }
 
         final ByteBuffer rgba;
+        final FrameTimings timings;
         private final Recycler recycler;
         private final AtomicBoolean recycled = new AtomicBoolean();
 
         FrameResult(ByteBuffer rgba, Recycler recycler) {
+            this(rgba, null, recycler);
+        }
+
+        FrameResult(ByteBuffer rgba, FrameTimings timings, Recycler recycler) {
             this.rgba = rgba;
+            this.timings = timings;
             this.recycler = recycler;
         }
 
@@ -479,7 +694,13 @@ final class QuickSrVideoEffect implements GlEffect {
                 GlObjectsProvider glObjectsProvider,
                 GlTextureInfo inputTexture,
                 long presentationTimeUs) {
-            delegate.queueInputFrame(glObjectsProvider, inputTexture, presentationTimeUs);
+            VideoPipelineTelemetry.FrameToken token = processor.onFrameAccepted(presentationTimeUs);
+            try {
+                delegate.queueInputFrame(glObjectsProvider, inputTexture, presentationTimeUs);
+            } catch (Throwable failure) {
+                processor.onFrameAcceptanceFailed(token);
+                throw failure;
+            }
         }
 
         @Override
@@ -490,10 +711,12 @@ final class QuickSrVideoEffect implements GlEffect {
         @Override
         public void signalEndOfCurrentInputStream() {
             delegate.signalEndOfCurrentInputStream();
+            processor.publishPipelineSnapshot("end_of_input_stream");
         }
 
         @Override
         public void flush() {
+            processor.advanceGenerationForFlush();
             try {
                 delegate.flush();
             } finally {
@@ -501,6 +724,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 // finishProcessingAndBlend. Reclaim their direct buffers after the delegate has
                 // removed every queued frame.
                 processor.recycleOutstandingFrameResults();
+                processor.publishPipelineSnapshot("flush_seek_proxy");
             }
         }
 
@@ -537,7 +761,12 @@ final class QuickSrVideoEffect implements GlEffect {
         private final String benchmarkRunId;
         private final VideoEvidenceStore.CaptureSpec captureSpec;
         private final StatsListener listener;
-        private final ExecutorService inferenceExecutor;
+        private final LongSupplier monotonicClock;
+        private final ThreadPoolExecutor inferenceExecutor;
+        private final Semaphore frameQueueSlots = new Semaphore(
+                VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY,
+                true);
+        private final VideoPipelineTelemetry pipelineTelemetry = new VideoPipelineTelemetry();
         private final Object inputBufferPoolLock = new Object();
         private final ArrayDeque<byte[]> inputBufferPool = new ArrayDeque<>();
         private final Object outputBufferPoolLock = new Object();
@@ -548,6 +777,10 @@ final class QuickSrVideoEffect implements GlEffect {
 
         private volatile boolean released;
         private volatile Thread inferenceThread;
+        private volatile boolean workerCleanupQueued;
+        private volatile boolean workerCleanupCompleted;
+        private final AtomicInteger workerCleanupRunCount = new AtomicInteger();
+        private long releaseTimeoutMs = TimeUnit.SECONDS.toMillis(RELEASE_TIMEOUT_SECONDS);
         private boolean waitingForQnnLock;
         private int inputWidth;
         private int inputHeight;
@@ -563,6 +796,38 @@ final class QuickSrVideoEffect implements GlEffect {
         private int neuralTextureId;
         private int neuralFboId;
 
+        /** Cleanup marker that must run after every already-accepted frame task on the worker. */
+        private final class WorkerCleanupTask extends FutureTask<Void> {
+            WorkerCleanupTask() {
+                super(() -> {
+                    closeSessionOnExecutor();
+                    return null;
+                });
+            }
+        }
+
+        /** Releases the frame-only queue permit as soon as the worker dequeues this task. */
+        private final class FrameWorkerTask implements Runnable {
+            private final Runnable delegate;
+            private final AtomicBoolean queueSlotReleased = new AtomicBoolean();
+
+            FrameWorkerTask(Runnable delegate) {
+                this.delegate = delegate;
+            }
+
+            @Override
+            public void run() {
+                releaseQueueSlot();
+                delegate.run();
+            }
+
+            void releaseQueueSlot() {
+                if (queueSlotReleased.compareAndSet(false, true)) {
+                    frameQueueSlots.release();
+                }
+            }
+        }
+
         ProcessorImpl(
                 Context context,
                 QuickSrSession.Mode mode,
@@ -575,7 +840,8 @@ final class QuickSrVideoEffect implements GlEffect {
                     QuickSrSession.Tuning.BASELINE,
                     null,
                     VideoEvidenceStore.CaptureSpec.none(),
-                    listener);
+                    listener,
+                    System::nanoTime);
         }
 
         ProcessorImpl(
@@ -586,6 +852,26 @@ final class QuickSrVideoEffect implements GlEffect {
                 String benchmarkRunId,
                 VideoEvidenceStore.CaptureSpec captureSpec,
                 StatsListener listener) {
+            this(
+                    context,
+                    mode,
+                    profile,
+                    tuning,
+                    benchmarkRunId,
+                    captureSpec,
+                    listener,
+                    SystemClock::elapsedRealtimeNanos);
+        }
+
+        private ProcessorImpl(
+                Context context,
+                QuickSrSession.Mode mode,
+                Profile profile,
+                QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
+                StatsListener listener,
+                LongSupplier monotonicClock) {
             if (captureSpec == null) {
                 captureSpec = VideoEvidenceStore.CaptureSpec.none();
             }
@@ -606,12 +892,103 @@ final class QuickSrVideoEffect implements GlEffect {
             this.benchmarkRunId = benchmarkRunId;
             this.captureSpec = captureSpec;
             this.listener = listener;
-            this.inferenceExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            this.monotonicClock = monotonicClock;
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    // One non-frame slot is reserved for WorkerCleanupTask. FrameWorkerTask
+                    // admission remains capped by frameQueueSlots at WORKER_QUEUE_CAPACITY.
+                    new ArrayBlockingQueue<>(
+                            VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY
+                                    + VideoPipelineTelemetry.WORKER_CLEANUP_RESERVED_SLOTS),
+                    runnable -> {
                 Thread thread = new Thread(runnable, "QuickSR-video-inference");
                 thread.setPriority(Thread.NORM_PRIORITY);
                 inferenceThread = thread;
                 return thread;
             });
+            executor.setRejectedExecutionHandler((task, target) -> {
+                throw new RejectedExecutionException(
+                        "QuickSR worker queue invariant failed or executor stopped");
+            });
+            this.inferenceExecutor = executor;
+        }
+
+        private long nowNs() {
+            return monotonicClock.getAsLong();
+        }
+
+        private void enqueueFrameTask(Runnable task) {
+            boolean permitAcquired = false;
+            FrameWorkerTask frameTask = null;
+            try {
+                while (!permitAcquired) {
+                    if (released) {
+                        throw new RejectedExecutionException(
+                                "QuickSR video effect released while applying backpressure");
+                    }
+                    permitAcquired = frameQueueSlots.tryAcquire(100L, TimeUnit.MILLISECONDS);
+                }
+                frameTask = new FrameWorkerTask(task);
+                synchronized (lifecycleLock) {
+                    if (released) {
+                        throw new RejectedExecutionException(
+                                "QuickSR video effect released before frame enqueue");
+                    }
+                    inferenceExecutor.execute(frameTask);
+                }
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new RejectedExecutionException(
+                        "Interrupted while applying bounded QuickSR backpressure",
+                        failure);
+            } catch (RuntimeException failure) {
+                if (frameTask != null) {
+                    frameTask.releaseQueueSlot();
+                } else if (permitAcquired) {
+                    frameQueueSlots.release();
+                }
+                throw failure;
+            }
+        }
+
+        VideoPipelineTelemetry.FrameToken onFrameAccepted(long presentationTimeUs) {
+            if (released) {
+                throw new IllegalStateException("QuickSR video effect released");
+            }
+            return pipelineTelemetry.accept(
+                    presentationTimeUs,
+                    nowNs());
+        }
+
+        void onFrameAcceptanceFailed(VideoPipelineTelemetry.FrameToken token) {
+            pipelineTelemetry.cancelAcceptance(
+                    token,
+                    nowNs(),
+                    workerQueueDepth());
+        }
+
+        void advanceGenerationForFlush() {
+            pipelineTelemetry.flush(
+                    nowNs(),
+                    workerQueueDepth());
+        }
+
+        void publishPipelineSnapshot(String reason) {
+            if (listener != null) {
+                listener.onPipelineSnapshot(
+                        pipelineTelemetry.snapshot(
+                                nowNs(),
+                                workerQueueDepth()),
+                        reason);
+            }
+        }
+
+        private int workerQueueDepth() {
+            return VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY
+                    - frameQueueSlots.availablePermits();
         }
 
         @Override
@@ -641,9 +1018,21 @@ final class QuickSrVideoEffect implements GlEffect {
                 resultFuture.setException(new IllegalStateException("QuickSR video effect released"));
                 return resultFuture;
             }
+            long receivedNs = nowNs();
+            VideoPipelineTelemetry.FrameToken token;
+            try {
+                token = pipelineTelemetry.claimReadback(presentationTimeUs, receivedNs);
+            } catch (Throwable failure) {
+                resultFuture.setException(failure);
+                return resultFuture;
+            }
             int inputWidth = profile.inputWidth();
             int inputHeight = profile.inputHeight();
             if (image.width != inputWidth || image.height != inputHeight) {
+                pipelineTelemetry.markDropped(
+                        token,
+                        nowNs(),
+                        workerQueueDepth());
                 resultFuture.setException(new IllegalArgumentException(
                         "QuickSR video input changed: " + image.width + "x" + image.height));
                 return resultFuture;
@@ -651,28 +1040,39 @@ final class QuickSrVideoEffect implements GlEffect {
 
             // Copy synchronously before returning. Media3 may recycle/unmap Image.pixelBuffer as
             // soon as the returned future is cancelled or completed.
-            long receivedNs = SystemClock.elapsedRealtimeNanos();
+            FrameTimings timings = new FrameTimings(token);
+            timings.inputCopyStartedNs = receivedNs;
             int inputPixels = checkedPixels(inputWidth, inputHeight);
             byte[] rgba = acquireInputBuffer(inputPixels * RGBA_BYTES_PER_PIXEL);
             try {
                 ByteBuffer source = image.pixelBuffer.duplicate();
                 source.position(0);
                 source.get(rgba);
+                timings.inputCopiedNs = nowNs();
+                timings.inputHashStartedNs = timings.inputCopiedNs;
+                timings.inputCrc32 = crc32Hex(rgba);
+                timings.inputHashFinishedNs = nowNs();
             } catch (Throwable failure) {
                 recycleInputBuffer(rgba);
+                pipelineTelemetry.markDropped(
+                        token,
+                        nowNs(),
+                        workerQueueDepth());
                 resultFuture.setException(failure);
                 return resultFuture;
             }
-            long copiedNs = SystemClock.elapsedRealtimeNanos();
             try {
-                inferenceExecutor.execute(() -> processCopiedFrame(
+                enqueueFrameTask(() -> processCopiedFrame(
                         rgba,
-                        presentationTimeUs,
-                        receivedNs,
-                        copiedNs,
+                        timings,
                         resultFuture));
+                pipelineTelemetry.observeQueueDepth(workerQueueDepth());
             } catch (RejectedExecutionException failure) {
                 recycleInputBuffer(rgba);
+                pipelineTelemetry.markDropped(
+                        token,
+                        nowNs(),
+                        workerQueueDepth());
                 resultFuture.setException(failure);
             }
             return resultFuture;
@@ -680,15 +1080,19 @@ final class QuickSrVideoEffect implements GlEffect {
 
         private void processCopiedFrame(
                 byte[] rgba,
-                long presentationTimeUs,
-                long receivedNs,
-                long copiedNs,
+                FrameTimings timings,
                 SettableFuture<FrameResult> resultFuture) {
             try {
-                if (released) {
-                    throw new IllegalStateException("QuickSR video effect released");
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
                 }
-                long taskStartedNs = SystemClock.elapsedRealtimeNanos();
+                timings.workerStartedNs = nowNs();
+                pipelineTelemetry.observeQueueDepth(workerQueueDepth());
                 int inputPixels = checkedPixels(profile.inputWidth(), profile.inputHeight());
                 int outputPixels = checkedPixels(profile.outputWidth(), profile.outputHeight());
                 if (inputTensorScratch == null) {
@@ -701,34 +1105,56 @@ final class QuickSrVideoEffect implements GlEffect {
                         inputTensorScratch,
                         profile.inputWidth(),
                         profile.inputHeight());
-                long inputConvertedNs = SystemClock.elapsedRealtimeNanos();
-                boolean sessionWasReady = session != null;
+                timings.preprocessFinishedNs = nowNs();
                 QuickSrSession activeSession = ensureSession();
-                long sessionReadyNs = SystemClock.elapsedRealtimeNanos();
-                if (released) {
-                    throw new InterruptedException("QuickSR video effect released before inference");
+                timings.sessionReadyNs = nowNs();
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            timings.sessionReadyNs,
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
                 }
                 int candidateFrame = frameNumber + 1;
                 if (captureSpec.isRequested()
                         && !evidenceCaptureReserved
-                        && captureSpec.hasBeenMissedBy(candidateFrame, presentationTimeUs)) {
+                        && captureSpec.hasBeenMissedBy(
+                                candidateFrame,
+                                timings.token.presentationTimeUs)) {
                     throw new IllegalStateException(
                             "Requested video evidence selector was not observed before frame "
-                                    + candidateFrame + " at ptsUs=" + presentationTimeUs);
+                                    + candidateFrame + " at ptsUs="
+                                    + timings.token.presentationTimeUs);
                 }
-                long inferenceStartedNs = SystemClock.elapsedRealtimeNanos();
+                timings.inferenceStartedNs = nowNs();
                 activeSession.infer(inputTensorScratch, outputTensorScratch, runTimings);
-                long inferenceFinishedNs = SystemClock.elapsedRealtimeNanos();
+                timings.inferenceFinishedNs = nowNs();
+                timings.tensorInputCopyNs = runTimings.inputCopyNs;
+                timings.ortRunNs = runTimings.ortRunNs;
+                timings.tensorOutputCopyNs = runTimings.outputCopyNs;
+                timings.finiteScanNs = runTimings.finiteScanNs;
+                timings.finiteScanExecuted = runTimings.finiteScanExecuted;
+                if (!pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            timings.inferenceFinishedNs,
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
                 if (captureSpec.isRequested()
                         && !evidenceCaptureReserved
-                        && captureSpec.matches(candidateFrame, presentationTimeUs)) {
+                        && captureSpec.matches(
+                                candidateFrame,
+                                timings.token.presentationTimeUs)) {
                     evidenceCaptureReserved = true;
                     JSONObject evidence = VideoEvidenceStore.write(
                             context,
                             benchmarkRunId,
                             captureSpec,
                             candidateFrame,
-                            presentationTimeUs,
+                            timings.token.presentationTimeUs,
                             profile,
                             inputTensorScratch,
                             outputTensorScratch,
@@ -737,6 +1163,7 @@ final class QuickSrVideoEffect implements GlEffect {
                         listener.onEvidenceCaptured(evidence);
                     }
                 }
+                timings.outputPackStartedNs = nowNs();
                 packNchwToRgba(
                         outputTensorScratch,
                         rgba,
@@ -745,44 +1172,33 @@ final class QuickSrVideoEffect implements GlEffect {
                         profile.outputWidth(),
                         profile.outputHeight(),
                         outputRgbaScratch);
+                timings.outputPackFinishedNs = nowNs();
+                timings.outputHashStartedNs = timings.outputPackFinishedNs;
+                timings.outputCrc32 = crc32Hex(outputRgbaScratch);
+                timings.outputHashFinishedNs = nowNs();
+                timings.directBufferCopyStartedNs = timings.outputHashFinishedNs;
                 ByteBuffer directRgba = acquireOutputBuffer();
                 directRgba.put(outputRgbaScratch);
                 directRgba.flip();
+                timings.directBufferCopyFinishedNs = nowNs();
+                timings.outputReadyNs = timings.directBufferCopyFinishedNs;
                 FrameResult frameResult = new FrameResult(
                         directRgba,
+                        timings,
                         this::recycleFrameResult);
                 synchronized (outputBufferPoolLock) {
                     outstandingFrameResults.add(frameResult);
                 }
-                long completedNs = SystemClock.elapsedRealtimeNanos();
-                int completedFrame = ++frameNumber;
+                ++frameNumber;
                 if (!resultFuture.set(frameResult)) {
                     frameResult.recycle();
                     return;
                 }
-                if (listener != null) {
-                    listener.onFrameProcessed(new FrameStats(
-                            mode,
-                            tuning,
-                            profile,
-                            completedFrame,
-                            inputWidth,
-                            inputHeight,
-                            nanosToMs(copiedNs - receivedNs),
-                            nanosToMs(taskStartedNs - copiedNs),
-                            nanosToMs(inputConvertedNs - taskStartedNs),
-                            sessionWasReady ? 0L : nanosToMs(sessionReadyNs - inputConvertedNs),
-                            nanosToMs(inferenceFinishedNs - inferenceStartedNs),
-                            nanosToMs(runTimings.inputCopyNs),
-                            nanosToMs(runTimings.ortRunNs),
-                            nanosToMs(runTimings.outputCopyNs),
-                            nanosToMs(runTimings.finiteScanNs),
-                            runTimings.finiteScanExecuted,
-                            nanosToMs(completedNs - inferenceFinishedNs),
-                            nanosToMs(completedNs - receivedNs),
-                            presentationTimeUs));
-                }
             } catch (Throwable failure) {
+                pipelineTelemetry.markDropped(
+                        timings.token,
+                        nowNs(),
+                        workerQueueDepth());
                 if (listener != null) {
                     try {
                         listener.onProcessingError("video-inference", failure);
@@ -850,6 +1266,12 @@ final class QuickSrVideoEffect implements GlEffect {
         private void recycleFrameResult(FrameResult result) {
             synchronized (outputBufferPoolLock) {
                 outstandingFrameResults.remove(result);
+            }
+            if (result.timings != null) {
+                pipelineTelemetry.markDropped(
+                        result.timings.token,
+                        nowNs(),
+                        workerQueueDepth());
             }
             recycleOutputBuffer(result.rgba);
         }
@@ -975,6 +1397,34 @@ final class QuickSrVideoEffect implements GlEffect {
                 long presentationTimeUs,
                 FrameResult result) throws VideoFrameProcessingException {
             try {
+                if (result.timings != null
+                        && !pipelineTelemetry.isCurrent(result.timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            result.timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    throw new VideoFrameProcessingException(
+                            "Refusing stale QuickSR output from generation "
+                                    + result.timings.token.generation,
+                            null,
+                            presentationTimeUs);
+                }
+                if (result.timings != null
+                        && result.timings.token.presentationTimeUs != presentationTimeUs) {
+                    pipelineTelemetry.markDropped(
+                            result.timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    throw new VideoFrameProcessingException(
+                            "QuickSR output PTS identity mismatch: token="
+                                    + result.timings.token.presentationTimeUs
+                                    + ", callback=" + presentationTimeUs,
+                            null,
+                            presentationTimeUs);
+                }
+                if (result.timings != null) {
+                    result.timings.glUploadStartedNs = nowNs();
+                }
                 ensureNeuralTexture();
                 ByteBuffer pixels = result.rgba.duplicate();
                 pixels.position(0);
@@ -995,7 +1445,41 @@ final class QuickSrVideoEffect implements GlEffect {
                         new GlRect(profile.outputWidth(), profile.outputHeight()),
                         outputFrame.fboId,
                         new GlRect(outputFrame.width, outputFrame.height));
+                if (result.timings != null) {
+                    result.timings.glUploadFinishedNs = nowNs();
+                    // Returning from this callback is only a Media3 output-submit proxy. It does
+                    // not measure GPU completion, SurfaceFlinger latch or final display.
+                    result.timings.outputSubmittedProxyNs =
+                            result.timings.glUploadFinishedNs;
+                    VideoPipelineTelemetry.Completion completion =
+                            pipelineTelemetry.markProcessed(
+                                    result.timings.token,
+                                    result.timings.outputSubmittedProxyNs,
+                                    workerQueueDepth());
+                    if (!completion.processed) {
+                        return;
+                    }
+                    if (listener != null) {
+                        listener.onFrameProcessed(new FrameStats(
+                                mode,
+                                tuning,
+                                profile,
+                                inputWidth,
+                                inputHeight,
+                                result.timings,
+                                completion));
+                    }
+                }
             } catch (GlUtil.GlException failure) {
+                if (result.timings != null) {
+                    pipelineTelemetry.markDropped(
+                            result.timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                }
+                if (listener != null) {
+                    listener.onProcessingError("gl-upload-output-submit-proxy", failure);
+                }
                 throw new VideoFrameProcessingException(
                         "Unable to upload the QuickSR video frame",
                         failure,
@@ -1037,6 +1521,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 // the same executor is not trapped behind another long-running QNN owner.
                 qnnLockWaiter.interrupt();
             }
+            pipelineTelemetry.release(
+                    nowNs(),
+                    workerQueueDepth());
             recycleOutstandingFrameResults();
             synchronized (inputBufferPoolLock) {
                 inputBufferPool.clear();
@@ -1064,18 +1551,26 @@ final class QuickSrVideoEffect implements GlEffect {
 
             Future<?> cleanupFuture = null;
             try {
-                cleanupFuture = inferenceExecutor.submit(() -> {
+                if (Thread.currentThread() == inferenceThread) {
+                    // Defensive path: avoid self-deadlock if a future Media3 version releases its
+                    // processor from the worker. Queued frame tasks will observe released=true.
                     closeSessionOnExecutor();
-                    return null;
-                });
+                } else {
+                    WorkerCleanupTask cleanupTask = new WorkerCleanupTask();
+                    inferenceExecutor.execute(cleanupTask);
+                    workerCleanupQueued = true;
+                    cleanupFuture = cleanupTask;
+                }
             } catch (Throwable caught) {
                 failure = append(failure, caught);
             } finally {
+                // Graceful shutdown keeps accepted frame tasks and the cleanup marker in FIFO
+                // order. Every frame task remains responsible for its own future and buffers.
                 inferenceExecutor.shutdown();
             }
             if (cleanupFuture != null) {
                 try {
-                    cleanupFuture.get(RELEASE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    cleanupFuture.get(releaseTimeoutMs, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException caught) {
                     Thread.currentThread().interrupt();
                     failure = append(failure, caught);
@@ -1094,6 +1589,11 @@ final class QuickSrVideoEffect implements GlEffect {
             }
             // Cover a worker that completed concurrently with the first reclamation pass.
             recycleOutstandingFrameResults();
+            try {
+                publishPipelineSnapshot("release");
+            } catch (Throwable caught) {
+                failure = append(failure, caught);
+            }
             if (failure != null) {
                 throw new VideoFrameProcessingException(
                         "Unable to release the QuickSR video effect",
@@ -1102,6 +1602,7 @@ final class QuickSrVideoEffect implements GlEffect {
         }
 
         private void closeSessionOnExecutor() throws Exception {
+            workerCleanupRunCount.incrementAndGet();
             Throwable failure = null;
             try {
                 if (session != null) {
@@ -1110,14 +1611,24 @@ final class QuickSrVideoEffect implements GlEffect {
                 }
             } catch (Throwable caught) {
                 failure = caught;
-            } finally {
+            }
+            try {
                 if (qnnLockHeld) {
-                    qnnLockHeld = false;
                     QnnPluginRuntime.unlockProcess();
                 }
+            } catch (Throwable caught) {
+                failure = append(failure, caught);
+            } finally {
+                qnnLockHeld = false;
                 inputTensorScratch = null;
                 outputTensorScratch = null;
                 outputRgbaScratch = null;
+                workerCleanupCompleted = true;
+            }
+            try {
+                publishPipelineSnapshot("worker_cleanup_complete");
+            } catch (Throwable caught) {
+                failure = append(failure, caught);
             }
             if (failure instanceof Exception) {
                 throw (Exception) failure;
@@ -1270,6 +1781,12 @@ final class QuickSrVideoEffect implements GlEffect {
 
     private static long nanosToMs(long nanos) {
         return Math.max(0L, nanos / 1_000_000L);
+    }
+
+    static String crc32Hex(byte[] value) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(value, 0, value.length);
+        return String.format("%08x", crc32.getValue());
     }
 
     private static byte normalizedToByte(float value) {

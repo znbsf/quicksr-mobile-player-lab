@@ -15,7 +15,7 @@ public final class VideoBenchmarkTelemetryTest {
     public void configurationPinsRequestedNeuralAndCanvasDimensions() {
         String value = VideoBenchmarkTelemetry.configurationJson("run-1080p", "QUICKSR_QNN",
                 QuickSrSession.Tuning.SUSTAINED, QuickSrVideoEffect.Profile.FULL_1080P_3X, true);
-        assertTrue(value.contains("\"schemaVersion\":1"));
+        assertTrue(value.contains("\"schemaVersion\":2"));
         assertTrue(value.contains("\"event\":\"configuration\""));
         assertTrue(value.contains("\"runId\":\"run-1080p\""));
         assertTrue(value.contains("\"mode\":\"QUICKSR_QNN\""));
@@ -28,6 +28,15 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"canvasWidth\":1920"));
         assertTrue(value.contains("\"canvasHeight\":1080"));
         assertTrue(value.contains("\"qnnRuntimeExpected\":true"));
+        assertTrue(value.contains("\"queuePolicy\":\"bounded_blocking_backpressure\""));
+        assertTrue(value.contains("\"workerQueueCapacity\":2"));
+        assertTrue(value.contains("\"workerCleanupReservedSlots\":1"));
+        assertTrue(value.contains("\"workerQueueDepthMeasurement\":"
+                + "\"measured_frame_admission_queue\""));
+        assertTrue(value.contains("\"readbackMeasurement\":"
+                + "\"proxy_process_image_callback_after_media3_readback\""));
+        assertTrue(value.contains("\"surfaceFlingerLatchMeasurement\":\"unmeasured\""));
+        assertTrue(value.contains("\"finalDisplayMeasurement\":\"unmeasured\""));
     }
 
     @Test
@@ -38,11 +47,36 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"mode\":\"QNN_HTP\""));
         assertTrue(value.contains("\"tuning\":\"SUSTAINED\""));
         assertTrue(value.contains("\"profile\":\"FULL_1080P_3X\""));
-        assertTrue(value.contains("\"frame\":1,\"ptsUs\":0,\"observedNs\":"));
+        assertTrue(value.contains("\"frame\":1,\"frameId\":1"));
+        assertTrue(value.contains("\"ptsUs\":0"));
         assertTrue(value.contains("\"totalProcessingMs\":17"));
         assertTrue(value.contains("\"ortRunMs\":9"));
-        assertTrue(value.contains("\"frame\":2,\"ptsUs\":41667"));
+        assertTrue(value.contains("\"frame\":2,\"frameId\":2"));
+        assertTrue(value.contains("\"ptsUs\":41667"));
         assertTrue(value.contains("\"finiteScanExecuted\":false"));
+        assertTrue(value.contains("\"acceptedNs\":-1"));
+        assertTrue(value.contains("\"acceptedCount\":1"));
+        assertTrue(value.contains("\"bypassedCount\":0"));
+    }
+
+    @Test
+    public void pipelineSnapshotCarriesAllTerminalCountersAndGenerationEvents() {
+        VideoPipelineTelemetry telemetry = new VideoPipelineTelemetry();
+        telemetry.accept(0L, 1_000L);
+        VideoPipelineTelemetry.Snapshot snapshot = telemetry.flush(2_000L, 0);
+
+        String value = VideoBenchmarkTelemetry.pipelineSnapshotJson(
+                "run-snapshot",
+                snapshot,
+                "flush_seek_proxy");
+
+        assertTrue(value.contains("\"event\":\"pipeline_snapshot\""));
+        assertTrue(value.contains("\"generation\":1"));
+        assertTrue(value.contains("\"acceptedCount\":1"));
+        assertTrue(value.contains("\"droppedCount\":1"));
+        assertTrue(value.contains("\"bypassedCount\":0"));
+        assertTrue(value.contains("\"flushCount\":1"));
+        assertTrue(value.contains("\"seekProxyCount\":1"));
     }
 
     @Test

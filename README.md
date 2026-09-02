@@ -192,7 +192,9 @@ $receipt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
 - 后端确实是 QNN HTP，不能静默回退 CPU；
 - tuning、模型尺寸和画布尺寸与计划一致；
 - 没有设备错误且样本数达到要求；
-- 分别输出功能门禁以及 `realtime_30`、`realtime_24`、`offline` 性能分类。
+- 分别输出功能门禁以及 `effect_proxy_realtime_30`、
+  `effect_proxy_realtime_24`、`offline` 性能分类；前两者只覆盖 effect output-submit
+  代理，不代表 GPU completion、SurfaceFlinger latch 或最终显示实时。
 
 QNN 严格遥测证明的是会话配置；它不证明每个节点的 EP placement，也不替代
 底层 fallback trace。原始日志、收据、张量和报告保存在被 Git 忽略的

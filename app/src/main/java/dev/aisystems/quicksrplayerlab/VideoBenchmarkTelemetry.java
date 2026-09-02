@@ -49,6 +49,48 @@ final class VideoBenchmarkTelemetry {
         numberField(value, "modelOutputHeight", profile.outputHeight());
         numberField(value, "canvasWidth", profile.canvasWidth());
         numberField(value, "canvasHeight", profile.canvasHeight());
+        stringField(value, "modelVariant", profile.modelVariant().id());
+        stringField(value, "modelSha256", profile.modelVariant().expectedSha256());
+        stringField(value, "sourceIdentitySha256", BuildConfig.APP_SOURCE_SHA256);
+        stringField(value, "prototypeBuildId", BuildConfig.PROTOTYPE_BUILD_ID);
+        stringField(value, "targetAbi", BuildConfig.TARGET_ABI);
+        stringField(value, "queuePolicy", VideoPipelineTelemetry.QUEUE_POLICY);
+        numberField(
+                value,
+                "workerQueueCapacity",
+                VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY);
+        numberField(
+                value,
+                "workerCleanupReservedSlots",
+                VideoPipelineTelemetry.WORKER_CLEANUP_RESERVED_SLOTS);
+        numberField(
+                value,
+                "media3EffectQueueCapacity",
+                VideoPipelineTelemetry.MEDIA3_EFFECT_QUEUE_CAPACITY);
+        numberField(
+                value,
+                "media3PendingPboQueueCapacity",
+                VideoPipelineTelemetry.MEDIA3_PENDING_PBO_QUEUE_CAPACITY);
+        stringField(value, "workerQueueDepthMeasurement", "measured_frame_admission_queue");
+        stringField(
+                value,
+                "media3QueueDepthMeasurement",
+                "unmeasured_fixed_library_internal_queue");
+        stringField(value, "acceptedMeasurement", "measured_queue_input_callback");
+        stringField(value, "readbackMeasurement", "proxy_process_image_callback_after_media3_readback");
+        stringField(value, "preprocessMeasurement", "measured_cpu_elapsed_realtime_ns");
+        stringField(value, "ortMeasurement", "measured_caller_wall_ns_not_npu_kernel");
+        stringField(value, "outputPackMeasurement", "measured_cpu_elapsed_realtime_ns");
+        stringField(value, "directBufferCopyMeasurement", "measured_cpu_elapsed_realtime_ns");
+        stringField(value, "glUploadMeasurement", "proxy_cpu_gl_submission_not_gpu_completion");
+        stringField(value, "outputSubmitMeasurement", "proxy_finish_processing_callback");
+        stringField(value, "seekMeasurement", "proxy_media3_flush");
+        stringField(
+                value,
+                "ptsWallClockDriftMeasurement",
+                "proxy_generation_relative_to_first_accepted_frame");
+        stringField(value, "surfaceFlingerLatchMeasurement", "unmeasured");
+        stringField(value, "finalDisplayMeasurement", "unmeasured");
         return finish(value);
     }
 
@@ -76,8 +118,49 @@ final class VideoBenchmarkTelemetry {
             if (index > 0) value.append(',');
             value.append('{');
             bareNumberField(value, "frame", sample.frameNumber);
+            numberField(value, "frameId", sample.frameId);
+            numberField(value, "generation", sample.generation);
+            numberField(value, "generationFrameId", sample.generationFrameId);
             numberField(value, "ptsUs", sample.presentationTimeUs);
+            stringField(value, "inputCrc32", sample.inputCrc32);
+            stringField(value, "outputCrc32", sample.outputCrc32);
+            booleanField(value, "late", sample.late);
+            numberField(value, "ptsWallClockDriftNs", sample.ptsWallClockDriftNs);
             numberField(value, "observedNs", sample.observedMonotonicNs);
+            numberField(value, "acceptedNs", sample.acceptedNs);
+            numberField(value, "readbackReadyProxyNs", sample.readbackReadyProxyNs);
+            numberField(value, "inputCopyStartedNs", sample.inputCopyStartedNs);
+            numberField(value, "inputCopiedNs", sample.inputCopiedNs);
+            numberField(value, "inputHashStartedNs", sample.inputHashStartedNs);
+            numberField(value, "inputHashFinishedNs", sample.inputHashFinishedNs);
+            numberField(value, "workerStartedNs", sample.workerStartedNs);
+            numberField(value, "preprocessFinishedNs", sample.preprocessFinishedNs);
+            numberField(value, "sessionReadyNs", sample.sessionReadyNs);
+            numberField(value, "inferenceStartedNs", sample.inferenceStartedNs);
+            numberField(value, "inferenceFinishedNs", sample.inferenceFinishedNs);
+            numberField(value, "outputPackStartedNs", sample.outputPackStartedNs);
+            numberField(value, "outputPackFinishedNs", sample.outputPackFinishedNs);
+            numberField(value, "outputHashStartedNs", sample.outputHashStartedNs);
+            numberField(value, "outputHashFinishedNs", sample.outputHashFinishedNs);
+            numberField(value, "directBufferCopyStartedNs", sample.directBufferCopyStartedNs);
+            numberField(value, "directBufferCopyFinishedNs", sample.directBufferCopyFinishedNs);
+            numberField(value, "outputReadyNs", sample.outputReadyNs);
+            numberField(value, "glUploadStartedNs", sample.glUploadStartedNs);
+            numberField(value, "glUploadFinishedNs", sample.glUploadFinishedNs);
+            numberField(value, "outputSubmittedProxyNs", sample.outputSubmittedProxyNs);
+            numberField(value, "tensorInputCopyNs", sample.tensorInputCopyNs);
+            numberField(value, "ortRunNs", sample.ortRunNs);
+            numberField(value, "tensorOutputCopyNs", sample.tensorOutputCopyNs);
+            numberField(value, "finiteScanNs", sample.finiteScanNs);
+            numberField(value, "acceptedCount", sample.acceptedCount);
+            numberField(value, "processedCount", sample.processedCount);
+            numberField(value, "lateCount", sample.lateCount);
+            numberField(value, "droppedCount", sample.droppedCount);
+            numberField(value, "bypassedCount", sample.bypassedCount);
+            numberField(value, "currentQueueDepth", sample.currentQueueDepth);
+            numberField(value, "maxQueueDepth", sample.maxQueueDepth);
+            numberField(value, "flushCount", sample.flushCount);
+            numberField(value, "seekProxyCount", sample.seekProxyCount);
             numberField(value, "sessionSetupMs", sample.sessionSetupMs);
             numberField(value, "copyMs", sample.copyMs);
             numberField(value, "queueMs", sample.queueMs);
@@ -93,6 +176,26 @@ final class VideoBenchmarkTelemetry {
             value.append('}');
         }
         value.append(']');
+        return finish(value);
+    }
+
+    static String pipelineSnapshotJson(
+            String runId,
+            VideoPipelineTelemetry.Snapshot snapshot,
+            String reason) {
+        StringBuilder value = envelope("pipeline_snapshot", runId);
+        stringField(value, "reason", reason);
+        numberField(value, "observedNs", snapshot.observedNs);
+        numberField(value, "generation", snapshot.generation);
+        numberField(value, "acceptedCount", snapshot.accepted);
+        numberField(value, "processedCount", snapshot.processed);
+        numberField(value, "lateCount", snapshot.late);
+        numberField(value, "droppedCount", snapshot.dropped);
+        numberField(value, "bypassedCount", snapshot.bypassed);
+        numberField(value, "currentQueueDepth", snapshot.currentQueueDepth);
+        numberField(value, "maxQueueDepth", snapshot.maxQueueDepth);
+        numberField(value, "flushCount", snapshot.flushCount);
+        numberField(value, "seekProxyCount", snapshot.seekProxyCount);
         return finish(value);
     }
 
@@ -188,7 +291,7 @@ final class VideoBenchmarkTelemetry {
     private static StringBuilder envelope(String event, String runId) {
         StringBuilder value = new StringBuilder(512);
         value.append('{');
-        bareNumberField(value, "schemaVersion", 1);
+        bareNumberField(value, "schemaVersion", 2);
         stringField(value, "event", event);
         stringField(value, "runId", runId);
         return value;

@@ -1004,6 +1004,18 @@ public final class SuperResolutionActivity extends Activity {
                         benchmarkQnnStrictEvidence));
     }
 
+    private void recordBenchmarkPipelineSnapshot(
+            String runId,
+            VideoPipelineTelemetry.Snapshot snapshot,
+            String reason) {
+        if (!isActiveBenchmarkRun(runId)) {
+            return;
+        }
+        Log.i(
+                VideoBenchmarkTelemetry.TAG,
+                VideoBenchmarkTelemetry.pipelineSnapshotJson(runId, snapshot, reason));
+    }
+
     private void logBenchmarkTerminal(String status, String stage) {
         if (!isActiveBenchmarkRun(benchmarkRunId)) {
             return;
@@ -1157,6 +1169,18 @@ public final class SuperResolutionActivity extends Activity {
                                         effectBenchmarkRunId,
                                         stage,
                                         failure);
+                            }
+                        }
+
+                        @Override
+                        public void onPipelineSnapshot(
+                                VideoPipelineTelemetry.Snapshot snapshot,
+                                String reason) {
+                            if (effectBenchmarkRunId != null) {
+                                recordBenchmarkPipelineSnapshot(
+                                        effectBenchmarkRunId,
+                                        snapshot,
+                                        reason);
                             }
                         }
                     });

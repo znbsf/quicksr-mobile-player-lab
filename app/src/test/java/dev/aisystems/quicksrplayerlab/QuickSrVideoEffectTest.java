@@ -15,9 +15,15 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class QuickSrVideoEffectTest {
@@ -306,6 +312,13 @@ public final class QuickSrVideoEffectTest {
     }
 
     @Test
+    public void crc32IdentityIsStableAndChangesWithFrameBytes() {
+        assertEquals("b63cfbcd", QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 4}));
+        assertFalse(QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 4})
+                .equals(QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 5})));
+    }
+
+    @Test
     public void ultra512ConversionUsesFullInputAnd1024Output() {
         int inputSide = QuickSrVideoEffect.Profile.ULTRA_512.inputSide();
         int outputSide = QuickSrVideoEffect.Profile.ULTRA_512.outputSide();
@@ -381,6 +394,10 @@ public final class QuickSrVideoEffectTest {
         Object lifecycleLock = lifecycleLockField.get(processor);
         Field waitingField = processorClass.getDeclaredField("waitingForQnnLock");
         waitingField.setAccessible(true);
+        Field cleanupCountField = processorClass.getDeclaredField("workerCleanupRunCount");
+        cleanupCountField.setAccessible(true);
+        Field cleanupCompletedField = processorClass.getDeclaredField("workerCleanupCompleted");
+        cleanupCompletedField.setAccessible(true);
 
         QnnPluginRuntime.lockProcess();
         try {
@@ -413,9 +430,173 @@ public final class QuickSrVideoEffectTest {
             assertTrue("release remained blocked for " + releaseElapsedMs + " ms",
                     releaseElapsedMs < 2_000L);
             assertTrue(waitOutcome.get(1, TimeUnit.SECONDS) instanceof InterruptedException);
+            assertEquals(1, ((AtomicInteger) cleanupCountField.get(processor)).get());
+            assertTrue(cleanupCompletedField.getBoolean(processor));
         } finally {
             QnnPluginRuntime.unlockProcess();
             executor.shutdownNow();
+        }
+    }
+
+    @Test(timeout = 10_000L)
+    public void releaseQueuesWorkerCleanupBehindFullQueueWithoutDiscardingLeases()
+            throws Exception {
+        Class<?> processorClass = Arrays.stream(QuickSrVideoEffect.class.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("ProcessorImpl"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> constructor = processorClass.getDeclaredConstructor(
+                Context.class,
+                QuickSrSession.Mode.class,
+                QuickSrVideoEffect.Profile.class,
+                QuickSrVideoEffect.StatsListener.class);
+        constructor.setAccessible(true);
+        Object processor = constructor.newInstance(
+                null,
+                QuickSrSession.Mode.QNN_HTP,
+                QuickSrVideoEffect.Profile.FAST_64,
+                null);
+
+        Field executorField = processorClass.getDeclaredField("inferenceExecutor");
+        executorField.setAccessible(true);
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) executorField.get(processor);
+        Method acquireMethod = processorClass.getDeclaredMethod("acquireQnnProcessLock");
+        acquireMethod.setAccessible(true);
+        Method releaseMethod = processorClass.getDeclaredMethod("release");
+        releaseMethod.setAccessible(true);
+        Field cleanupQueuedField = processorClass.getDeclaredField("workerCleanupQueued");
+        cleanupQueuedField.setAccessible(true);
+        Field cleanupCountField = processorClass.getDeclaredField("workerCleanupRunCount");
+        cleanupCountField.setAccessible(true);
+        Field cleanupCompletedField = processorClass.getDeclaredField("workerCleanupCompleted");
+        cleanupCompletedField.setAccessible(true);
+        Field releaseTimeoutField = processorClass.getDeclaredField("releaseTimeoutMs");
+        releaseTimeoutField.setAccessible(true);
+        releaseTimeoutField.setLong(processor, 150L);
+        Field outstandingField = processorClass.getDeclaredField("outstandingFrameResults");
+        outstandingField.setAccessible(true);
+        Field outputLockField = processorClass.getDeclaredField("outputBufferPoolLock");
+        outputLockField.setAccessible(true);
+
+        CountDownLatch activeHasQnnLock = new CountDownLatch(1);
+        CountDownLatch allowActiveToFinish = new CountDownLatch(1);
+        AtomicInteger taskTerminalCount = new AtomicInteger();
+        AtomicInteger bufferRecycleCount = new AtomicInteger();
+        AtomicInteger resultRecycleCount = new AtomicInteger();
+        AtomicBoolean activeTerminated = new AtomicBoolean();
+        AtomicBoolean firstQueuedTerminated = new AtomicBoolean();
+        AtomicBoolean secondQueuedTerminated = new AtomicBoolean();
+
+        Future<?> active = executor.submit(() -> {
+            try {
+                acquireMethod.invoke(processor);
+                activeHasQnnLock.countDown();
+                boolean allowedToFinish = false;
+                while (!allowedToFinish) {
+                    try {
+                        allowedToFinish = allowActiveToFinish.await(50, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException ignored) {
+                        // Model a native inference that does not return when release interrupts it.
+                    }
+                }
+                assertTrue(activeTerminated.compareAndSet(false, true));
+                taskTerminalCount.incrementAndGet();
+                bufferRecycleCount.incrementAndGet();
+            } catch (InvocationTargetException failure) {
+                throw new RuntimeException(failure.getCause());
+            } catch (Exception failure) {
+                throw new RuntimeException(failure);
+            }
+        });
+        assertTrue("active worker never acquired the QNN process lock",
+                activeHasQnnLock.await(2, TimeUnit.SECONDS));
+
+        Runnable firstQueued = () -> {
+            assertTrue(firstQueuedTerminated.compareAndSet(false, true));
+            taskTerminalCount.incrementAndGet();
+            bufferRecycleCount.incrementAndGet();
+        };
+        Runnable secondQueued = () -> {
+            assertTrue(secondQueuedTerminated.compareAndSet(false, true));
+            taskTerminalCount.incrementAndGet();
+            bufferRecycleCount.incrementAndGet();
+        };
+        Future<?> firstQueuedFuture = executor.submit(firstQueued);
+        Future<?> secondQueuedFuture = executor.submit(secondQueued);
+        assertEquals(VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY, executor.getQueue().size());
+
+        QuickSrVideoEffect.FrameResult outstanding = new QuickSrVideoEffect.FrameResult(
+                ByteBuffer.allocateDirect(16),
+                ignored -> resultRecycleCount.incrementAndGet());
+        @SuppressWarnings("unchecked")
+        Set<QuickSrVideoEffect.FrameResult> outstandingResults =
+                (Set<QuickSrVideoEffect.FrameResult>) outstandingField.get(processor);
+        Object outputLock = outputLockField.get(processor);
+        synchronized (outputLock) {
+            outstandingResults.add(outstanding);
+        }
+
+        FutureTask<Throwable> releaseOutcome = new FutureTask<>(() -> {
+            try {
+                releaseMethod.invoke(processor);
+                return null;
+            } catch (InvocationTargetException failure) {
+                return failure.getCause();
+            }
+        });
+        Thread releaseThread = new Thread(releaseOutcome, "QuickSR-release-full-queue-test");
+        long releaseStartedNs = System.nanoTime();
+        releaseThread.start();
+        long enqueueDeadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (!cleanupQueuedField.getBoolean(processor)
+                && System.nanoTime() < enqueueDeadlineNs) {
+            Thread.yield();
+        }
+        assertTrue("worker cleanup was not queued in its reserved slot",
+                cleanupQueuedField.getBoolean(processor));
+        assertEquals(
+                VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY
+                        + VideoPipelineTelemetry.WORKER_CLEANUP_RESERVED_SLOTS,
+                executor.getQueue().size());
+        Throwable releaseFailure = releaseOutcome.get(2, TimeUnit.SECONDS);
+        long releaseElapsedMs = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - releaseStartedNs);
+        assertTrue("release did not report its bounded timeout: " + releaseFailure,
+                releaseFailure instanceof androidx.media3.common.VideoFrameProcessingException
+                        && releaseFailure.getCause() instanceof java.util.concurrent.TimeoutException);
+        assertTrue("queue-full release exceeded its test timeout bound: " + releaseElapsedMs,
+                releaseElapsedMs < 1_500L);
+        assertFalse("cleanup ran while the active native task was still blocked",
+                cleanupCompletedField.getBoolean(processor));
+
+        allowActiveToFinish.countDown();
+        active.get(1, TimeUnit.SECONDS);
+        firstQueuedFuture.get(1, TimeUnit.SECONDS);
+        secondQueuedFuture.get(1, TimeUnit.SECONDS);
+
+        assertEquals(3, taskTerminalCount.get());
+        assertEquals(3, bufferRecycleCount.get());
+        assertEquals(1, resultRecycleCount.get());
+        outstanding.recycle();
+        assertEquals("FrameResult was recycled more than once", 1, resultRecycleCount.get());
+        assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
+        assertEquals(1, ((AtomicInteger) cleanupCountField.get(processor)).get());
+        assertTrue(cleanupCompletedField.getBoolean(processor));
+
+        ExecutorService lockProbe = Executors.newSingleThreadExecutor();
+        try {
+            Future<Boolean> qnnLockReleased = lockProbe.submit(() -> {
+                QnnPluginRuntime.lockProcess();
+                try {
+                    return true;
+                } finally {
+                    QnnPluginRuntime.unlockProcess();
+                }
+            });
+            assertTrue("worker cleanup did not release the QNN process lock",
+                    qnnLockReleased.get(1, TimeUnit.SECONDS));
+        } finally {
+            lockProbe.shutdownNow();
         }
     }
 

@@ -7,25 +7,95 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
 
-TIMING_FIELDS = (
-    "sessionSetupMs",
-    "copyMs",
-    "queueMs",
-    "inputConversionMs",
-    "inferenceMs",
-    "tensorInputCopyMs",
-    "ortRunMs",
-    "tensorOutputCopyMs",
-    "finiteScanMs",
-    "outputConversionMs",
-    "totalProcessingMs",
+RAW_TIMESTAMP_FIELDS = (
+    "acceptedNs",
+    "readbackReadyProxyNs",
+    "inputCopyStartedNs",
+    "inputCopiedNs",
+    "inputHashStartedNs",
+    "inputHashFinishedNs",
+    "workerStartedNs",
+    "preprocessFinishedNs",
+    "sessionReadyNs",
+    "inferenceStartedNs",
+    "inferenceFinishedNs",
+    "outputPackStartedNs",
+    "outputPackFinishedNs",
+    "outputHashStartedNs",
+    "outputHashFinishedNs",
+    "directBufferCopyStartedNs",
+    "directBufferCopyFinishedNs",
+    "outputReadyNs",
+    "glUploadStartedNs",
+    "glUploadFinishedNs",
+    "outputSubmittedProxyNs",
 )
 
-VALIDATOR_VERSION = "android-qnn-resolution-validator-v2"
+RAW_DURATION_FIELDS = (
+    "tensorInputCopyNs",
+    "ortRunNs",
+    "tensorOutputCopyNs",
+    "finiteScanNs",
+)
+
+STAGE_INTERVALS = {
+    "acceptedToReadbackProxyNs": ("acceptedNs", "readbackReadyProxyNs"),
+    "inputCopyNs": ("inputCopyStartedNs", "inputCopiedNs"),
+    "inputHashNs": ("inputHashStartedNs", "inputHashFinishedNs"),
+    "workerQueueWaitNs": ("inputHashFinishedNs", "workerStartedNs"),
+    "preprocessNs": ("workerStartedNs", "preprocessFinishedNs"),
+    "sessionSetupNs": ("preprocessFinishedNs", "sessionReadyNs"),
+    "sessionReadyToInferenceNs": ("sessionReadyNs", "inferenceStartedNs"),
+    "inferenceCallerWallNs": ("inferenceStartedNs", "inferenceFinishedNs"),
+    "postInferenceToOutputPackNs": ("inferenceFinishedNs", "outputPackStartedNs"),
+    "outputPackNs": ("outputPackStartedNs", "outputPackFinishedNs"),
+    "outputHashNs": ("outputHashStartedNs", "outputHashFinishedNs"),
+    "directBufferCopyNs": ("directBufferCopyStartedNs", "directBufferCopyFinishedNs"),
+    "outputReadyToGlSubmitQueueNs": ("outputReadyNs", "glUploadStartedNs"),
+    "glUploadOutputSubmitProxyNs": ("glUploadStartedNs", "glUploadFinishedNs"),
+    "effectTotalToOutputSubmitProxyNs": ("acceptedNs", "outputSubmittedProxyNs"),
+}
+
+COUNTER_FIELDS = (
+    "acceptedCount",
+    "processedCount",
+    "lateCount",
+    "droppedCount",
+    "bypassedCount",
+    "currentQueueDepth",
+    "maxQueueDepth",
+    "flushCount",
+    "seekProxyCount",
+)
+
+MEASUREMENT_CONTRACT = {
+    "queuePolicy": "bounded_blocking_backpressure",
+    "workerQueueCapacity": 2,
+    "workerCleanupReservedSlots": 1,
+    "media3EffectQueueCapacity": 6,
+    "media3PendingPboQueueCapacity": 1,
+    "workerQueueDepthMeasurement": "measured_frame_admission_queue",
+    "media3QueueDepthMeasurement": "unmeasured_fixed_library_internal_queue",
+    "acceptedMeasurement": "measured_queue_input_callback",
+    "readbackMeasurement": "proxy_process_image_callback_after_media3_readback",
+    "preprocessMeasurement": "measured_cpu_elapsed_realtime_ns",
+    "ortMeasurement": "measured_caller_wall_ns_not_npu_kernel",
+    "outputPackMeasurement": "measured_cpu_elapsed_realtime_ns",
+    "directBufferCopyMeasurement": "measured_cpu_elapsed_realtime_ns",
+    "glUploadMeasurement": "proxy_cpu_gl_submission_not_gpu_completion",
+    "outputSubmitMeasurement": "proxy_finish_processing_callback",
+    "seekMeasurement": "proxy_media3_flush",
+    "ptsWallClockDriftMeasurement": "proxy_generation_relative_to_first_accepted_frame",
+    "surfaceFlingerLatchMeasurement": "unmeasured",
+    "finalDisplayMeasurement": "unmeasured",
+}
+
+VALIDATOR_VERSION = "android-qnn-resolution-validator-v3"
 
 # These values are emitted only by the post-session ``qnn_strict`` event.
 # Configuration and frame-mode labels are application intent, not evidence that
@@ -47,6 +117,20 @@ STRICT_QNN_EVIDENCE_FIELDS: dict[str, Any] = {
 def percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
     return ordered[max(0, math.ceil(len(ordered) * fraction) - 1)]
+
+
+def is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def summarize(values: list[float]) -> dict[str, float]:
+    return {
+        "p50": percentile(values, 0.50),
+        "p95": percentile(values, 0.95),
+        "p99": percentile(values, 0.99),
+        "max": max(values),
+        "mean": sum(values) / len(values),
+    }
 
 
 def load_events(path: Path, run_id: str) -> tuple[list[dict[str, Any]], list[str]]:
@@ -96,17 +180,24 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     if configurations:
         configuration = configurations[0]
         expected_configuration = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "runId": run_id,
             "mode": "QUICKSR_QNN",
             "tuning": "SUSTAINED",
             "profile": case["profile"],
             "qnnRuntimeExpected": True,
             **expected_dimensions,
+            **MEASUREMENT_CONTRACT,
         }
         for field, expected in expected_configuration.items():
             if configuration.get(field) != expected:
                 failures.append(f"configuration {field}: expected {expected!r}, got {configuration.get(field)!r}")
+        for field in ("modelSha256", "sourceIdentitySha256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", str(configuration.get(field, ""))):
+                failures.append(f"configuration {field}: expected lowercase SHA-256")
+        for field in ("modelVariant", "prototypeBuildId", "targetAbi"):
+            if not isinstance(configuration.get(field), str) or not configuration[field].strip():
+                failures.append(f"configuration {field}: expected non-empty string")
 
     strict_events = [event for event in events if event.get("event") == "qnn_strict"]
     if len(strict_events) != 1:
@@ -114,7 +205,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     elif strict_events:
         strict_event = strict_events[0]
         for field, expected in {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "runId": run_id,
             "mode": "QNN_HTP",
             "profile": case["profile"],
@@ -143,7 +234,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     samples_by_frame: dict[int, dict[str, Any]] = {}
     for batch in (event for event in events if event.get("event") == "frame_batch"):
         for field, expected in {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "mode": "QNN_HTP",
             "tuning": "SUSTAINED",
             "profile": case["profile"],
@@ -154,11 +245,85 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         }.items():
             if batch.get(field) != expected:
                 failures.append(f"frame batch {field}: expected {expected!r}, got {batch.get(field)!r}")
-        for sample in batch.get("samples", []):
-            if isinstance(sample.get("frame"), int):
-                samples_by_frame[sample["frame"]] = sample
+        samples = batch.get("samples")
+        if not isinstance(samples, list):
+            failures.append("frame batch samples are missing or not an array")
+            continue
+        for sample in samples:
+            frame_id = sample.get("frameId")
+            if not is_int(frame_id) or frame_id <= 0:
+                failures.append(f"frame sample has invalid frameId: {frame_id!r}")
+                continue
+            if frame_id in samples_by_frame:
+                failures.append(f"duplicate frameId: {frame_id}")
+                continue
+            samples_by_frame[frame_id] = sample
+
+            for field in RAW_TIMESTAMP_FIELDS:
+                value = sample.get(field)
+                if not is_int(value) or value <= 0:
+                    failures.append(f"frame {frame_id} missing positive raw timestamp: {field}")
+            available_timestamps = [sample.get(field) for field in RAW_TIMESTAMP_FIELDS]
+            if all(is_int(value) and value > 0 for value in available_timestamps):
+                if available_timestamps != sorted(available_timestamps):
+                    failures.append(f"frame {frame_id} raw stage timestamps are not monotonic")
+                if sample.get("observedNs") != sample.get("outputSubmittedProxyNs"):
+                    failures.append(
+                        f"frame {frame_id} observedNs must equal outputSubmittedProxyNs"
+                    )
+            for field in RAW_DURATION_FIELDS:
+                value = sample.get(field)
+                if not is_int(value) or value < 0:
+                    failures.append(f"frame {frame_id} missing non-negative raw duration: {field}")
+            for field in COUNTER_FIELDS:
+                value = sample.get(field)
+                if not is_int(value) or value < 0:
+                    failures.append(f"frame {frame_id} missing non-negative counter: {field}")
+            for field in ("inputCrc32", "outputCrc32"):
+                if not re.fullmatch(r"[0-9a-f]{8}", str(sample.get(field, ""))):
+                    failures.append(f"frame {frame_id} has invalid {field}")
+            if sample.get("frame") != frame_id:
+                failures.append(f"frame {frame_id} legacy frame identity does not match frameId")
+            if not is_int(sample.get("generation")) or sample["generation"] < 0:
+                failures.append(f"frame {frame_id} has invalid generation")
+            if not is_int(sample.get("generationFrameId")) \
+                    or sample["generationFrameId"] <= 0:
+                failures.append(f"frame {frame_id} has invalid generationFrameId")
+            if not isinstance(sample.get("late"), bool):
+                failures.append(f"frame {frame_id} has invalid late flag")
+            if not is_int(sample.get("ptsWallClockDriftNs")):
+                failures.append(f"frame {frame_id} has invalid ptsWallClockDriftNs")
+            if is_int(sample.get("maxQueueDepth")) \
+                    and sample["maxQueueDepth"] > MEASUREMENT_CONTRACT["workerQueueCapacity"]:
+                failures.append(f"frame {frame_id} exceeds bounded worker queue capacity")
 
     ordered = [samples_by_frame[key] for key in sorted(samples_by_frame)]
+    for previous, current in zip(ordered, ordered[1:]):
+        if current["frameId"] <= previous["frameId"]:
+            failures.append("frame identities are not strictly increasing")
+        if current.get("generation") == previous.get("generation"):
+            if current.get("generationFrameId", 0) <= previous.get("generationFrameId", 0):
+                failures.append("generation-local frame identities are not strictly increasing")
+            if current.get("ptsUs", -1) < previous.get("ptsUs", -1):
+                failures.append("PTS decreases within one generation")
+        elif current.get("generation", -1) <= previous.get("generation", -1):
+            failures.append("generation does not increase across a flush boundary")
+        for field in ("acceptedCount", "processedCount", "lateCount", "droppedCount",
+                      "bypassedCount", "maxQueueDepth", "flushCount", "seekProxyCount"):
+            if is_int(previous.get(field)) and is_int(current.get(field)) \
+                    and current[field] < previous[field]:
+                failures.append(f"pipeline counter decreases at frame {current['frameId']}: {field}")
+
+    pipeline_snapshots = [event for event in events if event.get("event") == "pipeline_snapshot"]
+    for snapshot in pipeline_snapshots:
+        if snapshot.get("schemaVersion") != 2:
+            failures.append("pipeline snapshot schemaVersion must be 2")
+        for field in COUNTER_FIELDS:
+            if not is_int(snapshot.get(field)) or snapshot[field] < 0:
+                failures.append(f"pipeline snapshot has invalid counter: {field}")
+        if is_int(snapshot.get("maxQueueDepth")) \
+                and snapshot["maxQueueDepth"] > MEASUREMENT_CONTRACT["workerQueueCapacity"]:
+            failures.append("pipeline snapshot exceeds bounded worker queue capacity")
     warmup = int(plan["warmup_frames"])
     measured = ordered[warmup:]
     minimum = int(case["minimum_measured_frames"])
@@ -171,18 +336,25 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "measured_frame_count": len(measured),
     }
     if measured:
-        for field in TIMING_FIELDS:
-            values = [float(sample[field]) for sample in measured if isinstance(sample.get(field), (int, float))]
-            if len(values) != len(measured):
-                failures.append(f"missing or non-numeric timing field: {field}")
+        for metric_name, (start_field, end_field) in STAGE_INTERVALS.items():
+            values = [float(sample[end_field] - sample[start_field]) for sample in measured
+                      if is_int(sample.get(start_field)) and is_int(sample.get(end_field))]
+            if len(values) != len(measured) or any(value < 0 for value in values):
+                failures.append(f"missing, non-numeric or negative raw stage interval: {metric_name}")
             else:
-                metrics[field] = {
-                    "p50": percentile(values, 0.50),
-                    "p95": percentile(values, 0.95),
-                    "mean": sum(values) / len(values),
-                }
+                metrics[metric_name] = summarize(values)
+        for field in RAW_DURATION_FIELDS:
+            values = [float(sample[field]) for sample in measured if is_int(sample.get(field))]
+            if len(values) != len(measured):
+                failures.append(f"missing or non-numeric raw duration: {field}")
+            else:
+                metrics[field] = summarize(values)
+        drift_values = [float(sample["ptsWallClockDriftNs"]) for sample in measured
+                        if is_int(sample.get("ptsWallClockDriftNs"))]
+        if len(drift_values) == len(measured):
+            metrics["ptsWallClockDriftNs"] = summarize(drift_values)
         first, last = measured[0], measured[-1]
-        observed_delta = last.get("observedNs", 0) - first.get("observedNs", 0)
+        observed_delta = last.get("outputSubmittedProxyNs", 0) - first.get("outputSubmittedProxyNs", 0)
         pts_delta = last.get("ptsUs", 0) - first.get("ptsUs", 0)
         if len(measured) > 1 and observed_delta > 0:
             metrics["observed_fps"] = (len(measured) - 1) * 1_000_000_000 / observed_delta
@@ -192,26 +364,54 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             metrics["sampled_pts_fps"] = (len(measured) - 1) * 1_000_000 / pts_delta
 
     performance_class = "unclassified"
-    if "totalProcessingMs" in metrics and "observed_fps" in metrics:
-        total_p95 = metrics["totalProcessingMs"]["p95"]
+    if "effectTotalToOutputSubmitProxyNs" in metrics and "observed_fps" in metrics:
+        total_p95 = metrics["effectTotalToOutputSubmitProxyNs"]["p95"] / 1_000_000
         observed_fps = metrics["observed_fps"]
         realtime_30 = plan["performance_classes"]["realtime_30"]
         realtime_24 = plan["performance_classes"]["realtime_24"]
         if total_p95 <= realtime_30["maximum_p95_total_ms"] and observed_fps >= realtime_30["minimum_observed_fps"]:
-            performance_class = "realtime_30"
+            performance_class = "effect_proxy_realtime_30"
         elif total_p95 <= realtime_24["maximum_p95_total_ms"] and observed_fps >= realtime_24["minimum_observed_fps"]:
-            performance_class = "realtime_24"
+            performance_class = "effect_proxy_realtime_24"
         else:
             performance_class = "offline"
 
+    latest_counters: dict[str, int] = {}
+    counter_sources = ordered + pipeline_snapshots
+    if counter_sources:
+        latest = max(
+            counter_sources,
+            key=lambda item: (
+                item.get("acceptedCount") if is_int(item.get("acceptedCount")) else -1,
+                sum(item.get(field) if is_int(item.get(field)) else -1
+                    for field in ("processedCount", "droppedCount", "bypassedCount")),
+                item.get("observedNs") if is_int(item.get("observedNs")) else -1,
+            ),
+        )
+        for field in COUNTER_FIELDS:
+            if is_int(latest.get(field)):
+                latest_counters[field] = latest[field]
+        if latest_counters.get("processedCount", -1) < len(ordered):
+            failures.append("processed counter is smaller than emitted processed frame samples")
+        accepted_count = latest_counters.get("acceptedCount")
+        terminal_count = sum(latest_counters.get(field, 0)
+                             for field in ("processedCount", "droppedCount", "bypassedCount"))
+        if accepted_count is not None and terminal_count > accepted_count:
+            failures.append("terminal frame counters exceed acceptedCount")
+        if latest_counters.get("lateCount", 0) > latest_counters.get("processedCount", 0):
+            failures.append("lateCount exceeds processedCount")
+
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "plan_id": plan["plan_id"],
         "case_id": case["id"],
         "run_id": run_id,
         "functional_gate": "PASS" if not failures else "FAIL",
         "performance_class": performance_class,
+        "performance_scope": "effect_output_submit_proxy_not_gpu_completion_or_final_display",
+        "final_display_status": "unmeasured",
         "metrics": metrics,
+        "pipeline_counters": latest_counters,
         "failures": failures,
         "device_errors": errors,
     }

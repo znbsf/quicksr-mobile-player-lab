@@ -1,10 +1,16 @@
 # 实时视频超分：优化经验与教训
 
-日期：2026-09-01
+日期：2026-09-03
 
 对象：QuickSRNetSmall 2×、ONNX Runtime QNN EP、Qualcomm HTP、Media3 1.11.0
 
 当前结果：在指定设备与 `1280×720 @ 23.976023 fps` 本地 SDR 片源上，默认 `640×360 → 1280×720` 神经档跟住源帧率。
+
+2026-09-03 源码进展：P0 已补 raw ns、逐帧 identity/hash、generation/flush 隔离、
+有界 worker 队列和 fail-closed 主机验证器；尚未进行新一轮物理设备运行或吞吐 A/B。
+公开 API 不能直接给出的 readback、GPU completion、SurfaceFlinger latch 和最终显示仍分别
+标为 proxy 或 unmeasured。完整合同见
+[REALTIME_PIPELINE_TELEMETRY.md](REALTIME_PIPELINE_TELEMETRY.md)。
 
 ## 1. 最重要的结论
 

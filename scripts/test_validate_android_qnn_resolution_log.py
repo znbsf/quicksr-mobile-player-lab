@@ -28,14 +28,18 @@ class ValidatorTests(unittest.TestCase):
 
     def events(self):
         config = {
-            "schemaVersion": 1, "event": "configuration", "runId": "run-1",
+            "schemaVersion": 2, "event": "configuration", "runId": "run-1",
             "mode": "QUICKSR_QNN", "tuning": "SUSTAINED", "profile": "FULL_1080P_3X",
             "qnnRuntimeExpected": True, "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080,
             "canvasWidth": 1920, "canvasHeight": 1080,
+            "modelVariant": "fixed640x360-3x-full",
+            "modelSha256": "a" * 64, "sourceIdentitySha256": "b" * 64,
+            "prototypeBuildId": "test-build", "targetAbi": "arm64-v8a",
+            **validator.MEASUREMENT_CONTRACT,
         }
         strict = {
-            "schemaVersion": 1, "event": "qnn_strict", "runId": "run-1",
+            "schemaVersion": 2, "event": "qnn_strict", "runId": "run-1",
             "mode": "QNN_HTP", "profile": "FULL_1080P_3X",
             "modelVariant": "fixed640x360-3x-full",
             "qnnStrict": {
@@ -48,14 +52,46 @@ class ValidatorTests(unittest.TestCase):
             },
         }
         samples = []
-        for frame in range(3):
-            sample = {field: 1 for field in validator.TIMING_FIELDS}
-            sample.update({"frame": frame, "ptsUs": frame * 41667,
-                           "observedNs": 1_000_000_000 + frame * 40_000_000})
-            sample["totalProcessingMs"] = 30
+        for index in range(3):
+            frame = index + 1
+            accepted_ns = 1_000_000_000 + index * 40_000_000
+            sample = {
+                "frame": frame, "frameId": frame, "generation": 0,
+                "generationFrameId": frame, "ptsUs": index * 41667,
+                "inputCrc32": f"{frame:08x}", "outputCrc32": f"{frame + 10:08x}",
+                "late": False, "ptsWallClockDriftNs": 30_000_000 - index * 1_667_000,
+                "acceptedNs": accepted_ns,
+                "readbackReadyProxyNs": accepted_ns + 1_000_000,
+                "inputCopyStartedNs": accepted_ns + 1_000_000,
+                "inputCopiedNs": accepted_ns + 2_000_000,
+                "inputHashStartedNs": accepted_ns + 2_000_000,
+                "inputHashFinishedNs": accepted_ns + 2_500_000,
+                "workerStartedNs": accepted_ns + 3_000_000,
+                "preprocessFinishedNs": accepted_ns + 4_000_000,
+                "sessionReadyNs": accepted_ns + 4_000_000,
+                "inferenceStartedNs": accepted_ns + 4_000_000,
+                "inferenceFinishedNs": accepted_ns + 13_000_000,
+                "outputPackStartedNs": accepted_ns + 13_000_000,
+                "outputPackFinishedNs": accepted_ns + 20_000_000,
+                "outputHashStartedNs": accepted_ns + 20_000_000,
+                "outputHashFinishedNs": accepted_ns + 21_000_000,
+                "directBufferCopyStartedNs": accepted_ns + 21_000_000,
+                "directBufferCopyFinishedNs": accepted_ns + 23_000_000,
+                "outputReadyNs": accepted_ns + 23_000_000,
+                "glUploadStartedNs": accepted_ns + 25_000_000,
+                "glUploadFinishedNs": accepted_ns + 30_000_000,
+                "outputSubmittedProxyNs": accepted_ns + 30_000_000,
+                "observedNs": accepted_ns + 30_000_000,
+                "tensorInputCopyNs": 1_000_000, "ortRunNs": 9_000_000,
+                "tensorOutputCopyNs": 2_000_000, "finiteScanNs": 0,
+                "acceptedCount": frame, "processedCount": frame,
+                "lateCount": 0, "droppedCount": 0, "bypassedCount": 0,
+                "currentQueueDepth": 0, "maxQueueDepth": 1,
+                "flushCount": 0, "seekProxyCount": 0,
+            }
             samples.append(sample)
         batch = {
-            "schemaVersion": 1, "event": "frame_batch", "runId": "run-1",
+            "schemaVersion": 2, "event": "frame_batch", "runId": "run-1",
             "mode": "QNN_HTP", "tuning": "SUSTAINED", "profile": "FULL_1080P_3X",
             "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080, "samples": samples,
@@ -68,7 +104,9 @@ class ValidatorTests(unittest.TestCase):
     def test_valid_qnn_run_passes_and_classifies_24fps(self):
         result = self.validate(self.events())
         self.assertEqual("PASS", result["functional_gate"])
-        self.assertEqual("realtime_24", result["performance_class"])
+        self.assertEqual("effect_proxy_realtime_24", result["performance_class"])
+        self.assertEqual("unmeasured", result["final_display_status"])
+        self.assertIn("p99", result["metrics"]["outputPackNs"])
 
     def test_cpu_batch_is_rejected(self):
         events = self.events()
@@ -133,6 +171,27 @@ class ValidatorTests(unittest.TestCase):
         events[2]["samples"] = events[2]["samples"][:2]
         self.assertEqual("FAIL", self.validate(events)["functional_gate"])
 
+    def test_missing_raw_nanosecond_stage_is_rejected(self):
+        events = self.events()
+        del events[2]["samples"][1]["glUploadStartedNs"]
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("glUploadStartedNs" in failure for failure in result["failures"]))
+
+    def test_queue_depth_above_bounded_contract_is_rejected(self):
+        events = self.events()
+        events[2]["samples"][1]["maxQueueDepth"] = 3
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("bounded worker queue" in failure for failure in result["failures"]))
+
+    def test_unmeasured_final_display_cannot_be_claimed_measured(self):
+        events = self.events()
+        events[0]["finalDisplayMeasurement"] = "measured"
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("finalDisplayMeasurement" in failure for failure in result["failures"]))
+
     def test_log_loader_accepts_logcat_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "device.log"
@@ -166,7 +225,7 @@ class ValidatorTests(unittest.TestCase):
             finally:
                 sys.argv = previous_argv
             report = json.loads(output_path.read_text(encoding="utf-8"))
-            self.assertEqual(2, report["schema_version"])
+            self.assertEqual(3, report["schema_version"])
             self.assertEqual(validator.VALIDATOR_VERSION, report["validator_version"])
             self.assertEqual(hashlib.sha256(plan_path.read_bytes()).hexdigest(), report["plan_sha256"])
             self.assertEqual(hashlib.sha256(log_path.read_bytes()).hexdigest(), report["raw_log_sha256"])

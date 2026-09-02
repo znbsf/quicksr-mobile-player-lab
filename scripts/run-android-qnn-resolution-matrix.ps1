@@ -580,8 +580,8 @@ function Test-PrimaryReport {
         throw "1080p prerequisite report is not valid JSON: $Path. $(Get-FailureMessage $_)"
     }
     $required = [ordered]@{
-        schema_version = '2'
-        validator_version = 'android-qnn-resolution-validator-v2'
+        schema_version = '3'
+        validator_version = 'android-qnn-resolution-validator-v3'
         plan_id = [string]$Plan.plan_id
         plan_sha256 = $PlanSha256
         case_id = '1080p-primary'
