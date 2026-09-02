@@ -31,6 +31,11 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"queuePolicy\":\"bounded_blocking_backpressure\""));
         assertTrue(value.contains("\"workerQueueCapacity\":2"));
         assertTrue(value.contains("\"workerCleanupReservedSlots\":1"));
+        assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
+        assertTrue(value.contains("\"postprocessQueueCapacity\":0"));
+        assertTrue(value.contains("\"outputTensorSlotCount\":1"));
+        assertTrue(value.contains("\"outputTensorBytesPerSlot\":24883200"));
+        assertTrue(value.contains("\"additionalOverlapTensorBytes\":0"));
         assertTrue(value.contains("\"workerQueueDepthMeasurement\":"
                 + "\"measured_frame_admission_queue\""));
         assertTrue(value.contains("\"readbackMeasurement\":"
@@ -49,6 +54,7 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"mode\":\"QNN_HTP\""));
         assertTrue(value.contains("\"tuning\":\"SUSTAINED\""));
         assertTrue(value.contains("\"profile\":\"FULL_1080P_3X\""));
+        assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
         assertTrue(value.contains("\"frame\":1,\"frameId\":1"));
         assertTrue(value.contains("\"ptsUs\":0"));
         assertTrue(value.contains("\"totalProcessingMs\":17"));

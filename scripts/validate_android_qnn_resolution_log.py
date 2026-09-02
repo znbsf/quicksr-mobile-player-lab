@@ -20,6 +20,9 @@ RAW_TIMESTAMP_FIELDS = (
     "inputHashStartedNs",
     "inputHashFinishedNs",
     "workerStartedNs",
+    "outputTensorAcquireStartedNs",
+    "outputTensorSlotAcquiredNs",
+    "outputTensorReadyNs",
     "preprocessFinishedNs",
     "sessionReadyNs",
     "inferenceStartedNs",
@@ -48,7 +51,9 @@ STAGE_INTERVALS = {
     "inputCopyNs": ("inputCopyStartedNs", "inputCopiedNs"),
     "inputHashNs": ("inputHashStartedNs", "inputHashFinishedNs"),
     "workerQueueWaitNs": ("inputHashFinishedNs", "workerStartedNs"),
-    "preprocessNs": ("workerStartedNs", "preprocessFinishedNs"),
+    "outputTensorSlotWaitNs": ("outputTensorAcquireStartedNs", "outputTensorSlotAcquiredNs"),
+    "outputTensorPrepareNs": ("outputTensorSlotAcquiredNs", "outputTensorReadyNs"),
+    "preprocessNs": ("outputTensorReadyNs", "preprocessFinishedNs"),
     "sessionSetupNs": ("preprocessFinishedNs", "sessionReadyNs"),
     "sessionReadyToInferenceNs": ("sessionReadyNs", "inferenceStartedNs"),
     "inferenceCallerWallNs": ("inferenceStartedNs", "inferenceFinishedNs"),
@@ -84,6 +89,8 @@ MEASUREMENT_CONTRACT = {
     "acceptedMeasurement": "measured_queue_input_callback",
     "readbackMeasurement": "proxy_process_image_callback_after_media3_readback",
     "preprocessMeasurement": "measured_cpu_elapsed_realtime_ns",
+    "outputTensorSlotWaitMeasurement": "measured_bounded_semaphore_wait",
+    "outputTensorPrepareMeasurement": "measured_pool_or_allocation_time",
     "ortMeasurement": "measured_caller_wall_ns_not_npu_kernel",
     "outputPackMeasurement": "measured_cpu_elapsed_realtime_ns",
     "directBufferCopyMeasurement": "measured_cpu_elapsed_realtime_ns",
@@ -95,7 +102,7 @@ MEASUREMENT_CONTRACT = {
     "finalDisplayMeasurement": "unmeasured",
 }
 
-VALIDATOR_VERSION = "android-qnn-resolution-validator-v3"
+VALIDATOR_VERSION = "android-qnn-resolution-validator-v5"
 
 # These values are emitted only by the post-session ``qnn_strict`` event.
 # Configuration and frame-mode labels are application intent, not evidence that
@@ -179,6 +186,16 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     }
     if configurations:
         configuration = configurations[0]
+        postprocess_mode = configuration.get("postprocessMode")
+        if postprocess_mode not in {"SERIAL", "OVERLAP"}:
+            failures.append(
+                "configuration postprocessMode: expected SERIAL or OVERLAP, "
+                f"got {postprocess_mode!r}"
+            )
+        overlap_enabled = postprocess_mode == "OVERLAP"
+        output_tensor_bytes = (
+            case["model_output"][0] * case["model_output"][1] * 3 * 4
+        )
         expected_configuration = {
             "schemaVersion": 2,
             "runId": run_id,
@@ -186,6 +203,10 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             "tuning": "SUSTAINED",
             "profile": case["profile"],
             "qnnRuntimeExpected": True,
+            "postprocessQueueCapacity": 1 if overlap_enabled else 0,
+            "outputTensorSlotCount": 2 if overlap_enabled else 1,
+            "outputTensorBytesPerSlot": output_tensor_bytes,
+            "additionalOverlapTensorBytes": output_tensor_bytes if overlap_enabled else 0,
             **expected_dimensions,
             **MEASUREMENT_CONTRACT,
         }
@@ -234,11 +255,15 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
     samples_by_frame: dict[int, dict[str, Any]] = {}
     ordered_samples: list[dict[str, Any]] = []
     for batch in (event for event in events if event.get("event") == "frame_batch"):
+        configured_postprocess_mode = (
+            configurations[0].get("postprocessMode") if configurations else None
+        )
         for field, expected in {
             "schemaVersion": 2,
             "mode": "QNN_HTP",
             "tuning": "SUSTAINED",
             "profile": case["profile"],
+            "postprocessMode": configured_postprocess_mode,
             "modelInputWidth": case["model_input"][0],
             "modelInputHeight": case["model_input"][1],
             "modelOutputWidth": case["model_output"][0],
@@ -419,6 +444,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "plan_id": plan["plan_id"],
         "case_id": case["id"],
         "run_id": run_id,
+        "postprocess_mode": configurations[0].get("postprocessMode") if configurations else None,
         "functional_gate": "PASS" if not failures else "FAIL",
         "performance_class": performance_class,
         "performance_scope": "effect_output_submit_proxy_not_gpu_completion_or_final_display",

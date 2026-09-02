@@ -16,15 +16,20 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 public final class QuickSrVideoEffectTest {
     private static final int INPUT_SIDE = 64;
@@ -625,6 +630,199 @@ public final class QuickSrVideoEffectTest {
         assertEquals(600, stats.sessionSetupMs);
         assertEquals(41, stats.inferenceMs);
         assertEquals(52, stats.totalProcessingMs);
+    }
+
+    @Test
+    public void overlapMemoryBoundIsExactlyOneAdditionalOutputTensor() {
+        assertEquals(0, QuickSrVideoEffect.postprocessQueueCapacity(false));
+        assertEquals(1, QuickSrVideoEffect.postprocessQueueCapacity(true));
+        assertEquals(1, QuickSrVideoEffect.outputTensorSlotCount(false));
+        assertEquals(2, QuickSrVideoEffect.outputTensorSlotCount(true));
+        assertEquals(
+                11_059_200L,
+                QuickSrVideoEffect.outputTensorBytesPerSlot(
+                        QuickSrVideoEffect.Profile.FULL_720P));
+        assertEquals(
+                24_883_200L,
+                QuickSrVideoEffect.additionalOverlapTensorBytes(
+                        QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                        true));
+    }
+
+    @Test
+    public void overlapTensorAllocationFailureReturnsSemaphorePermit() throws Exception {
+        Object processor = newOverlapProcessor();
+        Class<?> processorClass = processor.getClass();
+        Method acquire = processorClass.getDeclaredMethod("acquireOverlapOutputTensor", int.class);
+        acquire.setAccessible(true);
+        Field slotsField = processorClass.getDeclaredField("outputTensorSlots");
+        slotsField.setAccessible(true);
+        Semaphore slots = (Semaphore) slotsField.get(processor);
+
+        try {
+            acquire.invoke(processor, -1);
+        } catch (InvocationTargetException failure) {
+            assertTrue(failure.getCause() instanceof NegativeArraySizeException);
+        }
+        assertEquals(QuickSrVideoEffect.OVERLAP_OUTPUT_TENSOR_SLOTS, slots.availablePermits());
+        processorClass.getDeclaredMethod("release").invoke(processor);
+    }
+
+    @Test
+    public void fullPostprocessQueueDoesNotHoldLifecycleLockDuringRelease() throws Exception {
+        Object processor = newOverlapProcessor();
+        Class<?> processorClass = processor.getClass();
+        Method submit = processorClass.getDeclaredMethod("submitPostprocessTask", Runnable.class);
+        submit.setAccessible(true);
+        Method release = processorClass.getDeclaredMethod("release");
+        release.setAccessible(true);
+        Field releasedField = processorClass.getDeclaredField("released");
+        releasedField.setAccessible(true);
+        Field timeoutField = processorClass.getDeclaredField("releaseTimeoutMs");
+        timeoutField.setAccessible(true);
+        timeoutField.setLong(processor, 1_000L);
+
+        CountDownLatch activeStarted = new CountDownLatch(1);
+        CountDownLatch allowActiveToFinish = new CountDownLatch(1);
+        Runnable blocker = () -> {
+            activeStarted.countDown();
+            try {
+                allowActiveToFinish.await();
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        submit.invoke(processor, blocker);
+        assertTrue(activeStarted.await(1, TimeUnit.SECONDS));
+        submit.invoke(processor, (Runnable) () -> { });
+
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> blockedSubmit = callers.submit(() -> {
+                try {
+                    submit.invoke(processor, (Runnable) () -> { });
+                } catch (IllegalAccessException | InvocationTargetException expected) {
+                    // Release wins the submit/shutdown race.
+                }
+            });
+            Thread.sleep(150L);
+            assertFalse(blockedSubmit.isDone());
+            Future<?> releaseCall = callers.submit(() -> {
+                try {
+                    release.invoke(processor);
+                } catch (IllegalAccessException | InvocationTargetException failure) {
+                    throw new RuntimeException(failure);
+                }
+            });
+            blockedSubmit.get(1, TimeUnit.SECONDS);
+            assertTrue(releasedField.getBoolean(processor));
+            allowActiveToFinish.countDown();
+            releaseCall.get(1, TimeUnit.SECONDS);
+        } finally {
+            allowActiveToFinish.countDown();
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    public void releaseKeepsOutputScratchUntilActivePostprocessStops() throws Exception {
+        Object processor = newOverlapProcessor();
+        Class<?> processorClass = processor.getClass();
+        Method submit = processorClass.getDeclaredMethod("submitPostprocessTask", Runnable.class);
+        submit.setAccessible(true);
+        Method release = processorClass.getDeclaredMethod("release");
+        release.setAccessible(true);
+        Field scratchField = processorClass.getDeclaredField("outputRgbaScratch");
+        scratchField.setAccessible(true);
+        byte[] scratch = new byte[32];
+        scratchField.set(processor, scratch);
+
+        CountDownLatch activeStarted = new CountDownLatch(1);
+        CountDownLatch allowActiveToFinish = new CountDownLatch(1);
+        submit.invoke(processor, (Runnable) () -> {
+            activeStarted.countDown();
+            try {
+                allowActiveToFinish.await();
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(activeStarted.await(1, TimeUnit.SECONDS));
+
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> releaseCall = caller.submit(() -> {
+                try {
+                    release.invoke(processor);
+                } catch (IllegalAccessException | InvocationTargetException failure) {
+                    throw new RuntimeException(failure);
+                }
+            });
+            Thread.sleep(150L);
+            assertFalse(releaseCall.isDone());
+            assertSame(scratch, scratchField.get(processor));
+            allowActiveToFinish.countDown();
+            releaseCall.get(1, TimeUnit.SECONDS);
+            assertSame(null, scratchField.get(processor));
+        } finally {
+            allowActiveToFinish.countDown();
+            caller.shutdownNow();
+        }
+    }
+
+    @Test
+    public void rejectedHandlerRemovesTaskOfferedAfterExecutorShutdown() throws Exception {
+        Object processor = newOverlapProcessor();
+        Field executorField = processor.getClass().getDeclaredField("postprocessExecutor");
+        executorField.setAccessible(true);
+        ThreadPoolExecutor processorExecutor = (ThreadPoolExecutor) executorField.get(processor);
+        RejectedExecutionHandler handler = processorExecutor.getRejectedExecutionHandler();
+        ThreadPoolExecutor stoppedTarget = new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(1));
+        stoppedTarget.shutdown();
+        Runnable task = () -> { };
+
+        boolean rejected = false;
+        try {
+            handler.rejectedExecution(task, stoppedTarget);
+        } catch (RejectedExecutionException expected) {
+            rejected = true;
+        }
+        assertTrue(rejected);
+        assertTrue(stoppedTarget.getQueue().isEmpty());
+        processor.getClass().getDeclaredMethod("release").invoke(processor);
+    }
+
+    private static Object newOverlapProcessor() throws Exception {
+        Class<?> processorClass = Arrays.stream(QuickSrVideoEffect.class.getDeclaredClasses())
+                .filter(item -> item.getSimpleName().equals("ProcessorImpl"))
+                .findFirst()
+                .orElseThrow();
+        Constructor<?> constructor = processorClass.getDeclaredConstructor(
+                Context.class,
+                QuickSrSession.Mode.class,
+                QuickSrVideoEffect.Profile.class,
+                QuickSrSession.Tuning.class,
+                String.class,
+                VideoEvidenceStore.CaptureSpec.class,
+                boolean.class,
+                QuickSrVideoEffect.StatsListener.class,
+                LongSupplier.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(
+                null,
+                QuickSrSession.Mode.CPU,
+                QuickSrVideoEffect.Profile.FAST_64,
+                QuickSrSession.Tuning.BASELINE,
+                null,
+                VideoEvidenceStore.CaptureSpec.none(),
+                true,
+                null,
+                (LongSupplier) System::nanoTime);
     }
 
     @Test

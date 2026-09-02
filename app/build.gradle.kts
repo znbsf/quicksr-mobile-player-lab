@@ -124,6 +124,10 @@ val sourceIdentityFiles = fileTree("src/main") {
 )
 val appSourceSha256 = sourceIdentity(sourceIdentityFiles, rootProject.projectDir)
 val prototypeBuildId = providers.gradleProperty("prototypeBuildId").orElse("manual-unlinked").get()
+val quickSrPostprocessOverlap = providers.gradleProperty("quickSrPostprocessOverlap")
+    .map { it.toBooleanStrict() }
+    .orElse(false)
+    .get()
 
 val prepareQuickSrModel by tasks.registering {
     group = "prototype"
@@ -402,6 +406,7 @@ android {
         buildConfigField("boolean", "QNN_RUNTIME_EXPECTED", (targetAbi == "arm64-v8a").toString())
         buildConfigField("String", "APP_SOURCE_SHA256", "\"$appSourceSha256\"")
         buildConfigField("String", "PROTOTYPE_BUILD_ID", "\"$prototypeBuildId\"")
+        buildConfigField("boolean", "QUICKSR_POSTPROCESS_OVERLAP", quickSrPostprocessOverlap.toString())
     }
 
     buildTypes {

@@ -30,6 +30,9 @@ class ValidatorTests(unittest.TestCase):
         config = {
             "schemaVersion": 2, "event": "configuration", "runId": "run-1",
             "mode": "QUICKSR_QNN", "tuning": "SUSTAINED", "profile": "FULL_1080P_3X",
+            "postprocessMode": "SERIAL", "postprocessQueueCapacity": 0,
+            "outputTensorSlotCount": 1, "outputTensorBytesPerSlot": 24_883_200,
+            "additionalOverlapTensorBytes": 0,
             "qnnRuntimeExpected": True, "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080,
             "canvasWidth": 1920, "canvasHeight": 1080,
@@ -67,6 +70,9 @@ class ValidatorTests(unittest.TestCase):
                 "inputHashStartedNs": accepted_ns + 2_000_000,
                 "inputHashFinishedNs": accepted_ns + 2_500_000,
                 "workerStartedNs": accepted_ns + 3_000_000,
+                "outputTensorAcquireStartedNs": accepted_ns + 3_050_000,
+                "outputTensorSlotAcquiredNs": accepted_ns + 3_100_000,
+                "outputTensorReadyNs": accepted_ns + 3_200_000,
                 "preprocessFinishedNs": accepted_ns + 4_000_000,
                 "sessionReadyNs": accepted_ns + 4_000_000,
                 "inferenceStartedNs": accepted_ns + 4_000_000,
@@ -93,6 +99,7 @@ class ValidatorTests(unittest.TestCase):
         batch = {
             "schemaVersion": 2, "event": "frame_batch", "runId": "run-1",
             "mode": "QNN_HTP", "tuning": "SUSTAINED", "profile": "FULL_1080P_3X",
+            "postprocessMode": "SERIAL",
             "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080, "samples": samples,
         }
@@ -112,6 +119,26 @@ class ValidatorTests(unittest.TestCase):
         events = self.events()
         events[2]["mode"] = "CPU"
         self.assertEqual("FAIL", self.validate(events)["functional_gate"])
+
+    def test_overlap_mode_and_memory_bound_are_reported(self):
+        events = self.events()
+        events[0].update({
+            "postprocessMode": "OVERLAP",
+            "postprocessQueueCapacity": 1,
+            "outputTensorSlotCount": 2,
+            "additionalOverlapTensorBytes": 24_883_200,
+        })
+        events[2]["postprocessMode"] = "OVERLAP"
+        result = self.validate(events)
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertEqual("OVERLAP", result["postprocess_mode"])
+
+    def test_frame_batch_mode_must_match_configuration(self):
+        events = self.events()
+        events[2]["postprocessMode"] = "OVERLAP"
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("postprocessMode" in failure for failure in result["failures"]))
 
     def test_missing_strict_qnn_attestation_is_rejected(self):
         events = self.events()

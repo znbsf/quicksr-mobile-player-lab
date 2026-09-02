@@ -888,7 +888,8 @@ public final class SuperResolutionActivity extends Activity {
                             benchmarkTuning,
                             benchmarkProfile,
                             BuildConfig.QNN_RUNTIME_EXPECTED,
-                            benchmarkCaptureSpec));
+                            benchmarkCaptureSpec,
+                            BuildConfig.QUICKSR_POSTPROCESS_OVERLAP));
             return true;
         } catch (IllegalArgumentException failure) {
             return benchmarkConfigurationFailure(
@@ -925,8 +926,10 @@ public final class SuperResolutionActivity extends Activity {
         }
     }
 
-    private void recordBenchmarkStats(QuickSrVideoEffect.FrameStats stats) {
-        if (!benchmarkIntentActive
+    private void recordBenchmarkStats(
+            String runId,
+            QuickSrVideoEffect.FrameStats stats) {
+        if (!isActiveBenchmarkRun(runId)
                 || stats.mode != benchmarkMode
                 || stats.tuning != benchmarkTuning
                 || stats.profile != benchmarkProfile) {
@@ -943,7 +946,7 @@ public final class SuperResolutionActivity extends Activity {
         if (ready != null) {
             Log.i(
                     VideoBenchmarkTelemetry.TAG,
-                    VideoBenchmarkTelemetry.frameBatchJson(benchmarkRunId, ready));
+                    VideoBenchmarkTelemetry.frameBatchJson(runId, ready));
         }
     }
 
@@ -1109,7 +1112,8 @@ public final class SuperResolutionActivity extends Activity {
                     profile,
                     tuning,
                     effectBenchmarkRunId,
-                    effectCaptureSpec);
+                    effectCaptureSpec,
+                    BuildConfig.QUICKSR_POSTPROCESS_OVERLAP);
             if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
                 return;
             }
@@ -1120,10 +1124,13 @@ public final class SuperResolutionActivity extends Activity {
                     tuning,
                     effectBenchmarkRunId,
                     effectCaptureSpec,
+                    BuildConfig.QUICKSR_POSTPROCESS_OVERLAP,
                     new QuickSrVideoEffect.StatsListener() {
                         @Override
                         public void onFrameProcessed(QuickSrVideoEffect.FrameStats stats) {
-                            recordBenchmarkStats(stats);
+                            if (effectBenchmarkRunId != null) {
+                                recordBenchmarkStats(effectBenchmarkRunId, stats);
+                            }
                             if (stats.frameNumber != 1 && stats.frameNumber % 15 != 0) {
                                 return;
                             }
@@ -1248,14 +1255,16 @@ public final class SuperResolutionActivity extends Activity {
             QuickSrVideoEffect.Profile profile,
             QuickSrSession.Tuning tuning,
             String benchmarkRunId,
-            VideoEvidenceStore.CaptureSpec captureSpec) {
+            VideoEvidenceStore.CaptureSpec captureSpec,
+            boolean postprocessOverlap) {
         return "NEURAL:"
                 + backend + ':'
                 + profile + ':'
                 + tuning + ':'
                 + (benchmarkRunId == null ? "interactive" : benchmarkRunId) + ':'
                 + captureSpec.telemetryKind() + ':'
-                + captureSpec.value();
+                + captureSpec.value() + ':'
+                + (postprocessOverlap ? "overlap" : "serial");
     }
 
     private void updateVideoEffectButton() {

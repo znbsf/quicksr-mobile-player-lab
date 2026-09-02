@@ -36,10 +36,43 @@ final class VideoBenchmarkTelemetry {
     static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
             QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
             VideoEvidenceStore.CaptureSpec captureSpec) {
+        return configurationJson(
+                runId,
+                mode,
+                tuning,
+                profile,
+                qnnRuntimeExpected,
+                captureSpec,
+                false);
+    }
+
+    static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
+            QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
+            VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap) {
         StringBuilder value = envelope("configuration", runId);
         stringField(value, "mode", mode);
         stringField(value, "tuning", tuning.name());
         stringField(value, "profile", profile.name());
+        stringField(
+                value,
+                "postprocessMode",
+                postprocessOverlap ? "OVERLAP" : "SERIAL");
+        numberField(
+                value,
+                "postprocessQueueCapacity",
+                QuickSrVideoEffect.postprocessQueueCapacity(postprocessOverlap));
+        numberField(
+                value,
+                "outputTensorSlotCount",
+                QuickSrVideoEffect.outputTensorSlotCount(postprocessOverlap));
+        numberField(
+                value,
+                "outputTensorBytesPerSlot",
+                QuickSrVideoEffect.outputTensorBytesPerSlot(profile));
+        numberField(
+                value,
+                "additionalOverlapTensorBytes",
+                QuickSrVideoEffect.additionalOverlapTensorBytes(profile, postprocessOverlap));
         booleanField(value, "qnnRuntimeExpected", qnnRuntimeExpected);
         booleanField(value, "qnnStrictRequired", "QUICKSR_QNN".equals(mode));
         if (captureSpec != null && captureSpec.isRequested()) {
@@ -82,6 +115,8 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "acceptedMeasurement", "measured_queue_input_callback");
         stringField(value, "readbackMeasurement", "proxy_process_image_callback_after_media3_readback");
         stringField(value, "preprocessMeasurement", "measured_cpu_elapsed_realtime_ns");
+        stringField(value, "outputTensorSlotWaitMeasurement", "measured_bounded_semaphore_wait");
+        stringField(value, "outputTensorPrepareMeasurement", "measured_pool_or_allocation_time");
         stringField(value, "ortMeasurement", "measured_caller_wall_ns_not_npu_kernel");
         stringField(value, "outputPackMeasurement", "measured_cpu_elapsed_realtime_ns");
         stringField(value, "directBufferCopyMeasurement", "measured_cpu_elapsed_realtime_ns");
@@ -106,6 +141,7 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "mode", first.mode.name());
         stringField(value, "tuning", first.tuning.name());
         stringField(value, "profile", first.profile.name());
+        stringField(value, "postprocessMode", first.postprocessMode.name());
         numberField(value, "effectInputWidth", first.effectInputWidth);
         numberField(value, "effectInputHeight", first.effectInputHeight);
         numberField(value, "modelInputWidth", first.modelInputWidth);
@@ -115,8 +151,11 @@ final class VideoBenchmarkTelemetry {
         value.append(",\"samples\":[");
         for (int index = 0; index < samples.size(); index++) {
             QuickSrVideoEffect.FrameStats sample = samples.get(index);
-            if (sample.mode != first.mode || sample.tuning != first.tuning || sample.profile != first.profile) {
-                throw new IllegalArgumentException("benchmark frame batch mixes mode, tuning or profile");
+            if (sample.mode != first.mode || sample.tuning != first.tuning
+                    || sample.profile != first.profile
+                    || sample.postprocessMode != first.postprocessMode) {
+                throw new IllegalArgumentException(
+                        "benchmark frame batch mixes mode, tuning, profile or postprocess mode");
             }
             if (index > 0) value.append(',');
             value.append('{');
@@ -137,6 +176,9 @@ final class VideoBenchmarkTelemetry {
             numberField(value, "inputHashStartedNs", sample.inputHashStartedNs);
             numberField(value, "inputHashFinishedNs", sample.inputHashFinishedNs);
             numberField(value, "workerStartedNs", sample.workerStartedNs);
+            numberField(value, "outputTensorAcquireStartedNs", sample.outputTensorAcquireStartedNs);
+            numberField(value, "outputTensorSlotAcquiredNs", sample.outputTensorSlotAcquiredNs);
+            numberField(value, "outputTensorReadyNs", sample.outputTensorReadyNs);
             numberField(value, "preprocessFinishedNs", sample.preprocessFinishedNs);
             numberField(value, "sessionReadyNs", sample.sessionReadyNs);
             numberField(value, "inferenceStartedNs", sample.inferenceStartedNs);

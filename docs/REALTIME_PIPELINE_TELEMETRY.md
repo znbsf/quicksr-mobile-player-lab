@@ -31,7 +31,9 @@ existing caller-wall nanoseconds recorded by `QuickSrSession`.
 | GPU readback/PBO ready | proxy: `processImage` callback after Media3 exposes the mapped buffer |
 | input copy/hash | measured pixel-buffer copy plus a separately timed CRC32 identity pass |
 | worker queue wait | measured from input-copy completion to worker start |
-| preprocess | measured RGBA to NCHW conversion |
+| output-tensor slot wait | measured semaphore wait for one of two overlap output tensors; zero in serial mode |
+| output-tensor prepare | measured pool lookup or first allocation after the slot is owned |
+| preprocess | measured RGBA to NCHW conversion after the output-tensor slot is owned |
 | ORT/QNN | measured caller wall time; not pure NPU kernel time |
 | output pack/hash | measured NCHW to RGBA byte-array conversion plus a separately timed CRC32 identity pass |
 | direct-buffer copy | measured byte-array to uploadable direct buffer copy |
@@ -44,11 +46,17 @@ accepted frame, not input-to-photon latency.
 
 ## Queue and counters
 
-The worker uses one active thread and a queue capacity of two with blocking backpressure. It no
+The inference worker uses one active thread and a queue capacity of two with blocking backpressure. It no
 longer uses an unbounded executor queue. Media3 1.11.0 itself pins a six-frame effect queue and one
 pending PBO; those capacities are recorded, while their internal instantaneous depth remains
 unmeasured. The measured queue depth is the frame-admission depth derived from the two frame-slot
-permits; it deliberately excludes the reserved cleanup slot.
+permits; it deliberately excludes the reserved cleanup slot. The optional candidate overlaps one
+single-thread QNN inference stage with one single-thread output pack/copy stage. That postprocess
+executor has one active task plus a queue capacity of one, backed by exactly two output-tensor
+slots. The configuration records those bounds and the deterministic extra tensor allocation:
+11,059,200 bytes for 720p or 24,883,200 bytes for 1080p. Serial remains the default because the
+physical A/B improved throughput but regressed the 1080p effect-total p95 tail. Build with
+`-PquickSrPostprocessOverlap=true` to select the overlap candidate.
 
 Release keeps the two frame queue slots unchanged and reserves one non-frame executor slot solely
 for the worker cleanup marker. After `released=true`, no new frame task can enter; the marker is
@@ -73,17 +81,15 @@ product-realtime conclusion.
 
 ## A/B gate
 
-No throughput intervention is included in this change. This worktree has no local model payload,
-and this task did not authorize a physical-phone run, so neither bounded inference/postprocess
-overlap nor a JNI/NEON packer can be safely attributed here.
-
-The next A/B must keep APK/source/model/input identity, profile, tuning, queue capacity and queue
-policy fixed; change exactly one of:
-
-1. bounded inference/postprocess overlap with explicit buffer ownership; or
-2. Java packer versus JNI/NEON direct output packer.
-
-Run an alternating/ABBA workload, require matching per-frame identities and correctness hashes,
-and compare raw-ns p50/p95/p99/max plus counters and memory. Do not merge an optimization on code
-completion or host microbenchmarks alone; require an authorized physical-device run with the same
-workload and source/model identities.
+The bounded inference/postprocess overlap is the only throughput intervention. The serial path is
+retained as a build-time baseline. A valid comparison must keep source/model/input identity,
+profile, tuning, frame-admission queue capacity and cadence fixed, use alternating physical-device
+runs, align the repeated clip cycle from its PTS-zero identity, and require every registered-frame
+`(PTS modulo cycle duration, input CRC)` identity plus at least one clip length of matching
+occurrences across the aggregate serial and overlap runs. Output CRCs must remain consistent for
+every shared input identity. Individual overloaded runs may receive different decoded-frame
+subsequences from Media3; aggregate cycle coverage and that observed limitation must both be
+reported rather than hidden.
+CRC32 is only a stale/output-consistency signal; tensor/golden tests remain the numeric-correctness
+gate. Raw logs and reports remain local and ignored until a sanitized result is intentionally
+documented.

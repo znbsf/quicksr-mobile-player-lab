@@ -55,6 +55,11 @@ import java.util.zip.CRC32;
  */
 @UnstableApi
 final class QuickSrVideoEffect implements GlEffect {
+    enum PostprocessMode {
+        SERIAL,
+        OVERLAP
+    }
+
     enum Profile {
         FAST_64("64x64 -> 128x128", ModelVariant.FIXED64_DCR_FULL, 64, 64, 128, 128),
         REALTIME_256X144(
@@ -235,6 +240,7 @@ final class QuickSrVideoEffect implements GlEffect {
         final QuickSrSession.Mode mode;
         final QuickSrSession.Tuning tuning;
         final Profile profile;
+        final PostprocessMode postprocessMode;
         final int frameNumber;
         final int effectInputWidth;
         final int effectInputHeight;
@@ -272,6 +278,9 @@ final class QuickSrVideoEffect implements GlEffect {
         final long inputHashStartedNs;
         final long inputHashFinishedNs;
         final long workerStartedNs;
+        final long outputTensorAcquireStartedNs;
+        final long outputTensorSlotAcquiredNs;
+        final long outputTensorReadyNs;
         final long preprocessFinishedNs;
         final long sessionReadyNs;
         final long inferenceStartedNs;
@@ -359,6 +368,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.mode = mode;
             this.tuning = tuning;
             this.profile = profile;
+            this.postprocessMode = PostprocessMode.SERIAL;
             this.frameNumber = frameNumber;
             this.effectInputWidth = effectInputWidth;
             this.effectInputHeight = effectInputHeight;
@@ -396,6 +406,9 @@ final class QuickSrVideoEffect implements GlEffect {
             this.inputHashStartedNs = -1L;
             this.inputHashFinishedNs = -1L;
             this.workerStartedNs = -1L;
+            this.outputTensorAcquireStartedNs = -1L;
+            this.outputTensorSlotAcquiredNs = -1L;
+            this.outputTensorReadyNs = -1L;
             this.preprocessFinishedNs = -1L;
             this.sessionReadyNs = -1L;
             this.inferenceStartedNs = -1L;
@@ -429,6 +442,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Mode mode,
                 QuickSrSession.Tuning tuning,
                 Profile profile,
+                PostprocessMode postprocessMode,
                 int effectInputWidth,
                 int effectInputHeight,
                 FrameTimings timings,
@@ -436,6 +450,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.mode = mode;
             this.tuning = tuning;
             this.profile = profile;
+            this.postprocessMode = postprocessMode;
             this.frameNumber = Math.toIntExact(timings.token.frameId);
             this.effectInputWidth = effectInputWidth;
             this.effectInputHeight = effectInputHeight;
@@ -460,6 +475,9 @@ final class QuickSrVideoEffect implements GlEffect {
             this.inputHashStartedNs = timings.inputHashStartedNs;
             this.inputHashFinishedNs = timings.inputHashFinishedNs;
             this.workerStartedNs = timings.workerStartedNs;
+            this.outputTensorAcquireStartedNs = timings.outputTensorAcquireStartedNs;
+            this.outputTensorSlotAcquiredNs = timings.outputTensorSlotAcquiredNs;
+            this.outputTensorReadyNs = timings.outputTensorReadyNs;
             this.preprocessFinishedNs = timings.preprocessFinishedNs;
             this.sessionReadyNs = timings.sessionReadyNs;
             this.inferenceStartedNs = timings.inferenceStartedNs;
@@ -483,7 +501,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.copyMs = nanosToMs(timings.inputCopiedNs - timings.inputCopyStartedNs);
             this.queueMs = nanosToMs(timings.workerStartedNs - timings.inputHashFinishedNs);
             this.inputConversionMs = nanosToMs(
-                    timings.preprocessFinishedNs - timings.workerStartedNs);
+                    timings.preprocessFinishedNs - timings.outputTensorReadyNs);
             this.sessionSetupMs = nanosToMs(
                     timings.sessionReadyNs - timings.preprocessFinishedNs);
             this.inferenceMs = nanosToMs(
@@ -518,6 +536,9 @@ final class QuickSrVideoEffect implements GlEffect {
         long inputHashStartedNs;
         long inputHashFinishedNs;
         long workerStartedNs;
+        long outputTensorAcquireStartedNs;
+        long outputTensorSlotAcquiredNs;
+        long outputTensorReadyNs;
         long preprocessFinishedNs;
         long sessionReadyNs;
         long inferenceStartedNs;
@@ -547,8 +568,30 @@ final class QuickSrVideoEffect implements GlEffect {
     private static final int RGBA_BYTES_PER_PIXEL = 4;
     private static final int MAX_POOLED_INPUT_BUFFERS = 8;
     private static final int MAX_POOLED_OUTPUT_BUFFERS = 3;
+    static final int OVERLAP_POSTPROCESS_QUEUE_CAPACITY = 1;
+    static final int OVERLAP_OUTPUT_TENSOR_SLOTS = 2;
     private static final long RELEASE_TIMEOUT_SECONDS = 30L;
     private final ProcessorImpl processor;
+
+    static int postprocessQueueCapacity(boolean overlap) {
+        return overlap ? OVERLAP_POSTPROCESS_QUEUE_CAPACITY : 0;
+    }
+
+    static int outputTensorSlotCount(boolean overlap) {
+        return overlap ? OVERLAP_OUTPUT_TENSOR_SLOTS : 1;
+    }
+
+    static long outputTensorBytesPerSlot(Profile profile) {
+        return Math.multiplyExact(
+                Math.multiplyExact(
+                        (long) profile.outputWidth(),
+                        (long) profile.outputHeight()),
+                3L * Float.BYTES);
+    }
+
+    static long additionalOverlapTensorBytes(Profile profile, boolean overlap) {
+        return overlap ? outputTensorBytesPerSlot(profile) : 0L;
+    }
 
     QuickSrVideoEffect(
             Context context,
@@ -608,6 +651,26 @@ final class QuickSrVideoEffect implements GlEffect {
             String benchmarkRunId,
             VideoEvidenceStore.CaptureSpec captureSpec,
             StatsListener listener) {
+        this(
+                context,
+                mode,
+                profile,
+                tuning,
+                benchmarkRunId,
+                captureSpec,
+                false,
+                listener);
+    }
+
+    QuickSrVideoEffect(
+            Context context,
+            QuickSrSession.Mode mode,
+            Profile profile,
+            QuickSrSession.Tuning tuning,
+            String benchmarkRunId,
+            VideoEvidenceStore.CaptureSpec captureSpec,
+            boolean postprocessOverlap,
+            StatsListener listener) {
         processor = new ProcessorImpl(
                 context.getApplicationContext(),
                 mode,
@@ -615,6 +678,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 tuning,
                 benchmarkRunId,
                 captureSpec,
+                postprocessOverlap,
                 listener);
     }
 
@@ -760,9 +824,11 @@ final class QuickSrVideoEffect implements GlEffect {
         private final QuickSrSession.Tuning tuning;
         private final String benchmarkRunId;
         private final VideoEvidenceStore.CaptureSpec captureSpec;
+        private final PostprocessMode postprocessMode;
         private final StatsListener listener;
         private final LongSupplier monotonicClock;
         private final ThreadPoolExecutor inferenceExecutor;
+        private final ThreadPoolExecutor postprocessExecutor;
         private final Semaphore frameQueueSlots = new Semaphore(
                 VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY,
                 true);
@@ -771,12 +837,18 @@ final class QuickSrVideoEffect implements GlEffect {
         private final ArrayDeque<byte[]> inputBufferPool = new ArrayDeque<>();
         private final Object outputBufferPoolLock = new Object();
         private final ArrayDeque<ByteBuffer> outputBufferPool = new ArrayDeque<>();
+        private final Object outputTensorPoolLock = new Object();
+        private final ArrayDeque<float[]> outputTensorPool = new ArrayDeque<>();
+        private final Semaphore outputTensorSlots = new Semaphore(
+                OVERLAP_OUTPUT_TENSOR_SLOTS,
+                true);
         private final Set<FrameResult> outstandingFrameResults =
                 Collections.newSetFromMap(new IdentityHashMap<>());
         private final Object lifecycleLock = new Object();
 
         private volatile boolean released;
         private volatile Thread inferenceThread;
+        private volatile Thread postprocessThread;
         private volatile boolean workerCleanupQueued;
         private volatile boolean workerCleanupCompleted;
         private final AtomicInteger workerCleanupRunCount = new AtomicInteger();
@@ -840,6 +912,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     QuickSrSession.Tuning.BASELINE,
                     null,
                     VideoEvidenceStore.CaptureSpec.none(),
+                    false,
                     listener,
                     System::nanoTime);
         }
@@ -851,6 +924,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Tuning tuning,
                 String benchmarkRunId,
                 VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
                 StatsListener listener) {
             this(
                     context,
@@ -859,6 +933,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     tuning,
                     benchmarkRunId,
                     captureSpec,
+                    postprocessOverlap,
                     listener,
                     SystemClock::elapsedRealtimeNanos);
         }
@@ -870,6 +945,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Tuning tuning,
                 String benchmarkRunId,
                 VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
                 StatsListener listener,
                 LongSupplier monotonicClock) {
             if (captureSpec == null) {
@@ -891,6 +967,9 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.benchmarkRunId = benchmarkRunId;
             this.captureSpec = captureSpec;
+            this.postprocessMode = postprocessOverlap
+                    ? PostprocessMode.OVERLAP
+                    : PostprocessMode.SERIAL;
             this.listener = listener;
             this.monotonicClock = monotonicClock;
             ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -914,6 +993,54 @@ final class QuickSrVideoEffect implements GlEffect {
                         "QuickSR worker queue invariant failed or executor stopped");
             });
             this.inferenceExecutor = executor;
+            if (postprocessOverlap) {
+                ThreadPoolExecutor postprocess = new ThreadPoolExecutor(
+                        1,
+                        1,
+                        0L,
+                        TimeUnit.MILLISECONDS,
+                        new ArrayBlockingQueue<>(OVERLAP_POSTPROCESS_QUEUE_CAPACITY),
+                        runnable -> {
+                            Thread thread = new Thread(runnable, "QuickSR-video-postprocess");
+                            thread.setPriority(Thread.NORM_PRIORITY);
+                            postprocessThread = thread;
+                            return thread;
+                        });
+                postprocess.setRejectedExecutionHandler((task, target) -> {
+                    try {
+                        // A single queued frame plus the active frame bounds overlap memory while
+                        // preserving FIFO order when postprocess becomes the slower stage. Poll so
+                        // release can break backpressure without waiting for the native timeout.
+                        while (true) {
+                            if (target.getQueue().offer(task, 100L, TimeUnit.MILLISECONDS)) {
+                                if ((released || target.isShutdown())
+                                        && target.getQueue().remove(task)) {
+                                    // shutdown may have raced the successful offer after the last
+                                    // worker exited. Remove the orphan so the caller retains buffer
+                                    // ownership and can fail/recycle it normally.
+                                    throw new RejectedExecutionException(
+                                            "QuickSR postprocess executor stopped");
+                                }
+                                // If remove failed, a worker already owns the task and its finally
+                                // block remains responsible for all buffers and permits.
+                                return;
+                            }
+                            if (released || target.isShutdown()) {
+                                throw new RejectedExecutionException(
+                                        "QuickSR postprocess executor stopped");
+                            }
+                        }
+                    } catch (InterruptedException failure) {
+                        Thread.currentThread().interrupt();
+                        throw new RejectedExecutionException(
+                                "Interrupted while applying postprocess backpressure",
+                                failure);
+                    }
+                });
+                this.postprocessExecutor = postprocess;
+            } else {
+                this.postprocessExecutor = null;
+            }
         }
 
         private long nowNs() {
@@ -1082,6 +1209,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 byte[] rgba,
                 FrameTimings timings,
                 SettableFuture<FrameResult> resultFuture) {
+            float[] outputTensor = null;
+            boolean overlapTensorLeased = false;
+            boolean handedToPostprocess = false;
             try {
                 if (released || !pipelineTelemetry.isCurrent(timings.token)) {
                     pipelineTelemetry.markDropped(
@@ -1097,9 +1227,21 @@ final class QuickSrVideoEffect implements GlEffect {
                 int outputPixels = checkedPixels(profile.outputWidth(), profile.outputHeight());
                 if (inputTensorScratch == null) {
                     inputTensorScratch = new float[3 * inputPixels];
-                    outputTensorScratch = new float[3 * outputPixels];
                     outputRgbaScratch = new byte[outputPixels * RGBA_BYTES_PER_PIXEL];
                 }
+                timings.outputTensorAcquireStartedNs = nowNs();
+                if (postprocessMode == PostprocessMode.OVERLAP) {
+                    outputTensor = acquireOverlapOutputTensor(3 * outputPixels, timings);
+                    overlapTensorLeased = true;
+                } else {
+                    timings.outputTensorSlotAcquiredNs =
+                            timings.outputTensorAcquireStartedNs;
+                    if (outputTensorScratch == null) {
+                        outputTensorScratch = new float[3 * outputPixels];
+                    }
+                    outputTensor = outputTensorScratch;
+                }
+                timings.outputTensorReadyNs = nowNs();
                 rgbaToNchw(
                         rgba,
                         inputTensorScratch,
@@ -1128,7 +1270,7 @@ final class QuickSrVideoEffect implements GlEffect {
                                     + timings.token.presentationTimeUs);
                 }
                 timings.inferenceStartedNs = nowNs();
-                activeSession.infer(inputTensorScratch, outputTensorScratch, runTimings);
+                activeSession.infer(inputTensorScratch, outputTensor, runTimings);
                 timings.inferenceFinishedNs = nowNs();
                 timings.tensorInputCopyNs = runTimings.inputCopyNs;
                 timings.ortRunNs = runTimings.ortRunNs;
@@ -1157,15 +1299,85 @@ final class QuickSrVideoEffect implements GlEffect {
                             timings.token.presentationTimeUs,
                             profile,
                             inputTensorScratch,
-                            outputTensorScratch,
+                            outputTensor,
                             activeSession.qnnStrictEvidence());
                     if (listener != null) {
                         listener.onEvidenceCaptured(evidence);
                     }
                 }
+                frameNumber = candidateFrame;
+                if (postprocessMode == PostprocessMode.OVERLAP) {
+                    float[] leasedOutputTensor = outputTensor;
+                    submitPostprocessTask(() -> completePostprocess(
+                            leasedOutputTensor,
+                            rgba,
+                            timings,
+                            resultFuture,
+                            true));
+                    handedToPostprocess = true;
+                } else {
+                    completePostprocess(
+                            outputTensor,
+                            rgba,
+                            timings,
+                            resultFuture,
+                            false);
+                    handedToPostprocess = true;
+                }
+            } catch (Throwable failure) {
+                if ((failure instanceof RejectedExecutionException
+                        || failure instanceof InterruptedException)
+                        && (released || !pipelineTelemetry.isCurrent(timings.token))) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                } else {
+                    failFrame("video-inference", timings, resultFuture, failure);
+                }
+            } finally {
+                if (!handedToPostprocess) {
+                    recycleInputBuffer(rgba);
+                    if (overlapTensorLeased) {
+                        recycleOverlapOutputTensor(outputTensor);
+                    }
+                }
+            }
+        }
+
+        private void submitPostprocessTask(Runnable task) {
+            ThreadPoolExecutor target;
+            synchronized (lifecycleLock) {
+                if (released || postprocessExecutor == null) {
+                    throw new RejectedExecutionException(
+                            "QuickSR video effect released before postprocess enqueue");
+                }
+                target = postprocessExecutor;
+            }
+            // execute() may apply bounded backpressure. It must not run under lifecycleLock,
+            // otherwise release cannot set released or shut down a full postprocess queue.
+            target.execute(task);
+        }
+
+        private void completePostprocess(
+                float[] outputTensor,
+                byte[] rgba,
+                FrameTimings timings,
+                SettableFuture<FrameResult> resultFuture,
+                boolean recycleOutputTensor) {
+            try {
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            nowNs(),
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
                 timings.outputPackStartedNs = nowNs();
                 packNchwToRgba(
-                        outputTensorScratch,
+                        outputTensor,
                         rgba,
                         profile.inputWidth(),
                         profile.inputHeight(),
@@ -1182,6 +1394,18 @@ final class QuickSrVideoEffect implements GlEffect {
                 directRgba.flip();
                 timings.directBufferCopyFinishedNs = nowNs();
                 timings.outputReadyNs = timings.directBufferCopyFinishedNs;
+                if (released || !pipelineTelemetry.isCurrent(timings.token)) {
+                    // A release/flush may race a CPU pack already in progress. Recheck after the
+                    // last expensive stage so an old generation can never reach Media3 at a new
+                    // playback position.
+                    recycleOutputBuffer(directRgba);
+                    pipelineTelemetry.markDropped(
+                            timings.token,
+                            timings.outputReadyNs,
+                            workerQueueDepth());
+                    resultFuture.cancel(false);
+                    return;
+                }
                 FrameResult frameResult = new FrameResult(
                         directRgba,
                         timings,
@@ -1189,27 +1413,85 @@ final class QuickSrVideoEffect implements GlEffect {
                 synchronized (outputBufferPoolLock) {
                     outstandingFrameResults.add(frameResult);
                 }
-                ++frameNumber;
                 if (!resultFuture.set(frameResult)) {
                     frameResult.recycle();
-                    return;
                 }
             } catch (Throwable failure) {
-                pipelineTelemetry.markDropped(
-                        timings.token,
-                        nowNs(),
-                        workerQueueDepth());
-                if (listener != null) {
-                    try {
-                        listener.onProcessingError("video-inference", failure);
-                    } catch (Throwable ignored) {
-                        // Preserve the original inference failure as the Media3 error.
-                    }
-                }
-                resultFuture.setException(failure);
+                failFrame("video-postprocess", timings, resultFuture, failure);
             } finally {
                 recycleInputBuffer(rgba);
+                if (recycleOutputTensor) {
+                    recycleOverlapOutputTensor(outputTensor);
+                }
             }
+        }
+
+        private void failFrame(
+                String stage,
+                FrameTimings timings,
+                SettableFuture<FrameResult> resultFuture,
+                Throwable failure) {
+            pipelineTelemetry.markDropped(
+                    timings.token,
+                    nowNs(),
+                    workerQueueDepth());
+            if (listener != null) {
+                try {
+                    listener.onProcessingError(stage, failure);
+                } catch (Throwable ignored) {
+                    // Preserve the original pipeline failure as the Media3 error.
+                }
+            }
+            resultFuture.setException(failure);
+        }
+
+        private float[] acquireOverlapOutputTensor(int valueCount) throws InterruptedException {
+            return acquireOverlapOutputTensor(valueCount, null);
+        }
+
+        private float[] acquireOverlapOutputTensor(
+                int valueCount,
+                FrameTimings timings) throws InterruptedException {
+            boolean acquired = false;
+            while (!acquired) {
+                if (released) {
+                    throw new InterruptedException(
+                            "QuickSR video effect released while waiting for output tensor");
+                }
+                acquired = outputTensorSlots.tryAcquire(100L, TimeUnit.MILLISECONDS);
+            }
+            if (timings != null) {
+                timings.outputTensorSlotAcquiredNs = nowNs();
+            }
+            boolean ownershipTransferred = false;
+            try {
+                synchronized (outputTensorPoolLock) {
+                    float[] pooled = outputTensorPool.pollFirst();
+                    float[] result = pooled != null && pooled.length == valueCount
+                            ? pooled
+                            : new float[valueCount];
+                    ownershipTransferred = true;
+                    return result;
+                }
+            } finally {
+                // The caller owns the permit only after a tensor is returned. Allocation failure
+                // (including OOM) must not permanently consume an overlap slot.
+                if (!ownershipTransferred) {
+                    outputTensorSlots.release();
+                }
+            }
+        }
+
+        private void recycleOverlapOutputTensor(float[] outputTensor) {
+            if (outputTensor == null) {
+                return;
+            }
+            synchronized (outputTensorPoolLock) {
+                if (!released && outputTensorPool.size() < OVERLAP_OUTPUT_TENSOR_SLOTS) {
+                    outputTensorPool.addFirst(outputTensor);
+                }
+            }
+            outputTensorSlots.release();
         }
 
         private byte[] acquireInputBuffer(int byteCount) {
@@ -1464,6 +1746,7 @@ final class QuickSrVideoEffect implements GlEffect {
                                 mode,
                                 tuning,
                                 profile,
+                                postprocessMode,
                                 inputWidth,
                                 inputHeight,
                                 result.timings,
@@ -1508,6 +1791,7 @@ final class QuickSrVideoEffect implements GlEffect {
 
         @Override
         public synchronized void release() throws VideoFrameProcessingException {
+            long releaseStartedNs = System.nanoTime();
             Thread qnnLockWaiter;
             synchronized (lifecycleLock) {
                 if (released) {
@@ -1530,6 +1814,13 @@ final class QuickSrVideoEffect implements GlEffect {
             }
             synchronized (outputBufferPoolLock) {
                 outputBufferPool.clear();
+            }
+            synchronized (outputTensorPoolLock) {
+                outputTensorPool.clear();
+            }
+            boolean postprocessTerminated = postprocessExecutor == null;
+            if (postprocessExecutor != null) {
+                postprocessExecutor.shutdown();
             }
             Throwable failure = null;
             if (neuralFboId != 0) {
@@ -1587,6 +1878,34 @@ final class QuickSrVideoEffect implements GlEffect {
                     failure = append(failure, caught);
                 }
             }
+            if (postprocessExecutor != null) {
+                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - releaseStartedNs);
+                long remainingMs = Math.max(1L, releaseTimeoutMs - elapsedMs);
+                try {
+                    postprocessTerminated = postprocessExecutor.awaitTermination(
+                            remainingMs,
+                            TimeUnit.MILLISECONDS);
+                    if (!postprocessTerminated) {
+                        failure = append(
+                                failure,
+                                new TimeoutException(
+                                        "QuickSR postprocess executor did not terminate"));
+                        Thread worker = postprocessThread;
+                        if (worker != null) {
+                            worker.interrupt();
+                        }
+                    }
+                } catch (InterruptedException caught) {
+                    Thread.currentThread().interrupt();
+                    failure = append(failure, caught);
+                }
+            }
+            if (postprocessTerminated) {
+                // An active postprocess task may already be inside packNchwToRgba when release
+                // flips released=true. Keep its shared scratch alive until the executor stops.
+                outputRgbaScratch = null;
+            }
             // Cover a worker that completed concurrently with the first reclamation pass.
             recycleOutstandingFrameResults();
             try {
@@ -1622,7 +1941,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 qnnLockHeld = false;
                 inputTensorScratch = null;
                 outputTensorScratch = null;
-                outputRgbaScratch = null;
+                synchronized (outputTensorPoolLock) {
+                    outputTensorPool.clear();
+                }
                 workerCleanupCompleted = true;
             }
             try {
