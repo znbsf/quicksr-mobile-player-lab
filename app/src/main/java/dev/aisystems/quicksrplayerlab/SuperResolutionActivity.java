@@ -70,6 +70,7 @@ public final class SuperResolutionActivity extends Activity {
     private enum VideoMode {
         QUICKSR_QNN,
         QUICKSR_CPU,
+        GPU_ANIME4K,
         GPU_LANCZOS,
         ORIGINAL;
 
@@ -196,7 +197,8 @@ public final class SuperResolutionActivity extends Activity {
         root.addView(title);
         TextView intro = text(
                 "图片：QuickSRNet 2×，整图分块并复用一次 ORT/QNN session。\n" +
-                        "视频：可切换逐帧 QuickSR QNN/CPU 实验路径、GPU Lanczos 或原始画面。",
+                        "视频：可切换逐帧 QuickSR QNN/CPU、GPU-resident Anime4K、" +
+                        "GPU Lanczos 或原始画面。",
                 15);
         intro.setPadding(0, dp(6), 0, dp(18));
         root.addView(intro);
@@ -259,7 +261,9 @@ public final class SuperResolutionActivity extends Activity {
                         "把整帧缩到 640×360，再由 2× 模型输出 1280×720；" +
                         "实验性 3×/4× 档分别生成真实 1920×1080 与 2560×1440 神经纹理。" +
                         "4K 显示档先生成 1080p 神经纹理，再由 GPU 放大到 3840×2160，" +
-                        "不等同原生 4K 神经推理。所有档位都是整帧缩放，不是分块覆盖原始高分辨率帧。",
+                        "不等同原生 4K 神经推理。Anime4K 模式先在 GPU 上缩放到目标尺寸的一半，" +
+                        "再执行官方 Small 的四层卷积与 2× depth-to-space；不经过 CPU readback。" +
+                        "所有档位都是整帧缩放，不是分块覆盖原始高分辨率帧。",
                 14);
         root.addView(videoBoundary);
 
@@ -1072,7 +1076,8 @@ public final class SuperResolutionActivity extends Activity {
         boolean neuralMode = isNeuralVideoMode();
         videoNeuralProfileSpinner.setEnabled(neuralMode);
         videoQnnTuningSpinner.setEnabled(videoMode == VideoMode.QUICKSR_QNN);
-        videoTargetSpinner.setEnabled(videoMode == VideoMode.GPU_LANCZOS);
+        videoTargetSpinner.setEnabled(
+                videoMode == VideoMode.GPU_LANCZOS || videoMode == VideoMode.GPU_ANIME4K);
         if (videoMode == VideoMode.ORIGINAL) {
             String effectKey = "ORIGINAL";
             if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
@@ -1233,6 +1238,42 @@ public final class SuperResolutionActivity extends Activity {
         }
         int position = Math.max(0, videoTargetSpinner.getSelectedItemPosition());
         int[] target = VIDEO_TARGETS[position];
+        if (videoMode == VideoMode.GPU_ANIME4K) {
+            int[] input = Anime4kSmallEffect.inputSizeForTarget(target[0], target[1]);
+            String effectKey = anime4kVideoEffectKey(target[0], target[1]);
+            if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
+                return;
+            }
+            Effect inputCanvas = Presentation.createForWidthAndHeight(
+                    input[0],
+                    input[1],
+                    Presentation.LAYOUT_SCALE_TO_FIT);
+            Effect anime4k = new Anime4kSmallEffect((modelActive, detail) -> runOnUiThread(() -> {
+                if (!activityDestroyed
+                        && videoMode == VideoMode.GPU_ANIME4K
+                        && effectKey.equals(appliedVideoEffectKey)) {
+                    if (modelActive) {
+                        updateVideoStatus(
+                                "Anime4K v4.0.1 x2 Small 首帧 GL 路径已完成："
+                                        + input[0] + "×" + input[1] + "→"
+                                        + target[0] + "×" + target[1]
+                                        + "。仍需同帧画质、GPU timing 与 thermal A/B。");
+                    } else {
+                        updateVideoStatus(
+                                "Anime4K shader 不可用，已在同一 GL effect 内回退 GPU 双线性 2×："
+                                        + detail);
+                    }
+                }
+            }));
+            player.setVideoEffects(Arrays.asList(inputCanvas, anime4k));
+            appliedVideoEffectKey = effectKey;
+            updateVideoStatus(
+                    "Anime4K v4.0.1 x2 Small 已请求：GPU "
+                            + input[0] + "×" + input[1] + "→"
+                            + target[0] + "×" + target[1]
+                            + "，等待 shader compile/link 与首帧验证……");
+            return;
+        }
         String effectKey = "GPU_LANCZOS:" + target[0] + "x" + target[1];
         if (!shouldApplyVideoEffect(appliedVideoEffectKey, effectKey)) {
             return;
@@ -1248,6 +1289,11 @@ public final class SuperResolutionActivity extends Activity {
 
     static boolean shouldApplyVideoEffect(String appliedKey, String requestedKey) {
         return !requestedKey.equals(appliedKey);
+    }
+
+    static String anime4kVideoEffectKey(int targetWidth, int targetHeight) {
+        return "GPU_ANIME4K:" + targetWidth + "x" + targetHeight + ':'
+                + Anime4kSmallEffect.UPSTREAM_COMMIT;
     }
 
     private static String neuralVideoEffectKey(
@@ -1279,6 +1325,8 @@ public final class SuperResolutionActivity extends Activity {
                 return "QuickSR QNN HTP · 真实逐帧/实验";
             case QUICKSR_CPU:
                 return "QuickSR CPU · 真实逐帧/很慢";
+            case GPU_ANIME4K:
+                return "Anime4K x2 Small · GPU-resident/待真机 A/B";
             case GPU_LANCZOS:
                 return "GPU Lanczos · 实时传统上采样";
             case ORIGINAL:

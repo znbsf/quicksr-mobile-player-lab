@@ -142,3 +142,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Interpolation boundary:** keep VFI optional and last; deduplicate/detect cuts before interpolation and require anime line/temporal quality review.
 - **Execution:** immediately parallelize only the real-time pipeline and model-lab workstreams. Create cadence-aware SR from the merged runtime contract, then create VFI after performance and model selection stabilize.
 - **Details:** see [ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md).
+
+## 2026-09-03 — Anime4K x2 Small GPU-resident player mode
+
+- **Source:** retained the exact MIT-licensed Anime4K v4.0.1 x2 Small shader from commit `4029bf701ecaa15f163cdc49cffe5501c1acf410`; Gradle and runtime verify 18,638 bytes and SHA-256 `4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4`.
+- **Implementation:** added a selectable Media3 `GlEffect` that runs the four convolution passes through two RGBA16F ping-pong textures, then runs depth-to-space with the original-frame residual. The decoded frame never enters CPU or QNN memory on this route.
+- **Adaptation:** target dimensions are prepared at half size on GPU; sampling clamps to valid texel centers; Media3 linear BT.709 is converted to sRGB for the model and back to linear after the residual; original alpha is preserved.
+- **Failure behavior:** source identity, parse, compile, link or RGBA16F intermediate allocation failure selects an internal GPU bilinear 2x fallback and updates the UI. Draw failure switches later frames to the same fallback. HDR intentionally uses fallback pending a separate contract.
+- **Boundary:** host compilation and unit tests do not prove target-GPU shader acceptance or output equivalence. No adb, APK install, physical-device timing, quality, memory or thermal run was performed in this round; see [ANIME4K_ANDROID_GPU_INTEGRATION.md](ANIME4K_ANDROID_GPU_INTEGRATION.md).
+- **Host shader smoke:** the five fragment sources emitted by the compiled Java adapter each compiled and linked under the Android Emulator bundle's SwiftShader OpenGL ES 2 EGL implementation. This verifies host GLES syntax/linking only; no emulator App or target-device texture was executed.

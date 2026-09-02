@@ -18,7 +18,8 @@
       "bytes": 18638,
       "sha256": "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4",
       "license": "MIT",
-      "repository_policy": "download-only-never-commit-third-party-shader"
+      "repository_policy": "vendored-mit-source-with-notice",
+      "vendored_path": "app/src/main/assets/anime4k/Anime4K_Upscale_CNN_x2_S.txt"
     },
     {
       "id": "anime4k-v4.0.1-upscale-cnn-x2-m",
@@ -80,13 +81,13 @@
       },
       "runtime": {
         "pc": "mpv/libplacebo-compatible GLSL user shader",
-        "android": "proposal only: translate and validate each hook as GLES/compute passes inside a GPU-resident effect",
-        "status": "open"
+        "android": "Media3 OpenGL ES adapter implemented with four RGBA16F convolution passes plus depth-to-space/original residual; target-device validation is open",
+        "status": "local-observation"
       },
       "benchmark": {
         "eligible": true,
         "observed_here": false,
-        "reason": "Source and embedded-weight license are explicit; no compatible PC shader runner is installed in this worktree."
+        "reason": "The pinned source parser, generated GLES contract and Java integration pass host tests; no compatible GL runner or target-device output has been observed."
       },
       "decision": "advance-gpu-shader"
     },
@@ -564,6 +565,6 @@
   "promotion": {
     "gpu_shader": "anime4k-upscale-cnn-x2-s",
     "mobile_neural": "sesr-m5-2x",
-    "meaning": "Advance to the next PC/export and device gates only; no Android integration or realtime claim."
+    "meaning": "Anime4K source integration is host-ready and SESR remains export-ready; neither promotion establishes device quality, performance, thermal behavior or redistribution approval."
   }
 }

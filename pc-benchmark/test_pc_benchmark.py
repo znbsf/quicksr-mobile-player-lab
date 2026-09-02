@@ -253,6 +253,8 @@ class AnimeCandidateLabTests(unittest.TestCase):
         payload = json.loads((HERE / "anime-model-candidates.json").read_text(encoding="utf-8"))
         selected = candidate_fetch.select_artifact(payload, "sesr-m5-2x-float32-checkpoint")
         self.assertEqual(selected["license"], "BSD-3-Clause")
+        anime4k = candidate_fetch.select_artifact(payload, "anime4k-v4.0.1-upscale-cnn-x2-s")
+        self.assertEqual(anime4k["repository_policy"], "vendored-mit-source-with-notice")
         with self.assertRaises(ValueError):
             candidate_fetch.select_artifact(payload, "realesr-animevideov3")
 

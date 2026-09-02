@@ -6,15 +6,15 @@
 
 ## 一句话结论
 
-v0.14.0 已形成可安装的图片与本地视频超分 App。一个 arm64 Qualcomm 物理设备上的权利清晰移动子集已完成 720p/1080p 主矩阵及受门禁的 1440p/4K 显示回退功能验证；所有这些档位均为 `offline`，不能外推为实时、热稳定、最终显示或通用设备结论。
+v0.15.0 已在 v0.14.0 的播放器上加入 Anime4K x2 Small GPU-resident 可选路径；当前只有源码、JVM 和主机构建范围证据。既有 arm64 Qualcomm 权利清晰移动子集仍属于 v0.14.0，720p/1080p/1440p/4K 档均为 `offline`，不能外推到 Anime4K、实时、热稳定、最终显示或通用设备。
 
 ## 当前状态
 
 | 能力或门禁 | 状态 | 已确认 | 尚未证明 |
 | --- | --- | --- | --- |
-| 主机构建 | PASS | v0.14.0；52 个 Java 单测、6 个 Python 验证器单测、17 个 PC 矩阵单测、lint、x86_64/arm64-v8a assemble 均通过；arm64-v8a APK SHA-256 `297d87b0a88a1212f7e55b07c4c51cb789155a60ae3628e3dd92650e4e90dc61` | 全新 checkout 仍需用户本地准备合法模型与 vendor 依赖 |
+| 主机构建 | PASS | v0.15.0；71 个 Java 单测、lint、x86_64/arm64-v8a assemble 均通过；arm64 APK 内的 Anime4K source asset 仍为 18,638 bytes 和固定 SHA-256 | 全新 checkout 仍需用户本地准备合法 QuickSR 模型与 vendor 依赖；主机构建不执行 GLES shader |
 | 图片整图 2× | IMPLEMENTED | 系统选图、CPU/QNN HTP、tile/full-image、预览、取消和 PNG 保存路径已实现 | 本轮没有发布权利清晰的图片质量对比或新的数值验收 |
-| Media3 播放器 | IMPLEMENTED | 本地视频、PlayerView、原画/GPU Lanczos/QuickSR CPU/QuickSR QNN HTP 切换已实现 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
+| Media3 播放器 | IMPLEMENTED | 本地视频、PlayerView、原画/GPU Lanczos/Anime4K x2 Small/QuickSR CPU/QuickSR QNN HTP 切换已实现 | Anime4K 尚未真机 compile/link 或 A/B；DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
 | QNN 运行时 | IMPLEMENTED | fixed-shape 模型 hash 校验、HTP tuning、graph finalization、持久 input/output tensor、资源释放和有限值抽查已实现 | 当前视频 smoke 没有附带发布级 placement/底层 HTP trace |
 | 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
@@ -25,8 +25,9 @@ v0.14.0 已形成可安装的图片与本地视频超分 App。一个 arm64 Qual
 | Source-only 发布 | PASS | publication gate 排除模型、APK、媒体、设备原始证据、绝对路径和凭据 | GitHub 仓库私有；不代表二进制或模型再分发获授权 |
 | PC-first 动漫路线 | PASS（小型权利清晰语料限定） | 1.5×/2×/3×/4× checkpoint 已导出验证；三资产、两退化、匹配宽高比的 72 案例与 15 帧 H.264 路径已执行；方形素材不拉伸 | 语料仍非代表性日本商业动漫；合成退化不能覆盖所有编码、振铃、颗粒和字幕 |
 | 动漫模型实验室 | SOURCE AUDIT PASS / BENCHMARK OPEN | 11 个候选已有 commit、源码/权重/数据、I/O、参数/内存与 runtime 矩阵；source-only allowlist 只含 3 个许可和 hash 已闭环 artifact；恰好晋级 Anime4K x2 Small 与 SESR-M5 2x 到下一门禁；line-art/subtitle/edge 合同与评测器已通过协议复算 | 尚无 Anime4K/SESR 候选输出、PC timing、Android shader/QNN、完整内存、thermal 或人工画质证据；DIV2K 仅限学术研究，其他动漫权重/数据开放项见独立报告 |
+| Anime4K Android GPU | HOST READY / DEVICE OPEN | v4.0.1 x2 Small 上游文本与 MIT notice 按 commit/18,638 bytes/SHA-256 固定；四层卷积、depth-to-space+原图残差、RGBA16F ping-pong、线性 RGB↔sRGB、边缘 clamp、失败回退与资源释放已接入；五段生成 shader 在 SwiftShader GLES2 5/5 compile+link PASS | 本轮未调用 adb；目标 GPU compile/link、真实纹理执行、mpv 同帧等价、画质、内存、p50/p95/p99、掉帧、thermal 与最终显示均未证明 |
 | Android 高分辨率档 | PASS（单设备功能限定） | 权利清晰子集在一台物理 Qualcomm 设备完成 1080p 主档、受门禁 1440p 实验档与 4K 显示回退档；4K 是 1080p neural→4K GL canvas | 未证明实时、热稳定、内存压力、最终显示、通用设备或原生 4K 神经输出 |
-| x86_64 模拟器路径 | PASS（功能限定） | Android Studio API 35 AVD 安装启动；权利清晰 640×360 H.264 clip 的 720p/1080p/1440p/4K 显示档均完成首帧，报告的画布和神经纹理尺寸符合 profile | 模拟器没有 Qualcomm HTP；CPU 单帧耗时和排队不可外推真机实时性能 |
+| x86_64 模拟器路径 | PASS（既有 v0.14.0 功能限定）/ v0.15.0 BUILD READY | Android Studio API 35 AVD 曾完成 720p/1080p/1440p/4K 首帧；本轮 x86_64 assemble 通过 | 本轮按设备占用约束未调用 adb、未安装 v0.15.0，也未让模拟器编译 Anime4K shader；模拟器 CPU/GPU 结果均不能外推目标手机 |
 | 真机 QNN 自动矩阵 | PASS（单设备、离线范围） | 11/11 clip 的 720p 和 1080p 主链均功能 PASS、无报告级失败/设备错误；1440p 和 4K 显示回退在主档门禁后也功能 PASS；严格 QNN 会话配置、绑定收据、样本数和 p50/p95 已验证 | 不证明 realtime、thermal、per-node EP placement/fallback trace、屏幕 latch/A-V sync 或其他设备；详见 [移动子集验证](ANDROID_MOBILE_SUBSET_VALIDATION.md) |
 | 实时流水线 P0 观测 | IMPLEMENTED（主机范围） | raw ns 时间线、逐帧 generation/PTS/输入输出 CRC32、accepted/processed/late/dropped/bypassed、worker queue depth、flush/seek proxy、报告 p50/p95/p99/max 与 fail-closed 验证已实现；worker 队列固定为容量 2 的阻塞背压 | 尚未在物理设备运行；readback、GL submit 与 PTS-wall drift 是明确代理，Media3 内部队列深度及 SurfaceFlinger/final display 未测；没有吞吐 A/B 结论 |
 

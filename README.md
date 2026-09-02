@@ -2,7 +2,7 @@
 
 面向 Android 的图片与视频超分实验 App，重点验证一条可落地的动漫超分路线：先在 PC 上完成倍率、退化、画质和性能筛选，再把合适的模型放到 Qualcomm QNN HTP/NPU 上做实时播放验证。
 
-当前版本：**v0.14.0**。仓库采用 **source-only** 策略，不提交模型权重、APK、测试媒体、Qualcomm 二进制或原始设备日志。
+当前版本：**v0.15.0**。仓库采用 **source-only** 策略，不提交未授权模型权重、APK、测试媒体、Qualcomm 二进制或原始设备日志。唯一随源码保留的神经 shader 是经单独审查、保留 MIT notice 且由 commit/bytes/SHA-256 固定的 Anime4K x2 Small 上游文本。
 
 ## 核心能力
 
@@ -10,7 +10,7 @@
 - 覆盖 16:9 与方形的 360p、480p、720p 输入；
 - 输出路线覆盖 1080p、1440p 和 4K 显示；
 - 集成 QuickSRNetSmall 1.5×、2×、3×、4× 模型流程；
-- 支持 ONNX Runtime CPU、GPU Lanczos 和 Qualcomm QNN HTP/NPU；
+- 支持 ONNX Runtime CPU、GPU Lanczos、GPU-resident Anime4K x2 Small 和 Qualcomm QNN HTP/NPU；
 - 建立 18 条 PC 动漫超分路线和 72 个权利清晰评测案例；
 - 自动统计 PSNR、SSIM、边缘误差、阶段耗时、p50/p95 以及 24/30 FPS 性能等级。
 
@@ -31,6 +31,7 @@
 - **ONNX Runtime：**PC、Android CPU 和 QNN 共用 ONNX 模型与 Java API，便于先做 PC golden/质量筛选，再迁移到手机。
 - **Qualcomm QNN HTP：**直接使用 Snapdragon 平台的 NPU/HTP，目标是降低逐帧 CPU 负载和功耗。
 - **QuickSRNetSmall：**模型体积较小，并有 1.5×/2×/3×/4× 上游 checkpoint，适合移动端多倍率实验。
+- **Anime4K x2 Small：**五个 shader pass 全程保留在 GL texture 中，作为不经过 CPU readback/NPU round trip 的动漫线稿候选；当前只有主机源码/构建证据，真机画质与速度仍待 A/B。
 - **固定 Shape 模型：**减少运行时图变化，便于 QNN graph finalization、Tensor 复用和稳定的内存规划。
 - **Media3 `Presentation`：**在推理前建立真正的目标纹理尺寸，避免模型生成 1080p/1440p 后又被缩回源视频尺寸。
 - **PC-first：**手机调试成本高，先在 PC 上淘汰画质差、退化不稳或明显无法实时的路线，再进入设备验证。
@@ -45,8 +46,10 @@
 - 已存档的 v0.12.0 单机 720p QNN smoke：`645 帧 / 26.860 秒 = 24.0134 FPS`，四个约 5 秒 MediaCodec 窗口 Drop=0。
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
 - v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
+- v0.15.0 已接入 hash 固定的 Anime4K v4.0.1 x2 Small 五-pass GL effect、模式选择与 shader 失败回退；本轮没有调用 adb，因此还没有目标 GPU 的 compile/link、像素、速度或 thermal 结果。
+- 由实际 Java 适配器生成的五段 fragment source 已在 Android Emulator 随附的 SwiftShader OpenGL ES 2 环境 5/5 compile+link PASS；这只是主机 shader smoke，不是模拟器 App 或目标手机执行。
 
-完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
+完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
 
 ## 支持机型与系统
 
@@ -54,8 +57,8 @@
 
 | 环境 | 支持状态 | 后端与限制 |
 | --- | --- | --- |
-| Android 8.1+、arm64-v8a、兼容 Qualcomm HTP/CDSP | 目标平台；720p 已有单机 smoke | CPU、GPU Lanczos、QNN HTP；1080p/1440p 需逐机验证性能和内存 |
-| Android 8.1+、其他 arm64-v8a 设备 | 可构建，未形成多厂商兼容矩阵 | 以 ONNX Runtime CPU 和 GPU Lanczos 为主；QNN 初始化失败时不能声称 NPU 支持 |
+| Android 8.1+、arm64-v8a、兼容 Qualcomm HTP/CDSP | 目标平台；720p 已有单机 smoke | CPU、GPU Lanczos、QNN HTP；Anime4K 与 1080p/1440p 需逐机验证性能和内存 |
+| Android 8.1+、其他 arm64-v8a 设备 | 可构建，未形成多厂商兼容矩阵 | 以 ONNX Runtime CPU、GPU Lanczos 和待验证 Anime4K 为主；QNN 初始化失败时不能声称 NPU 支持 |
 | Android Studio API 35 x86_64 模拟器 | 已验证功能路径 | CPU 与 GPU 功能检查；没有 Qualcomm HTP，不能测试 QNN 性能 |
 | armeabi-v7a、32 位 x86、iOS | 不支持 | 当前构建只接受 `arm64-v8a` 或 `x86_64` |
 
@@ -73,7 +76,7 @@
 ### 视频超分
 
 1. 在视频区域选择神经输出档和 QNN tuning；
-2. 在原画、GPU Lanczos、QuickSR CPU、QuickSR QNN HTP 间切换；
+2. 在原画、GPU Lanczos、Anime4K x2 Small、QuickSR CPU、QuickSR QNN HTP 间切换；
 3. 选择本地非 DRM 视频并播放；
 4. 根据界面中的排队、输入转换、ORT/QNN run、输出转换和整帧时间判断瓶颈。
 

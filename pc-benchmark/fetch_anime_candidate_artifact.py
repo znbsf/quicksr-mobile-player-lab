@@ -33,7 +33,8 @@ def select_artifact(manifest: dict[str, Any], artifact_id: str) -> dict[str, Any
         raise ValueError("artifact URL must use HTTPS")
     if artifact.get("license") in (None, "NOASSERTION"):
         raise ValueError("artifact license is not clear")
-    if "never-commit" not in artifact.get("repository_policy", ""):
+    policy = artifact.get("repository_policy", "")
+    if "never-commit" not in policy and policy != "vendored-mit-source-with-notice":
         raise ValueError("artifact does not declare a source-only repository policy")
     return artifact
 

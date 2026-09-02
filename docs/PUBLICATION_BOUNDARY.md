@@ -17,6 +17,9 @@ Qualcomm runtime binaries, or an installable application containing them.
 ## Allowed in Git
 
 - Original Java, Python, PowerShell, and JavaScript source.
+- The exact MIT-licensed Anime4K v4.0.1 x2 Small shader text pinned by commit,
+  byte count and SHA-256, with its upstream notice retained and summarized in
+  `THIRD_PARTY_NOTICES.md`.
 - Gradle configuration and text-only build metadata.
 - Unit tests and validators.
 - Frozen experiment contracts, source URLs, version pins, byte counts, and
@@ -38,6 +41,12 @@ Qualcomm runtime binaries, or an installable application containing them.
 - Fixed-shape or otherwise transformed ONNX models: transformations do not
   remove the embedded trained weights or solve their license boundary.
 - Training, calibration, evaluation, or real-media datasets.
+
+The reviewed Anime4K source above is a narrow exception: its embedded
+coefficients are distributed by the upstream author inside an MIT-licensed
+shader whose full notice is retained. This does not create a general exception
+for model weights, converted checkpoints, generated shaders or other upstream
+artifacts.
 
 The local `models/` and `derived-models/` payloads may be used for a personal
 experiment but must remain ignored. Git stores preparation tools, hashes, and

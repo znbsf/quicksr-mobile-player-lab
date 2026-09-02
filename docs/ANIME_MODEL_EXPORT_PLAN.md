@@ -2,8 +2,9 @@
 
 Status date: 2026-09-03
 
-This is a proposal. It does not modify `QuickSrVideoEffect`, Media3, QNN setup,
-or any playback code.
+The Anime4K Small portion is implemented in v0.15.0 as a separate Media3 GL
+effect; the SESR portion remains a proposal. The work does not modify
+`QuickSrVideoEffect`, QNN setup, queue policy or cadence behavior.
 
 ## Source-only artifact preparation
 
@@ -55,7 +56,7 @@ The evaluator measures output quality only. A candidate-specific runner must
 separately record process identity, model/shader SHA-256, warmups, per-frame
 samples, p50/p95/p99, allocated bytes and peak process/GPU memory.
 
-## Anime4K Small port proposal
+## Anime4K Small port implementation and device plan
 
 1. Start from the exact v4.0.1 Small shader bytes in the artifact manifest.
 2. Translate mpv `//!HOOK`, `//!BIND`, `//!SAVE` and component metadata into
@@ -111,8 +112,10 @@ change the effect or runtime API.
 
 ## Publication and rights boundary
 
-- Never commit shaders copied from upstream, checkpoints, ONNX, TFLite, QNN
-  contexts, APKs, media, raw outputs, traces or device receipts.
+- Never commit unreviewed shaders, checkpoints, ONNX, TFLite, QNN contexts,
+  APKs, media, raw outputs, traces or device receipts. The exact MIT-licensed
+  Anime4K x2 Small source is the sole reviewed shader exception: its notice,
+  commit, byte count and SHA-256 are retained and publication-gated.
 - The artifact manifest is a reproducibility coordinate, not a grant of rights.
 - Preserve Anime4K MIT and SESR/AIMET BSD notices in any separately reviewed
   distribution.

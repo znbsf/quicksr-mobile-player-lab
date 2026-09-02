@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -8,10 +9,19 @@ from typing import Any
 
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 DEFAULT_MANIFEST = HERE / "anime-model-candidates.json"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 VALID_LEVELS = {"confirmed-upstream", "derived-from-pinned-source", "local-observation", "open"}
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def require(condition: bool, message: str) -> None:
@@ -35,7 +45,17 @@ def validate(payload: dict[str, Any]) -> dict[str, Any]:
         require(bool(SHA256.fullmatch(str(artifact.get("sha256", "")))), f"artifact {artifact_id} needs SHA-256")
         require(bool(COMMIT.fullmatch(str(artifact.get("source_commit", "")))), f"artifact {artifact_id} needs source commit")
         require(artifact.get("license") not in (None, "NOASSERTION"), f"artifact {artifact_id} license is not clear")
-        require("never-commit" in artifact.get("repository_policy", ""), f"artifact {artifact_id} must stay untracked")
+        policy = artifact.get("repository_policy", "")
+        if policy == "vendored-mit-source-with-notice":
+            relative = Path(str(artifact.get("vendored_path", "")))
+            require(not relative.is_absolute() and ".." not in relative.parts, f"artifact {artifact_id} has unsafe vendored path")
+            require(relative.parts[:4] == ("app", "src", "main", "assets"), f"artifact {artifact_id} must be an App source asset")
+            vendored = ROOT / relative
+            require(vendored.is_file(), f"artifact {artifact_id} vendored source is missing")
+            require(vendored.stat().st_size == artifact["bytes"], f"artifact {artifact_id} vendored byte mismatch")
+            require(file_sha256(vendored) == artifact["sha256"], f"artifact {artifact_id} vendored SHA-256 mismatch")
+        else:
+            require("never-commit" in policy, f"artifact {artifact_id} must stay untracked or use the reviewed vendored-source policy")
 
     candidates = payload.get("candidates", [])
     candidate_ids = set()

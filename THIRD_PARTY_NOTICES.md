@@ -6,6 +6,33 @@ Qualcomm runtime binaries, or an APK that embeds either of them. The exact
 upstream license text and release metadata control if this summary differs
 from them.
 
+## Anime4K Upscale CNN x2 Small shader source
+
+- Upstream: <https://github.com/bloc97/Anime4K>
+- Release: `v4.0.1`
+- Pinned source revision:
+  `4029bf701ecaa15f163cdc49cffe5501c1acf410`
+- Pinned upstream file:
+  `glsl/Upscale/Anime4K_Upscale_CNN_x2_S.glsl`
+- SHA-256:
+  `4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4`
+- License: MIT
+- Copyright: Copyright (c) 2019-2021 bloc97
+
+The exact upstream text, including its MIT notice and embedded shader
+coefficients, is stored as
+`app/src/main/assets/anime4k/Anime4K_Upscale_CNN_x2_S.txt`. The Android adapter
+parses all five upstream passes and translates the mpv hook bindings to
+Media3/OpenGL ES at runtime. The project build and runtime both verify the
+source identity before it is used.
+
+The upstream shader license permits source redistribution when its copyright
+and permission notice are retained. This does not independently establish the
+identity or licensing of the corpus used to train the embedded coefficients;
+that provenance question remains recorded as open. APK distribution also
+remains subject to the separate dependency and application review described
+below.
+
 ## QuickSRNet source references
 
 ### Qualcomm AI Hub Models

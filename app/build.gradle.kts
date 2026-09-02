@@ -52,6 +52,11 @@ val p4PlanSha256 = "90d05b4cf9837a8a421fc35d144847a4cd727dcf39c8ca50f85aa128104a
 val ortDependencyVersion = "1.26.0"
 val qnnPluginVersion = "2.5.0"
 val qnnRuntimeVersion = "2.49.0"
+val anime4kSmallShaderPath =
+    "src/main/assets/anime4k/Anime4K_Upscale_CNN_x2_S.txt"
+val anime4kSmallShaderBytes = 18638L
+val anime4kSmallShaderSha256 =
+    "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4"
 val targetAbi = providers.gradleProperty("targetAbi").orElse("arm64-v8a").get()
 require(targetAbi in setOf("arm64-v8a", "x86_64")) {
     "targetAbi must be arm64-v8a or x86_64, observed: $targetAbi"
@@ -101,7 +106,7 @@ fun sourceIdentity(files: Collection<File>, baseDirectory: File): String {
 }
 
 val sourceIdentityFiles = fileTree("src/main") {
-    include("**/*.java", "**/*.xml")
+    include("**/*.java", "**/*.xml", "**/*.txt")
 }.files + setOf(
     project.file("build.gradle.kts"),
     rootProject.file("prototype-plan.json"),
@@ -337,6 +342,31 @@ val prepareQuickSrModel by tasks.registering {
     }
 }
 
+val verifyAnime4kSmallShader by tasks.registering {
+    group = "prototype"
+    description = "Verify the vendored MIT Anime4K v4.0.1 x2 Small shader source."
+    val shader = project.file(anime4kSmallShaderPath)
+    inputs.file(shader)
+    doLast {
+        if (!shader.isFile) {
+            throw GradleException("Pinned Anime4K shader source is missing: ${shader.path}")
+        }
+        if (shader.length() != anime4kSmallShaderBytes) {
+            throw GradleException(
+                "Pinned Anime4K shader byte mismatch: expected $anime4kSmallShaderBytes, " +
+                    "observed ${shader.length()}"
+            )
+        }
+        val observedSha = sha256(shader)
+        if (!observedSha.equals(anime4kSmallShaderSha256, ignoreCase = true)) {
+            throw GradleException(
+                "Pinned Anime4K shader SHA-256 mismatch: expected $anime4kSmallShaderSha256, " +
+                    "observed $observedSha"
+            )
+        }
+    }
+}
+
 android {
     namespace = "dev.aisystems.quicksrplayerlab"
     compileSdk = 36
@@ -345,8 +375,8 @@ android {
         applicationId = "dev.aisystems.quicksrplayerlab"
         minSdk = 27
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.14.0"
+        versionCode = 19
+        versionName = "0.15.0"
 
         ndk {
             abiFilters += targetAbi
@@ -450,6 +480,7 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(prepareQuickSrModel)
+    dependsOn(verifyAnime4kSmallShader)
 }
 
 dependencies {
