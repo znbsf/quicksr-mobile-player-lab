@@ -273,6 +273,13 @@ A + B + C 的结果稳定
 
 只有 A/B/C 表明播放器仍有热预算、已选定 SR backend，且用户接受可选流畅模式后再创建。首轮只允许离线评测，不直接进入默认播放路径。
 
+2026-09-03 执行状态：已在独立分支完成首轮 source-only 离线评测。该轮没有修改
+`QuickSrVideoEffect` 或注册播放器 effect；实现了 hold/cut/seek/stream-epoch fail-closed
+prefilter，并只把 RIFE ncnn Vulkan v4.6 晋级到一台 Adreno 740 上的独立 native CLI
+有界探针。约 107 ms 的设备内 `RIFE::process` 中位 wall time不满足 24/30 fps 预算，
+模型权重再分发、代表性动漫时序质量、人工审核、驻留 runtime、A/V sync 和长时热稳仍然
+开放。详见 [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md)。
+
 ## 8. 合并和新工作树规则
 
 1. 本文档先在 `main` 形成共享基线提交；所有立即启动的工作树从该提交创建。

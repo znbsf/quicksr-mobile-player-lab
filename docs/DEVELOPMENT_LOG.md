@@ -155,3 +155,24 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Bounded device result:** one Android 16 / Adreno 740 / GLES 3.2 device exposed both half-float and float color-buffer extensions. Anime4K 720p/1080p/1440p each reported the complete five-pass first frame model-active and finished the 7.5-second 24 fps clip without either fallback. SurfaceFlinger buffer deltas were 180/179/179; MediaCodec windows reported Drop=0; whole-process PSS peaks were 179,193/177,443/179,664 KiB and battery-temperature proxy remained 38.9-39.0 C. Lanczos deltas were 177/179/177 with 179,497/179,508/179,938 KiB peaks over the same bounded clip.
 - **Lifecycle and boundary:** pause, seek to about five seconds, resume, HOME/resume and three play-during-back/reopen cycles completed with release records and no crash/ANR/GL/Media3 error. The attempted same-position screenshots were invalid because OEM picker/scroll state displaced the PlayerView; the registered BBB clip also lacks the subtitle/line-art contract, so no visual-quality claim was promoted. Raw logs, screenshots, APK and media remain ignored.
 - **Corrective hardening:** app-level recovery now accepts only the current Anime graph's Media3 video-frame-processing error, latches the effective Lanczos state across callbacks and requires explicit user retry. Program cleanup mirrors Media3 1.11.0's SDK-28 `glDeleteProgram` skip on construction, fallback and release paths.
+
+## 2026-09-03 — Offline anime VFI host comparison and Adreno 740 probe
+
+- **Boundary:** added only `vfi-benchmark/` source, tests, manifests, and an evaluation report. No
+  player/effect/App source changed, and VFI remains absent/off in normal playback.
+- **Prefilter:** a stateful decoded-frame contract resets on stream/generation changes, bypasses
+  exact/near holds and hard cuts, and only interpolates a same-epoch distinct drawing. The
+  deterministic 12-event project-generated fixture exercised hold, cut, seek, and epoch behavior;
+  one pair was eligible.
+- **Host comparison:** RIFE v4.6 was slower and larger than IFRNet-S Vimeo90K, but its known-midpoint
+  proxies were materially better on the one line-art motion fixture. RIFE alone advanced; IFRNet
+  remains host-only. Model weight redistribution remains blocked because no independent weight
+  license statement was found.
+- **Device:** exact upstream RIFE/ncnn/libwebp commits were cross-compiled into a standalone arm64
+  CLI. On one Android 16 / Adreno 740 device, the two unpolled `RIFE::process` runs were
+  102.391/103.330 ms (median 102.860 ms); the memory-sampled run peaked at 186,825 kB PSS. All
+  outputs had one SHA-256 and the process was absent after the bounded runs.
+- **Conclusion:** real Vulkan model execution is proven for this device and fixture, but the model
+  is already over 24/30 fps budgets before player costs. No visual-superiority, representative
+  anime, sustained thermal, A/V sync, resident-runtime, or redistribution claim was promoted.
+- **Details:** see [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md).

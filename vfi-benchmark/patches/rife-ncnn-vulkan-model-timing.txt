@@ -1,0 +1,13 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 2b47317..30b4abf 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -4,0 +5 @@
++#include <chrono>
+@@ -359,0 +361 @@ void* proc(void* args)
++        const std::chrono::steady_clock::time_point model_started = std::chrono::steady_clock::now();
+@@ -360,0 +363,4 @@ void* proc(void* args)
++        const std::chrono::steady_clock::time_point model_ended = std::chrono::steady_clock::now();
++        const long long model_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            model_ended - model_started).count();
++        fprintf(stderr, "VFI_MODEL_WALL_NS=%lld\n", model_wall_ns);

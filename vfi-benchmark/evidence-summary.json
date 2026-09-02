@@ -1,0 +1,82 @@
+{
+  "schema": "anime-vfi-evidence-summary.v1",
+  "measured_at": "2026-09-03",
+  "base": {
+    "local_main_commit": "19ebbf5fffae36acc0d0cf2b7b3eec411120c2dc",
+    "origin_main_observed_commit": "e7685ec9aceaba1704fa24d072e07cde4655e468",
+    "note": "origin/main was an ancestor; the task branch was created from the newer local main containing the cadence contract"
+  },
+  "fixture": {
+    "schema": "anime-vfi-rights-clear-fixture.v1",
+    "manifest_sha256": "2e829049491b35e4838a7ed7a657b999d8f9b37064f17af0ec6c457e6deb90af",
+    "dimensions": [320, 180],
+    "rights": "project-generated; no external image, media, font, or model input",
+    "events": 12,
+    "interpolate": 1,
+    "bypass_or_boundary": 11,
+    "distinct_metrics": {"luma_mad": 0.08344908058643341, "changed_fraction": 0.1871141975308642},
+    "near_hold_metrics": {"luma_mad": 0.00019138827337883413, "changed_fraction": 0.0},
+    "hard_cut_metrics": {"luma_mad": 0.36954811215400696, "changed_fraction": 0.9751157407407407}
+  },
+  "host": {
+    "scope": "Windows Vulkan subprocess wall-time; includes per-process model/runtime startup and PNG I/O",
+    "rife-ncnn-vulkan-v4.6": {
+      "source_commit": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+      "executable_sha256": "4b970319db2814c82b15fceed8193151560a676a9eb63f20d4877be77b98f44f",
+      "model_tree_sha256": "1110c16857c451e1a357e2ffe2c16794d4b5893982dab60e1a3aade191616df9",
+      "process_wall_time_ms": [758.9886, 749.8265, 735.9625],
+      "process_wall_time_ms_median": 749.8265,
+      "peak_private_bytes_observed": 301469696,
+      "quality_proxy": {"psnr_db": 27.119983000077582, "ssim_global": 0.9836756067976733, "edge_gradient_mae": 0.009355717338621616},
+      "output_sha256": "51c1fbc2881affe413255c84b69f3a93396c5351058ee53b247f36ef2dc057f8"
+    },
+    "ifrnet-ncnn-vulkan-s-vimeo90k": {
+      "source_commit": "3592a70355ec011fe7cefb3a9ba08b63d82a2b6d",
+      "executable_sha256": "87213f1c4350a521eacf3c07f7e6e3e438501c5c59d37711774dd9a56fb2c196",
+      "model_tree_sha256": "523c826294aebece55b97dd7d4b6335bd6abe7b488433ce023cb2ac5b244ea1f",
+      "process_wall_time_ms": [567.0393, 541.5806, 544.3468],
+      "process_wall_time_ms_median": 544.3468,
+      "peak_private_bytes_observed": 127438848,
+      "quality_proxy": {"psnr_db": 16.604012508765685, "ssim_global": 0.7985588629003431, "edge_gradient_mae": 0.01583818346261978},
+      "output_sha256": "687cd2f05ce7f8207a73fc2c5ad9cd21d8ed5fbc0ac7be42fbe46d5ef878c346"
+    }
+  },
+  "android_device": {
+    "scope": "standalone arm64 native CLI, not an APK and not the player hot path",
+    "device": "2304FPN6DC (ishtar)",
+    "soc": "SM8550",
+    "os": "Android 16 API 36",
+    "gpu": "Adreno 740",
+    "gpu_driver": "OpenGL ES V@0676.76.1, driver date 2025-11-28",
+    "source_commit": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+    "ncnn_submodule_commit": "b4ba207c18d3103d6df890c0e3a97b469b196b26",
+    "libwebp_submodule_commit": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
+    "instrumented_binary_sha256": "974e1b71827da1509948fd000f6ed352fda005bc64e377ec574e80920d87515b",
+    "timing_patch_sha256": "ef41582aed47f03ac0c437cc8668c34cde6d6ef539dda9010b967b8f63864ab7",
+    "pair_identity": "98ed555d09e6d36d2e8a9c573c1f51e903f757f096a4c7b869ca54e4b6d32008",
+    "runs": 3,
+    "model_wall_time_ms": [104.719427, 102.391146, 103.329635],
+    "latency_summary_excluding_pss_sampled_run": {"median_ms": 102.8603905, "min_ms": 102.391146, "max_ms": 103.329635},
+    "end_to_end_process_wall_time_ms": [1651.6461, 1761.5744, 1655.9358],
+    "sampled_peak_pss_kb": 186825,
+    "sampled_peak_rss_kb": 228440,
+    "temperature_max_celsius_proxy": {"before": 44.383, "after": 48.4},
+    "process_absent_after_runs": true,
+    "quality_proxy": {"psnr_db": 27.311235902522913, "ssim_global": 0.9843843475576529, "edge_gradient_mae": 0.00921056792140007},
+    "output_sha256": "efa060db25c959105753fe3161957e6fdaaf928a288d2de6a058c2e1f4886c83"
+  },
+  "claims": {
+    "human_review": "pending",
+    "visual_improvement": "not-claimed",
+    "realtime_playback": "not-proven",
+    "thermal_sustained": "not-proven",
+    "audio_video_sync": "not-tested",
+    "redistribution": "blocked-pending-model-weight-rights-review",
+    "default_player_integration": "absent"
+  },
+  "raw_evidence": {
+    "status": "ignored-local-only",
+    "root": "local-artifacts/vfi/",
+    "contains": ["fixture PNGs", "model outputs", "raw JSON reports", "downloaded binaries", "model files", "device logs"]
+  }
+}

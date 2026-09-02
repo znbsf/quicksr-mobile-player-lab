@@ -1,0 +1,91 @@
+{
+  "schema": "anime-vfi-candidates.v1",
+  "refreshed_at": "2026-09-03",
+  "redistribution_policy": "No source archive, model weight, vendor binary, media, APK, or raw log is committed. Repository availability is not treated as weight redistribution permission.",
+  "candidates": [
+    {
+      "id": "rife-ncnn-vulkan-v4.6",
+      "status": "advanced-offline-device-probe",
+      "source": {
+        "url": "https://github.com/nihui/rife-ncnn-vulkan",
+        "commit": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
+        "license": "MIT",
+        "license_url": "https://github.com/nihui/rife-ncnn-vulkan/blob/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7/LICENSE"
+      },
+      "research_upstream": {
+        "url": "https://github.com/hzwer/ECCV2022-RIFE",
+        "commit": "5d8adbdd40e12c2c8f91930eff838aebe561c086",
+        "license": "MIT"
+      },
+      "release": {
+        "tag": "20221029",
+        "published_at": "2022-10-29T08:49:01Z",
+        "windows_asset_bytes": 431540241,
+        "downloaded_asset_sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+        "publisher_digest_available": false
+      },
+      "model": {
+        "name": "rife-v4.6",
+        "upstream_version": "4.6",
+        "parameter_bytes": 10631069,
+        "param_sha256": "28df14d57a225725ee5386f52eba422488450d37c9f40800ed4f62e8ba846692",
+        "weight_sha256": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958",
+        "weight_license_status": "no-independent-weight-license-found",
+        "redistribution": "blocked-pending-rights-review",
+        "operators": ["BinaryOp", "Concat", "Convolution", "Crop", "Deconvolution", "Eltwise", "Input", "Interp", "PixelShuffle", "ReLU", "rife.Warp", "Sigmoid", "Split"]
+      },
+      "platform": {
+        "runtime": "ncnn Vulkan",
+        "upstream_binary_targets": ["Windows", "Linux", "macOS"],
+        "android_source_claim": "ncnn supports Android, but this repository publishes no Android binary or Android-specific integration contract",
+        "mobile_memory_status": "measured by bounded native CLI probe; see evidence-summary.json"
+      },
+      "limitations": [
+        "ncnn port predates upstream RIFE 4.7-4.10 anime-optimized releases",
+        "rife-anime in this port maps to older upstream 1.8 and is not the selected compact model"
+      ]
+    },
+    {
+      "id": "ifrnet-ncnn-vulkan-s-vimeo90k",
+      "status": "host-comparison-only",
+      "source": {
+        "url": "https://github.com/nihui/ifrnet-ncnn-vulkan",
+        "commit": "3592a70355ec011fe7cefb3a9ba08b63d82a2b6d",
+        "license": "MIT",
+        "license_url": "https://github.com/nihui/ifrnet-ncnn-vulkan/blob/3592a70355ec011fe7cefb3a9ba08b63d82a2b6d/LICENSE"
+      },
+      "research_upstream": {
+        "url": "https://github.com/ltkong218/IFRNet",
+        "commit": "b117bcafcf074b2de756b882f8a6ca02c3169bfe",
+        "license": "MIT"
+      },
+      "release": {
+        "tag": "20220720",
+        "published_at": "2022-07-20T14:20:04Z",
+        "windows_asset_bytes": 109671042,
+        "downloaded_asset_sha256": "89d2d6a94745391f5eccff4c2822dd4f52ac7e932c1b9d43a8c7b0e6b26dd7ab",
+        "publisher_digest_available": false
+      },
+      "model": {
+        "name": "IFRNet_S_Vimeo90K",
+        "training_domain": "Vimeo90K natural video",
+        "parameter_bytes": 5935644,
+        "param_sha256": "45ad4ea3bd30e6a97fababd162fdc96382c26dbb05ff2ce324e71ed19a9192a1",
+        "weight_sha256": "7c3fe0a5eb7e544bc8c615ee47d4bafcbc077f98d75eda217c9657979adb1e14",
+        "weight_license_status": "no-independent-weight-license-found",
+        "redistribution": "blocked-pending-rights-review",
+        "operators": ["BinaryOp", "Concat", "Convolution", "Deconvolution", "Eltwise", "ifrnet.Warp", "Input", "Interp", "PReLU", "Sigmoid", "Slice", "Split"]
+      },
+      "platform": {
+        "runtime": "ncnn Vulkan",
+        "upstream_binary_targets": ["Windows", "Linux", "macOS"],
+        "android_source_claim": "ncnn supports Android, but this repository publishes no Android binary or Android-specific integration contract",
+        "mobile_memory_status": "not advanced to device until host comparison is reviewed"
+      },
+      "limitations": [
+        "upstream repository explicitly calls the implementation early development",
+        "port contains only three commits and no anime-domain weight"
+      ]
+    }
+  ]
+}
