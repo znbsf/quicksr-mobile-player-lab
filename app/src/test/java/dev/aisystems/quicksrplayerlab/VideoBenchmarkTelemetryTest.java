@@ -1,7 +1,10 @@
 package dev.aisystems.quicksrplayerlab;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+
+import androidx.media3.common.Player;
 
 import org.junit.Test;
 
@@ -56,6 +59,39 @@ public final class VideoBenchmarkTelemetryTest {
         assertFalse(SuperResolutionActivity.validBenchmarkRunId(""));
         assertFalse(SuperResolutionActivity.validBenchmarkRunId("contains spaces"));
         assertFalse(SuperResolutionActivity.validBenchmarkRunId(".." + "/escape"));
+    }
+
+    @Test
+    public void benchmarkPlaybackRepeatModeNeverLeaksToNormalPlayback() {
+        assertEquals(Player.REPEAT_MODE_ONE, SuperResolutionActivity.repeatModeForBenchmark(true));
+        assertEquals(Player.REPEAT_MODE_OFF, SuperResolutionActivity.repeatModeForBenchmark(false));
+    }
+
+    @Test
+    public void qnnStrictTelemetryCarriesFailClosedRegistrationFields() throws Exception {
+        String configuration = VideoBenchmarkTelemetry.configurationJson(
+                "run-qnn-strict",
+                "QUICKSR_QNN",
+                QuickSrSession.Tuning.SUSTAINED,
+                QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                true,
+                VideoEvidenceStore.CaptureSpec.forFrame(2));
+        String event = VideoBenchmarkTelemetry.qnnStrictJson(
+                "run-qnn-strict",
+                QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                "{\"registrationStatus\":\"PASS\",\"npuSelectionStatus\":\"PASS\","
+                        + "\"providerConfigurationStatus\":\"PASS\",\"backendType\":\"htp\","
+                        + "\"cpuEpFallbackDisabled\":true,\"strictReady\":true}");
+
+        assertTrue(configuration.contains("\"qnnStrictRequired\":true"));
+        assertTrue(configuration.contains("\"captureSelectorKind\":\"frame\""));
+        assertTrue(event.contains("\"event\":\"qnn_strict\""));
+        assertTrue(event.contains("\"modelVariant\":\"fixed640x360-3x-full\""));
+        assertTrue(event.contains("\"cpuEpFallbackDisabled\":true"));
+        assertTrue(event.contains("\"providerAssignmentVerified\":false"));
+        assertTrue(event.contains("\"providerFallbackTraceCaptured\":false"));
+        assertTrue(event.contains(
+                "\"evidenceScope\":\"SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF\""));
     }
 
     private static QuickSrVideoEffect.FrameStats stats(int frame, long ptsUs, long totalMs, long ortMs) {

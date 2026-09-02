@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "plan_id": "mobile-rights-clear-subset-v1",
+  "status": "specified-not-materialized",
+  "source_assets_manifest": {
+    "path": "pc-benchmark/open-assets.json",
+    "sha256": "afa377d39eabf692c45128b7ae9f39afff2a8f5e385a3b7ed6ff6cecd5d08426"
+  },
+  "repository_policy": {
+    "source_only": true,
+    "media_cache_root": "build/pc-benchmark/assets",
+    "local_artifact_root": "local-artifacts/mobile-subset",
+    "raw_media_must_remain_git_ignored": true,
+    "network_downloads_permitted": false,
+    "overwrite_permitted": false
+  },
+  "content_policy": {
+    "layout_policy": "fit-pad-no-stretch",
+    "fit_pad_background_rgb": [0, 0, 0],
+    "commercial_anime_permitted": false,
+    "source_assets_must_be_pinned_in_open_assets_manifest": true,
+    "required_attribution_is_inherited_from_source_assets_manifest": true
+  },
+  "cadence_policy": {
+    "bbb_sequence_native_fps": 15,
+    "target_fps_conversion": "repeat-hold-previous-source-frame",
+    "target_24_or_30fps_is_not_native_24_or_30fps_motion": true
+  },
+  "android_matrix_compatibility": {
+    "warmup_frames": 15,
+    "minimum_measured_frames": 120,
+    "minimum_encoded_frames": 135,
+    "rule": "Every generated clip must contain at least warmup_frames + minimum_measured_frames so it can satisfy the matrix frame-count gate without playback looping."
+  },
+  "materialization": {
+    "container": "mp4",
+    "video_codec": "libx264",
+    "pixel_format": "yuv420p",
+    "encoder_options": {
+      "crf": 28,
+      "preset": "medium",
+      "threads": 1,
+      "audio": "none",
+      "creation_time_utc": "1970-01-01T00:00:00Z"
+    },
+    "local_manifest_file": "local-materialization-manifest.json",
+    "record_per_clip": [
+      "derived_mp4_bytes",
+      "derived_mp4_sha256",
+      "source_file_sha256",
+      "frame_pts_us",
+      "ffmpeg_identity",
+      "pillow_identity"
+    ]
+  },
+  "degradation_profiles": {
+    "clean-lanczos": {
+      "pre_blur_radius": 0.0,
+      "jpeg_quality": null,
+      "jpeg_subsampling": null
+    },
+    "blur-jpeg-q35": {
+      "pre_blur_radius": 0.6,
+      "jpeg_quality": 35,
+      "jpeg_subsampling": 2
+    }
+  },
+  "comparison_policy": {
+    "pc_cpu_golden": "required-per-selected-frame-after-materialization",
+    "lanczos_baseline": "required-per-selected-frame-after-materialization",
+    "legacy_p0_gradient_golden_may_substitute": false,
+    "phone_screenshot_is_numerical_evidence": false,
+    "selected_model_output_or_raw_tensor_required": true
+  },
+  "clips": [
+    {
+      "id": "quick-bbb-360p-24-clean",
+      "tier": "quick-functional",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 640, "height": 360, "fps": 24, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0],
+      "purpose": "Short motion functional gate at 360p/24fps."
+    },
+    {
+      "id": "quick-bbb-480p-30-blur-jpeg",
+      "tier": "quick-functional",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 854, "height": 480, "fps": 30, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "blur-jpeg-q35",
+      "comparison_frame_indices": [0],
+      "purpose": "Short motion functional gate at 480p/30fps with blur and JPEG."
+    },
+    {
+      "id": "quick-pepper-square-360p-24-clean",
+      "tier": "quick-functional",
+      "source": {
+        "asset_id": "peppercarrot-imagination-4k-square",
+        "selection": {"kind": "still-image"}
+      },
+      "output": {"width": 640, "height": 360, "fps": 24, "frame_count": 180, "content_layout": "1:1"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0],
+      "purpose": "Short square line-art functional gate, pillarboxed without stretching."
+    },
+    {
+      "id": "core-bbb-360p-24-clean",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 640, "height": 360, "fps": 24, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 360p/24fps."
+    },
+    {
+      "id": "core-bbb-360p-30-blur-jpeg",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 640, "height": 360, "fps": 30, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "blur-jpeg-q35",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 360p/30fps with blur and JPEG."
+    },
+    {
+      "id": "core-bbb-480p-24-clean",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 854, "height": 480, "fps": 24, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 480p/24fps."
+    },
+    {
+      "id": "core-bbb-480p-30-blur-jpeg",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 854, "height": 480, "fps": 30, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "blur-jpeg-q35",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 480p/30fps with blur and JPEG."
+    },
+    {
+      "id": "core-bbb-720p-24-clean",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 1280, "height": 720, "fps": 24, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 720p/24fps."
+    },
+    {
+      "id": "core-bbb-720p-30-blur-jpeg",
+      "tier": "core",
+      "source": {
+        "asset_id": "bbb-1080-sequence-01000-01014",
+        "native_fps": 15,
+        "selection": {"kind": "sequence", "first_frame": 1000, "frame_count": 15, "loop": true}
+      },
+      "output": {"width": 1280, "height": 720, "fps": 30, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "blur-jpeg-q35",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core BBB motion coverage at 720p/30fps with blur and JPEG."
+    },
+    {
+      "id": "core-pepper-wide-720p-24-clean",
+      "tier": "core",
+      "source": {
+        "asset_id": "peppercarrot-confront-the-dragon-4k",
+        "selection": {"kind": "still-image"}
+      },
+      "output": {"width": 1280, "height": 720, "fps": 24, "frame_count": 180, "content_layout": "16:9"},
+      "degradation_id": "clean-lanczos",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core 16:9 comic/illustration line-art coverage at 720p/24fps."
+    },
+    {
+      "id": "core-pepper-square-720p-30-blur-jpeg",
+      "tier": "core",
+      "source": {
+        "asset_id": "peppercarrot-imagination-4k-square",
+        "selection": {"kind": "still-image"}
+      },
+      "output": {"width": 1280, "height": 720, "fps": 30, "frame_count": 180, "content_layout": "1:1"},
+      "degradation_id": "blur-jpeg-q35",
+      "comparison_frame_indices": [0, 90, 179],
+      "purpose": "Core square comic line-art coverage at 720p/30fps, pillarboxed without stretching."
+    }
+  ]
+}

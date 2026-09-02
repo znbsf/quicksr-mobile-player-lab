@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "plan_id": "android-video-frame-pc-golden-v1",
+  "purpose": "Compare one captured Android QNN video-model tensor against a PC CPU ONNX Runtime result using exactly the Android-captured input bytes. This is a numerical-comparison gate, not a full P4 real-image qualification or a display-pipeline quality claim.",
+  "evidence_kind": "quicksr-video-frame-evidence",
+  "required_qnn_strict": {
+    "registrationStatus": "PASS",
+    "npuSelectionStatus": "PASS",
+    "providerConfigurationStatus": "PASS",
+    "backendType": "htp",
+    "cpuEpFallbackDisabled": true,
+    "minimumSelectedNpuDeviceCount": 1,
+    "strictReady": true,
+    "providerAssignmentVerified": false,
+    "providerFallbackTraceCaptured": false,
+    "evidenceScope": "SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF"
+  },
+  "tensor_contract": {
+    "dtype": "float32",
+    "byteOrder": "little-endian",
+    "layout": "NCHW",
+    "inputOutputMustBeRawModelTensors": true
+  },
+  "numerical_comparison": {
+    "formula": "abs(android_htp - pc_cpu) <= atol + rtol * abs(pc_cpu)",
+    "absoluteTolerance": 0.002,
+    "relativeTolerance": 0.002,
+    "allowedMismatchCount": 0,
+    "allowedNonfiniteCount": 0,
+    "source": "contracts/p4-real-image-roi-plan.json",
+    "qualificationBoundary": "The threshold is reused only to report an observed tensor comparison. It does not unfreeze P4 input/SSIM requirements or qualify full-frame/video/display quality."
+  },
+  "lanczos_baseline": {
+    "implementation": "host Pillow RGB8 Lanczos from the exact captured NCHW input",
+    "purpose": "Record a reproducible host-side traditional-upscaling artifact alongside the PC CPU golden.",
+    "not_equivalent_to": "Media3/GPU presentation timing or pixel-identical display output"
+  },
+  "storage": {
+    "raw_evidence": "Git-ignored device-results/ or local-artifacts/ only",
+    "committable": "source, contracts, tests, and sanitized summaries only"
+  }
+}

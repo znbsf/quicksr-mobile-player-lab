@@ -24,6 +24,8 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.qnnpluginep.QnnPluginEpLibraryKt;
 
 final class QnnPluginRuntime {
+    static final String VIDEO_STRICT_EVIDENCE_SCOPE =
+            "SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF";
     private static final ReentrantLock PROCESS_LOCK = new ReentrantLock(true);
     private static final String[] REQUIRED_NATIVE_LIBRARIES = new String[]{
             "libonnxruntime_providers_qnn.so",
@@ -290,6 +292,50 @@ final class QnnPluginRuntime {
                 == OrtHardwareDevice.OrtHardwareDeviceType.NPU;
     }
 
+    /**
+     * Produces the small, path-free subset of QNN registration evidence needed by video gates.
+     *
+     * <p>The detailed object can contain app-private trace locations and hardware enumeration
+     * details, so it must never be placed directly in Logcat or a frame-evidence manifest.
+     */
+    static JSONObject strictEvidenceSnapshot(JSONObject evidence) throws Exception {
+        JSONObject result = new JSONObject();
+        String registrationStatus = evidence.optString("registrationStatus", "MISSING");
+        String npuSelectionStatus = evidence.optString("npuSelectionStatus", "MISSING");
+        String providerConfigurationStatus = evidence.optString(
+                "providerConfigurationStatus", "MISSING");
+        String backendType = evidence.optString("backendType", "MISSING");
+        boolean cpuFallbackDisabled = evidence.optBoolean("cpuEpFallbackDisabled", false);
+        boolean diagnosticOnly = evidence.optBoolean("diagnosticOnly", true);
+        int selectedNpuDeviceCount = evidence.optInt("selectedNpuDeviceCount", 0);
+        boolean strictReady = "PASS".equals(registrationStatus)
+                && "PASS".equals(npuSelectionStatus)
+                && "PASS".equals(providerConfigurationStatus)
+                && "htp".equals(backendType)
+                && cpuFallbackDisabled
+                && !diagnosticOnly
+                && selectedNpuDeviceCount > 0;
+
+        result.put("registrationStatus", registrationStatus);
+        result.put("npuSelectionStatus", npuSelectionStatus);
+        result.put("providerConfigurationStatus", providerConfigurationStatus);
+        result.put("backendType", backendType);
+        result.put("cpuEpFallbackDisabled", cpuFallbackDisabled);
+        result.put("diagnosticOnly", diagnosticOnly);
+        result.put("selectedNpuDeviceCount", selectedNpuDeviceCount);
+        result.put("pluginVersion", evidence.optString("pluginVersion", "MISSING"));
+        result.put("runtimeVersion", evidence.optString("runtimeVersion", "MISSING"));
+        // Session creation with the CPU EP disabled is a strict configuration gate, but it is
+        // not a per-node execution-placement trace. Preserve that boundary for downstream
+        // validators rather than allowing a registration receipt to be misread as a placement
+        // proof.
+        result.put("providerAssignmentVerified", false);
+        result.put("providerFallbackTraceCaptured", false);
+        result.put("evidenceScope", VIDEO_STRICT_EVIDENCE_SCOPE);
+        result.put("strictReady", strictReady);
+        return result;
+    }
+
     private static File requireDirectory(File directory) throws IOException {
         if (!directory.isDirectory() && !directory.mkdirs()) {
             throw new IOException("Could not create app-private QNN evidence directory");
@@ -434,6 +480,10 @@ final class QnnPluginRuntime {
 
         boolean isEvidenceComplete() {
             return evidenceComplete;
+        }
+
+        JSONObject strictEvidenceSnapshot() throws Exception {
+            return QnnPluginRuntime.strictEvidenceSnapshot(evidence);
         }
 
         private static Exception asException(Throwable failure) {

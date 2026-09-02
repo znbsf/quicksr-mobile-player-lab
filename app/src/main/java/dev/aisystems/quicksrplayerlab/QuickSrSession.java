@@ -352,6 +352,13 @@ final class QuickSrSession implements AutoCloseable {
         return mode == Mode.QNN_HTP ? mode + " · " + tuning : mode.toString();
     }
 
+    JSONObject qnnStrictEvidence() throws Exception {
+        if (mode != Mode.QNN_HTP || qnnRegistration == null) {
+            return null;
+        }
+        return qnnRegistration.strictEvidenceSnapshot();
+    }
+
     @Override
     public void close() throws Exception {
         if (closed) {

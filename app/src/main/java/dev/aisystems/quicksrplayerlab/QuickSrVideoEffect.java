@@ -18,6 +18,8 @@ import androidx.media3.effect.GlShaderProgram;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 
+import org.json.JSONObject;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
@@ -208,6 +210,15 @@ final class QuickSrVideoEffect implements GlEffect {
 
     interface StatsListener {
         void onFrameProcessed(FrameStats stats);
+
+        default void onQnnStrictEvidence(JSONObject qnnStrict) {
+        }
+
+        default void onEvidenceCaptured(JSONObject evidence) {
+        }
+
+        default void onProcessingError(String stage, Throwable failure) {
+        }
     }
 
     static final class FrameStats {
@@ -354,11 +365,13 @@ final class QuickSrVideoEffect implements GlEffect {
             QuickSrSession.Mode mode,
             Profile profile,
             StatsListener listener) {
-        processor = new ProcessorImpl(
-                context.getApplicationContext(),
+        this(
+                context,
                 mode,
                 profile,
                 QuickSrSession.Tuning.BASELINE,
+                null,
+                VideoEvidenceStore.CaptureSpec.none(),
                 listener);
     }
 
@@ -368,11 +381,31 @@ final class QuickSrVideoEffect implements GlEffect {
             Profile profile,
             QuickSrSession.Tuning tuning,
             StatsListener listener) {
+        this(
+                context,
+                mode,
+                profile,
+                tuning,
+                null,
+                VideoEvidenceStore.CaptureSpec.none(),
+                listener);
+    }
+
+    QuickSrVideoEffect(
+            Context context,
+            QuickSrSession.Mode mode,
+            Profile profile,
+            QuickSrSession.Tuning tuning,
+            String benchmarkRunId,
+            VideoEvidenceStore.CaptureSpec captureSpec,
+            StatsListener listener) {
         processor = new ProcessorImpl(
                 context.getApplicationContext(),
                 mode,
                 profile,
                 tuning,
+                benchmarkRunId,
+                captureSpec,
                 listener);
     }
 
@@ -501,6 +534,8 @@ final class QuickSrVideoEffect implements GlEffect {
         private final QuickSrSession.Mode mode;
         private final Profile profile;
         private final QuickSrSession.Tuning tuning;
+        private final String benchmarkRunId;
+        private final VideoEvidenceStore.CaptureSpec captureSpec;
         private final StatsListener listener;
         private final ExecutorService inferenceExecutor;
         private final Object inputBufferPoolLock = new Object();
@@ -522,6 +557,8 @@ final class QuickSrVideoEffect implements GlEffect {
         private byte[] outputRgbaScratch;
         private final QuickSrSession.RunTimings runTimings = new QuickSrSession.RunTimings();
         private boolean qnnLockHeld;
+        private boolean qnnStrictEvidenceReported;
+        private boolean evidenceCaptureReserved;
         private int frameNumber;
         private int neuralTextureId;
         private int neuralFboId;
@@ -531,7 +568,14 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Mode mode,
                 Profile profile,
                 StatsListener listener) {
-            this(context, mode, profile, QuickSrSession.Tuning.BASELINE, listener);
+            this(
+                    context,
+                    mode,
+                    profile,
+                    QuickSrSession.Tuning.BASELINE,
+                    null,
+                    VideoEvidenceStore.CaptureSpec.none(),
+                    listener);
         }
 
         ProcessorImpl(
@@ -539,11 +583,28 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Mode mode,
                 Profile profile,
                 QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
                 StatsListener listener) {
+            if (captureSpec == null) {
+                captureSpec = VideoEvidenceStore.CaptureSpec.none();
+            }
+            if (captureSpec.isRequested()) {
+                if (mode != QuickSrSession.Mode.QNN_HTP) {
+                    throw new IllegalArgumentException(
+                            "Video tensor capture is restricted to the QNN HTP benchmark path");
+                }
+                if (!VideoEvidenceStore.isSafeRunId(benchmarkRunId)) {
+                    throw new IllegalArgumentException(
+                            "Video tensor capture requires a safe benchmark run id");
+                }
+            }
             this.context = context;
             this.mode = mode;
             this.profile = profile;
             this.tuning = tuning;
+            this.benchmarkRunId = benchmarkRunId;
+            this.captureSpec = captureSpec;
             this.listener = listener;
             this.inferenceExecutor = Executors.newSingleThreadExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "QuickSR-video-inference");
@@ -647,9 +708,35 @@ final class QuickSrVideoEffect implements GlEffect {
                 if (released) {
                     throw new InterruptedException("QuickSR video effect released before inference");
                 }
+                int candidateFrame = frameNumber + 1;
+                if (captureSpec.isRequested()
+                        && !evidenceCaptureReserved
+                        && captureSpec.hasBeenMissedBy(candidateFrame, presentationTimeUs)) {
+                    throw new IllegalStateException(
+                            "Requested video evidence selector was not observed before frame "
+                                    + candidateFrame + " at ptsUs=" + presentationTimeUs);
+                }
                 long inferenceStartedNs = SystemClock.elapsedRealtimeNanos();
                 activeSession.infer(inputTensorScratch, outputTensorScratch, runTimings);
                 long inferenceFinishedNs = SystemClock.elapsedRealtimeNanos();
+                if (captureSpec.isRequested()
+                        && !evidenceCaptureReserved
+                        && captureSpec.matches(candidateFrame, presentationTimeUs)) {
+                    evidenceCaptureReserved = true;
+                    JSONObject evidence = VideoEvidenceStore.write(
+                            context,
+                            benchmarkRunId,
+                            captureSpec,
+                            candidateFrame,
+                            presentationTimeUs,
+                            profile,
+                            inputTensorScratch,
+                            outputTensorScratch,
+                            activeSession.qnnStrictEvidence());
+                    if (listener != null) {
+                        listener.onEvidenceCaptured(evidence);
+                    }
+                }
                 packNchwToRgba(
                         outputTensorScratch,
                         rgba,
@@ -696,6 +783,13 @@ final class QuickSrVideoEffect implements GlEffect {
                             presentationTimeUs));
                 }
             } catch (Throwable failure) {
+                if (listener != null) {
+                    try {
+                        listener.onProcessingError("video-inference", failure);
+                    } catch (Throwable ignored) {
+                        // Preserve the original inference failure as the Media3 error.
+                    }
+                }
                 resultFuture.setException(failure);
             } finally {
                 recycleInputBuffer(rgba);
@@ -787,10 +881,13 @@ final class QuickSrVideoEffect implements GlEffect {
                     throw new InterruptedException(
                             "QuickSR video effect released after QNN lock acquisition");
                 }
+                String sessionRunId = VideoEvidenceStore.isSafeRunId(benchmarkRunId)
+                        ? benchmarkRunId
+                        : "video-" + ReceiptStore.newRunId();
                 QuickSrSession openedSession = QuickSrSession.open(
                         context,
                         mode,
-                        "video-" + ReceiptStore.newRunId(),
+                        sessionRunId,
                         profile.modelVariant(),
                         tuning);
                 if (openedSession.inputWidth() != profile.inputWidth()
@@ -805,6 +902,31 @@ final class QuickSrVideoEffect implements GlEffect {
                                     + openedSession.inputHeight() + "->"
                                     + openedSession.outputWidth() + "x"
                                     + openedSession.outputHeight());
+                }
+                if (mode == QuickSrSession.Mode.QNN_HTP) {
+                    JSONObject qnnStrict = openedSession.qnnStrictEvidence();
+                    if (qnnStrict == null || !qnnStrict.optBoolean("strictReady", false)) {
+                        openedSession.close();
+                        throw new IllegalStateException(
+                                "QNN video session did not establish strict HTP registration evidence");
+                    }
+                    if (listener != null
+                            && VideoEvidenceStore.isSafeRunId(benchmarkRunId)
+                            && !qnnStrictEvidenceReported) {
+                        try {
+                            listener.onQnnStrictEvidence(qnnStrict);
+                            qnnStrictEvidenceReported = true;
+                        } catch (Throwable callbackFailure) {
+                            try {
+                                openedSession.close();
+                            } catch (Throwable closeFailure) {
+                                callbackFailure.addSuppressed(closeFailure);
+                            }
+                            throw new IllegalStateException(
+                                    "Could not publish strict QNN video evidence",
+                                    callbackFailure);
+                        }
+                    }
                 }
                 session = openedSession;
                 return session;

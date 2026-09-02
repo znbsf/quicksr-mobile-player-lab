@@ -44,7 +44,7 @@
 - 结论：QuickSRNetSmall 更适合干净线稿和漫画；严重模糊或压缩素材应回退 Lanczos，或换用针对退化训练的模型。
 - 已存档的 v0.12.0 单机 720p QNN smoke：`645 帧 / 26.860 秒 = 24.0134 FPS`，四个约 5 秒 MediaCodec 窗口 Drop=0。
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
-- v0.14.0 的 1080p/1440p 新档仍需物理 Qualcomm 设备完成 QNN 持续性能验证。
+- v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
 
 完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。
 
@@ -159,22 +159,50 @@ APK、模型和设备日志都被 Git 忽略，不应上传到 GitHub Releases�
 
 ## 真机 QNN 分辨率矩阵
 
-连接一台 arm64 Qualcomm 手机，并准备一个 App 可读取的本地视频 URI：
+矩阵只接受一台 arm64 Qualcomm 物理手机和已绑定的权利清晰本地素材；模拟器、任意 URI 和未绑定媒体都会被拒绝。先用
+[`mobile-rights-clear-subset.json`](contracts/mobile-rights-clear-subset.json)
+物化并登记素材，收据及其 URI 保持在 Git 忽略目录：
+
+```powershell
+$receiptPath = '.\local-artifacts\mobile-subset\push-receipt-<clip>.json'
+$receipt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
+
+.\scripts\run-android-qnn-resolution-matrix.ps1 `
+  -ApkPath .\app\build\outputs\apk\debug\app-debug.apk `
+  -VideoUri $receipt.mediaStoreUri `
+  -MediaRegistrationReceipt $receiptPath
+```
+
+默认只按 [机器可读计划](contracts/android-qnn-resolution-plan.json) 运行
+`720p-baseline -> 1080p-primary`。1080p 必须先有同一素材、同一收据的
+功能 PASS 报告，才能显式尝试 1440p 实验档或 4K 显示回退档：
 
 ```powershell
 .\scripts\run-android-qnn-resolution-matrix.ps1 `
   -ApkPath .\app\build\outputs\apk\debug\app-debug.apk `
-  -VideoUri 'content://media/external/video/media/<id>'
+  -VideoUri $receipt.mediaStoreUri `
+  -MediaRegistrationReceipt $receiptPath `
+  -CaseId 1440p-experimental `
+  -IncludeExperimental `
+  -PrimaryReportPath <matching-ignored-1080p-report>
 ```
 
-脚本按 [机器可读计划](contracts/android-qnn-resolution-plan.json) 运行 720p、1080p、1440p 和 4K 显示四档，丢弃 warm-up 帧并验证：
+矩阵会丢弃 warm-up 帧并验证：
 
 - 后端确实是 QNN HTP，不能静默回退 CPU；
 - tuning、模型尺寸和画布尺寸与计划一致；
 - 没有设备错误且样本数达到要求；
 - 分别输出功能门禁以及 `realtime_30`、`realtime_24`、`offline` 性能分类。
 
-原始日志和报告保存在被 Git 忽略的 `device-results/`。
+QNN 严格遥测证明的是会话配置；它不证明每个节点的 EP placement，也不替代
+底层 fallback trace。原始日志、收据、张量和报告保存在被 Git 忽略的
+`device-results/` 或 `local-artifacts/`。
+
+2026-09-02 的权利清晰移动子集实机结果为 11/11 720p 与 11/11 1080p
+功能 PASS，全部为 `offline`；受门禁的 1440p 与 4K 显示回退也为功能 PASS/
+`offline`。27 个合同选帧均完成 Android QNN 对 PC CPU 的数值比较（零失配、
+零非有限值）并生成 Lanczos 基线。完整边界、指标和复现步骤见
+[Android mobile subset validation](docs/ANDROID_MOBILE_SUBSET_VALIDATION.md)。
 
 ## 上游项目
 

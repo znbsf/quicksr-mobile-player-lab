@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -23,6 +24,24 @@ TIMING_FIELDS = (
     "outputConversionMs",
     "totalProcessingMs",
 )
+
+VALIDATOR_VERSION = "android-qnn-resolution-validator-v2"
+
+# These values are emitted only by the post-session ``qnn_strict`` event.
+# Configuration and frame-mode labels are application intent, not evidence that
+# QNN registration, NPU selection, and strict no-CPU-fallback setup succeeded.
+STRICT_QNN_EVIDENCE_FIELDS: dict[str, Any] = {
+    "registrationStatus": "PASS",
+    "npuSelectionStatus": "PASS",
+    "providerConfigurationStatus": "PASS",
+    "cpuEpFallbackDisabled": True,
+    "backendType": "htp",
+    "diagnosticOnly": False,
+    "strictReady": True,
+    "providerAssignmentVerified": False,
+    "providerFallbackTraceCaptured": False,
+    "evidenceScope": "SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF",
+}
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -89,6 +108,38 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             if configuration.get(field) != expected:
                 failures.append(f"configuration {field}: expected {expected!r}, got {configuration.get(field)!r}")
 
+    strict_events = [event for event in events if event.get("event") == "qnn_strict"]
+    if len(strict_events) != 1:
+        failures.append(f"expected exactly one qnn_strict event, found {len(strict_events)}")
+    elif strict_events:
+        strict_event = strict_events[0]
+        for field, expected in {
+            "schemaVersion": 1,
+            "runId": run_id,
+            "mode": "QNN_HTP",
+            "profile": case["profile"],
+        }.items():
+            if strict_event.get(field) != expected:
+                failures.append(
+                    f"qnn strict {field}: expected {expected!r}, got {strict_event.get(field)!r}"
+                )
+        strict_evidence = strict_event.get("qnnStrict")
+        if not isinstance(strict_evidence, dict):
+            failures.append("qnn strict evidence is missing or not an object")
+        else:
+            for field, expected in STRICT_QNN_EVIDENCE_FIELDS.items():
+                if strict_evidence.get(field) != expected:
+                    failures.append(
+                        f"qnn strict {field}: expected {expected!r}, got {strict_evidence.get(field)!r}"
+                    )
+            selected_npu_count = strict_evidence.get("selectedNpuDeviceCount")
+            if not isinstance(selected_npu_count, int) or isinstance(selected_npu_count, bool) \
+                    or selected_npu_count < 1:
+                failures.append(
+                    "qnn strict selectedNpuDeviceCount: expected a positive integer, "
+                    f"got {selected_npu_count!r}"
+                )
+
     samples_by_frame: dict[int, dict[str, Any]] = {}
     for batch in (event for event in events if event.get("event") == "frame_batch"):
         for field, expected in {
@@ -154,7 +205,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             performance_class = "offline"
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "plan_id": plan["plan_id"],
         "case_id": case["id"],
         "run_id": run_id,
@@ -175,10 +226,15 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    plan_bytes = args.plan.read_bytes()
+    raw_log_bytes = args.log.read_bytes()
+    plan = json.loads(plan_bytes.decode("utf-8"))
     case = find_case(plan, args.case_id)
     events, parse_errors = load_events(args.log, args.run_id)
     report = validate(plan, case, events, args.run_id, parse_errors)
+    report["validator_version"] = VALIDATOR_VERSION
+    report["plan_sha256"] = hashlib.sha256(plan_bytes).hexdigest()
+    report["raw_log_sha256"] = hashlib.sha256(raw_log_bytes).hexdigest()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"{report['functional_gate']} {case['id']}: {report['performance_class']} "

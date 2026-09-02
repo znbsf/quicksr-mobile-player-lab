@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "plan_id": "android-qnn-resolution-matrix-v1",
   "app_package": "dev.aisystems.quicksrplayerlab",
   "activity": "dev.aisystems.quicksrplayerlab/.SuperResolutionActivity",
@@ -8,7 +8,8 @@
     "run_id": "dev.aisystems.quicksrplayerlab.extra.BENCHMARK_RUN_ID",
     "video_mode": "dev.aisystems.quicksrplayerlab.extra.VIDEO_MODE",
     "video_profile": "dev.aisystems.quicksrplayerlab.extra.VIDEO_PROFILE",
-    "video_tuning": "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING"
+    "video_tuning": "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING",
+    "capture_frame": "dev.aisystems.quicksrplayerlab.extra.CAPTURE_FRAME"
   },
   "device_requirements": {
     "abi": "arm64-v8a",
@@ -51,6 +52,7 @@
       "model_output": [2560, 1440],
       "canvas": [2560, 1440],
       "native_neural_output": true,
+      "requires_functional_pass": ["1080p-primary"],
       "minimum_measured_frames": 60,
       "run_seconds": 30
     },
@@ -62,6 +64,7 @@
       "model_output": [1920, 1080],
       "canvas": [3840, 2160],
       "native_neural_output": false,
+      "requires_functional_pass": ["1080p-primary"],
       "minimum_measured_frames": 60,
       "run_seconds": 30
     }

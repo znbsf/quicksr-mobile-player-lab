@@ -109,11 +109,15 @@ public final class SuperResolutionActivity extends Activity {
     private volatile long imageTaskGeneration;
     private volatile boolean activityDestroyed;
     private volatile boolean benchmarkIntentActive;
+    private boolean benchmarkPlaybackRepeats;
     private boolean qnnEnvironmentReady;
     private String benchmarkRunId;
     private QuickSrSession.Mode benchmarkMode;
     private QuickSrSession.Tuning benchmarkTuning;
     private QuickSrVideoEffect.Profile benchmarkProfile;
+    private VideoEvidenceStore.CaptureSpec benchmarkCaptureSpec =
+            VideoEvidenceStore.CaptureSpec.none();
+    private JSONObject benchmarkQnnStrictEvidence;
     private VideoMode videoMode = BuildConfig.QNN_RUNTIME_EXPECTED
             ? VideoMode.QUICKSR_QNN
             : VideoMode.QUICKSR_CPU;
@@ -142,6 +146,7 @@ public final class SuperResolutionActivity extends Activity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 logBenchmarkError("player", safeMessage(error));
+                logBenchmarkTerminal("FAIL", "player");
                 updateVideoStatus("视频播放失败：" + safeMessage(error));
             }
 
@@ -151,6 +156,7 @@ public final class SuperResolutionActivity extends Activity {
                     updateVideoStatus("正在读取视频……");
                 } else if (playbackState == Player.STATE_ENDED) {
                     flushBenchmarkStats();
+                    logBenchmarkTerminal("PLAYBACK_ENDED", "player");
                 }
             }
         });
@@ -427,6 +433,7 @@ public final class SuperResolutionActivity extends Activity {
         if (requestCode == REQUEST_IMAGE) {
             runFullImage(uri);
         } else if (requestCode == REQUEST_VIDEO) {
+            clearBenchmarkTelemetry();
             rememberLastVideo(uri, data);
             playVideo(uri);
         } else if (requestCode == REQUEST_SAVE_IMAGE) {
@@ -676,6 +683,7 @@ public final class SuperResolutionActivity extends Activity {
     private void playVideo(Uri uri) {
         try {
             applyVideoEffects();
+            applyBenchmarkRepeatMode();
             player.setMediaItem(MediaItem.fromUri(uri));
             player.prepare();
             player.play();
@@ -691,6 +699,7 @@ public final class SuperResolutionActivity extends Activity {
             updateVideoStatus("还没有保存过视频，请先选择一次本地视频。");
             return;
         }
+        clearBenchmarkTelemetry();
         playVideo(uri);
     }
 
@@ -784,19 +793,28 @@ public final class SuperResolutionActivity extends Activity {
                 intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_RUN_ID)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_MODE)
                         || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_PROFILE)
-                        || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_TUNING));
+                        || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_TUNING)
+                        || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_CAPTURE_FRAME)
+                        || intent.hasExtra(VideoBenchmarkTelemetry.EXTRA_CAPTURE_PTS_US));
         if (!requested) {
             clearBenchmarkTelemetry();
             return true;
         }
+        setBenchmarkPlaybackRepeats(false);
         String runId = intent.getStringExtra(VideoBenchmarkTelemetry.EXTRA_RUN_ID);
         String requestedMode = intent.getStringExtra(VideoBenchmarkTelemetry.EXTRA_VIDEO_MODE);
         String requestedProfile = intent.getStringExtra(
                 VideoBenchmarkTelemetry.EXTRA_VIDEO_PROFILE);
         String requestedTuning = intent.getStringExtra(
                 VideoBenchmarkTelemetry.EXTRA_VIDEO_TUNING);
+        boolean captureFrameRequested = intent.hasExtra(
+                VideoBenchmarkTelemetry.EXTRA_CAPTURE_FRAME);
+        boolean capturePtsRequested = intent.hasExtra(
+                VideoBenchmarkTelemetry.EXTRA_CAPTURE_PTS_US);
         benchmarkIntentActive = true;
         benchmarkRunId = validBenchmarkRunId(runId) ? runId : "invalid-run-id";
+        benchmarkCaptureSpec = VideoEvidenceStore.CaptureSpec.none();
+        benchmarkQnnStrictEvidence = null;
         if (!validBenchmarkRunId(runId)
                 || requestedMode == null
                 || requestedProfile == null
@@ -810,6 +828,21 @@ public final class SuperResolutionActivity extends Activity {
                     QuickSrVideoEffect.Profile.valueOf(requestedProfile);
             QuickSrSession.Tuning selectedTuning =
                     QuickSrSession.Tuning.valueOf(requestedTuning);
+            if (captureFrameRequested && capturePtsRequested) {
+                return benchmarkConfigurationFailure(
+                        "Specify at most one video evidence selector: frame or ptsUs");
+            }
+            VideoEvidenceStore.CaptureSpec captureSpec = VideoEvidenceStore.CaptureSpec.none();
+            if (captureFrameRequested) {
+                captureSpec = VideoEvidenceStore.CaptureSpec.forFrame(intent.getIntExtra(
+                        VideoBenchmarkTelemetry.EXTRA_CAPTURE_FRAME,
+                        -1));
+            } else if (capturePtsRequested) {
+                captureSpec = VideoEvidenceStore.CaptureSpec.forPresentationTimeUs(
+                        intent.getLongExtra(
+                                VideoBenchmarkTelemetry.EXTRA_CAPTURE_PTS_US,
+                                -1L));
+            }
             if (selectedMode != VideoMode.QUICKSR_QNN
                     && selectedMode != VideoMode.QUICKSR_CPU) {
                 return benchmarkConfigurationFailure(
@@ -819,6 +852,10 @@ public final class SuperResolutionActivity extends Activity {
                     && (!BuildConfig.QNN_RUNTIME_EXPECTED || !qnnEnvironmentReady)) {
                 return benchmarkConfigurationFailure(
                         "QUICKSR_QNN requested but the QNN runtime is unavailable");
+            }
+            if (captureSpec.isRequested() && selectedMode != VideoMode.QUICKSR_QNN) {
+                return benchmarkConfigurationFailure(
+                        "Video tensor capture is restricted to QUICKSR_QNN");
             }
             videoMode = selectedMode;
             videoNeuralProfileSpinner.setSelection(selectedProfile.ordinal());
@@ -830,6 +867,8 @@ public final class SuperResolutionActivity extends Activity {
                     ? selectedTuning
                     : QuickSrSession.Tuning.BASELINE;
             benchmarkProfile = selectedProfile;
+            benchmarkCaptureSpec = captureSpec;
+            setBenchmarkPlaybackRepeats(true);
             synchronized (benchmarkStatsLock) {
                 benchmarkStatsBatch.clear();
             }
@@ -841,7 +880,8 @@ public final class SuperResolutionActivity extends Activity {
                             selectedMode.name(),
                             benchmarkTuning,
                             benchmarkProfile,
-                            BuildConfig.QNN_RUNTIME_EXPECTED));
+                            BuildConfig.QNN_RUNTIME_EXPECTED,
+                            benchmarkCaptureSpec));
             return true;
         } catch (IllegalArgumentException failure) {
             return benchmarkConfigurationFailure(
@@ -850,6 +890,7 @@ public final class SuperResolutionActivity extends Activity {
     }
 
     private boolean benchmarkConfigurationFailure(String message) {
+        setBenchmarkPlaybackRepeats(false);
         logBenchmarkError("configuration", message);
         updateVideoStatus("设备基准配置失败：" + message);
         return false;
@@ -860,6 +901,21 @@ public final class SuperResolutionActivity extends Activity {
                 && value.length() >= 1
                 && value.length() <= 80
                 && value.matches("[A-Za-z0-9._-]+");
+    }
+
+    static int repeatModeForBenchmark(boolean benchmarkPlaybackRepeats) {
+        return benchmarkPlaybackRepeats ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF;
+    }
+
+    private void setBenchmarkPlaybackRepeats(boolean repeats) {
+        benchmarkPlaybackRepeats = repeats;
+        applyBenchmarkRepeatMode();
+    }
+
+    private void applyBenchmarkRepeatMode() {
+        if (player != null) {
+            player.setRepeatMode(repeatModeForBenchmark(benchmarkPlaybackRepeats));
+        }
     }
 
     private void recordBenchmarkStats(QuickSrVideoEffect.FrameStats stats) {
@@ -901,19 +957,79 @@ public final class SuperResolutionActivity extends Activity {
     }
 
     private void logBenchmarkError(String stage, String message) {
-        if (benchmarkIntentActive && benchmarkRunId != null) {
+        logBenchmarkError(benchmarkRunId, stage, message);
+    }
+
+    private void logBenchmarkError(String runId, String stage, String message) {
+        if (isActiveBenchmarkRun(runId)) {
             Log.e(
                     VideoBenchmarkTelemetry.TAG,
-                    VideoBenchmarkTelemetry.errorJson(benchmarkRunId, stage, message));
+                    VideoBenchmarkTelemetry.errorJson(runId, stage, message));
         }
+    }
+
+    private void recordBenchmarkQnnStrictEvidence(
+            String runId,
+            QuickSrVideoEffect.Profile profile,
+            JSONObject qnnStrict) {
+        if (!isActiveBenchmarkRun(runId)) {
+            return;
+        }
+        benchmarkQnnStrictEvidence = qnnStrict;
+        Log.i(
+                VideoBenchmarkTelemetry.TAG,
+                VideoBenchmarkTelemetry.qnnStrictJson(runId, profile, qnnStrict));
+    }
+
+    private void recordBenchmarkEvidenceCapture(String runId, JSONObject evidence) {
+        if (!isActiveBenchmarkRun(runId)) {
+            return;
+        }
+        Log.i(
+                VideoBenchmarkTelemetry.TAG,
+                VideoBenchmarkTelemetry.evidenceCaptureJson(runId, evidence));
+    }
+
+    private void recordBenchmarkProcessingError(String runId, String stage, Throwable failure) {
+        if (!isActiveBenchmarkRun(runId)) {
+            return;
+        }
+        logBenchmarkError(runId, stage, safeMessage(failure));
+        Log.e(
+                VideoBenchmarkTelemetry.TAG,
+                VideoBenchmarkTelemetry.terminalJson(
+                        runId,
+                        "FAIL",
+                        stage,
+                        benchmarkQnnStrictEvidence));
+    }
+
+    private void logBenchmarkTerminal(String status, String stage) {
+        if (!isActiveBenchmarkRun(benchmarkRunId)) {
+            return;
+        }
+        Log.i(
+                VideoBenchmarkTelemetry.TAG,
+                VideoBenchmarkTelemetry.terminalJson(
+                        benchmarkRunId,
+                        status,
+                        stage,
+                        benchmarkQnnStrictEvidence));
+    }
+
+    private boolean isActiveBenchmarkRun(String runId) {
+        return benchmarkIntentActive && runId != null && runId.equals(benchmarkRunId);
     }
 
     private void clearBenchmarkTelemetry() {
         benchmarkIntentActive = false;
+        setBenchmarkPlaybackRepeats(false);
         benchmarkRunId = null;
         benchmarkMode = null;
         benchmarkTuning = null;
         benchmarkProfile = null;
+        benchmarkCaptureSpec = VideoEvidenceStore.CaptureSpec.none();
+        benchmarkQnnStrictEvidence = null;
         synchronized (benchmarkStatsLock) {
             benchmarkStatsBatch.clear();
         }
@@ -957,53 +1073,92 @@ public final class SuperResolutionActivity extends Activity {
             }
             final QuickSrVideoEffect.Profile profile = selectedProfile;
             final QuickSrSession.Tuning tuning = selectedTuning;
+            final String effectBenchmarkRunId = benchmarkIntentActive
+                    && VideoEvidenceStore.isSafeRunId(benchmarkRunId)
+                    ? benchmarkRunId
+                    : null;
+            final VideoEvidenceStore.CaptureSpec effectCaptureSpec = effectBenchmarkRunId == null
+                    ? VideoEvidenceStore.CaptureSpec.none()
+                    : benchmarkCaptureSpec;
             Effect effect = new QuickSrVideoEffect(
                     getApplicationContext(),
                     backend,
                     profile,
                     tuning,
-                    stats -> {
-                        recordBenchmarkStats(stats);
-                        if (stats.frameNumber != 1 && stats.frameNumber % 15 != 0) {
-                            return;
-                        }
-                        runOnUiThread(() -> {
-                            if (!activityDestroyed && videoModeMatches(stats.mode)
-                                    && videoProfileMatches(stats.profile)
-                                    && videoTuningMatches(stats.tuning)) {
-                                updateVideoStatus(String.format(
-                                        Locale.US,
-                                        "%s · %s · %s：已完成 %d 帧\n" +
-                                                "效果画布 %d×%d；神经 %d×%d→%d×%d；" +
-                                                "会话/复制/排队/RGBA转张量/整段推理/输出转RGBA/总计 " +
-                                                "%d/%d/%d/%d/%d/%d/%d ms\n" +
-                                                "推理拆分：输入拷贝/ORT run/输出拷贝/finite扫描 " +
-                                                "%d/%d/%d/%d ms%s；PTS %.3f s",
-                                        stats.mode,
-                                        videoTuningLabel(stats.mode, stats.tuning),
-                                        stats.profile,
-                                        stats.frameNumber,
-                                        stats.effectInputWidth,
-                                        stats.effectInputHeight,
-                                        stats.modelInputWidth,
-                                        stats.modelInputHeight,
-                                        stats.modelOutputWidth,
-                                        stats.modelOutputHeight,
-                                        stats.sessionSetupMs,
-                                        stats.copyMs,
-                                        stats.queueMs,
-                                        stats.inputConversionMs,
-                                        stats.inferenceMs,
-                                        stats.outputConversionMs,
-                                        stats.totalProcessingMs,
-                                        stats.tensorInputCopyMs,
-                                        stats.ortRunMs,
-                                        stats.tensorOutputCopyMs,
-                                        stats.finiteScanMs,
-                                        stats.finiteScanExecuted ? "" : "（本帧跳过扫描）",
-                                        stats.presentationTimeUs / 1_000_000.0));
+                    effectBenchmarkRunId,
+                    effectCaptureSpec,
+                    new QuickSrVideoEffect.StatsListener() {
+                        @Override
+                        public void onFrameProcessed(QuickSrVideoEffect.FrameStats stats) {
+                            recordBenchmarkStats(stats);
+                            if (stats.frameNumber != 1 && stats.frameNumber % 15 != 0) {
+                                return;
                             }
-                        });
+                            runOnUiThread(() -> {
+                                if (!activityDestroyed && videoModeMatches(stats.mode)
+                                        && videoProfileMatches(stats.profile)
+                                        && videoTuningMatches(stats.tuning)) {
+                                    updateVideoStatus(String.format(
+                                            Locale.US,
+                                            "%s · %s · %s：已完成 %d 帧\n" +
+                                                    "效果画布 %d×%d；神经 %d×%d→%d×%d；" +
+                                                    "会话/复制/排队/RGBA转张量/整段推理/输出转RGBA/总计 " +
+                                                    "%d/%d/%d/%d/%d/%d/%d ms\n" +
+                                                    "推理拆分：输入拷贝/ORT run/输出拷贝/finite扫描 " +
+                                                    "%d/%d/%d/%d ms%s；PTS %.3f s",
+                                            stats.mode,
+                                            videoTuningLabel(stats.mode, stats.tuning),
+                                            stats.profile,
+                                            stats.frameNumber,
+                                            stats.effectInputWidth,
+                                            stats.effectInputHeight,
+                                            stats.modelInputWidth,
+                                            stats.modelInputHeight,
+                                            stats.modelOutputWidth,
+                                            stats.modelOutputHeight,
+                                            stats.sessionSetupMs,
+                                            stats.copyMs,
+                                            stats.queueMs,
+                                            stats.inputConversionMs,
+                                            stats.inferenceMs,
+                                            stats.outputConversionMs,
+                                            stats.totalProcessingMs,
+                                            stats.tensorInputCopyMs,
+                                            stats.ortRunMs,
+                                            stats.tensorOutputCopyMs,
+                                            stats.finiteScanMs,
+                                            stats.finiteScanExecuted ? "" : "（本帧跳过扫描）",
+                                            stats.presentationTimeUs / 1_000_000.0));
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onQnnStrictEvidence(JSONObject qnnStrict) {
+                            if (effectBenchmarkRunId != null) {
+                                recordBenchmarkQnnStrictEvidence(
+                                        effectBenchmarkRunId,
+                                        profile,
+                                        qnnStrict);
+                            }
+                        }
+
+                        @Override
+                        public void onEvidenceCaptured(JSONObject evidence) {
+                            if (effectBenchmarkRunId != null) {
+                                recordBenchmarkEvidenceCapture(effectBenchmarkRunId, evidence);
+                            }
+                        }
+
+                        @Override
+                        public void onProcessingError(String stage, Throwable failure) {
+                            if (effectBenchmarkRunId != null) {
+                                recordBenchmarkProcessingError(
+                                        effectBenchmarkRunId,
+                                        stage,
+                                        failure);
+                            }
+                        }
                     });
             // ByteBufferGlEffect keeps the dimensions of its input texture for its output pool.
             // Establish the display canvas first, then let QuickSR downsample only its readback
@@ -1216,6 +1371,7 @@ public final class SuperResolutionActivity extends Activity {
     @Override
     protected void onDestroy() {
         flushBenchmarkStats();
+        logBenchmarkTerminal("ACTIVITY_DESTROYED", "activity");
         activityDestroyed = true;
         ++imageTaskGeneration;
         Future<?> imageTask = activeImageTask;

@@ -2,6 +2,8 @@ package dev.aisystems.quicksrplayerlab;
 
 import androidx.media3.common.util.UnstableApi;
 
+import org.json.JSONObject;
+
 import java.util.List;
 
 @UnstableApi
@@ -11,17 +13,36 @@ final class VideoBenchmarkTelemetry {
     static final String EXTRA_VIDEO_MODE = "dev.aisystems.quicksrplayerlab.extra.VIDEO_MODE";
     static final String EXTRA_VIDEO_PROFILE = "dev.aisystems.quicksrplayerlab.extra.VIDEO_PROFILE";
     static final String EXTRA_VIDEO_TUNING = "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING";
+    static final String EXTRA_CAPTURE_FRAME = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_FRAME";
+    static final String EXTRA_CAPTURE_PTS_US = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_PTS_US";
     static final int FRAME_BATCH_SIZE = 10;
 
     private VideoBenchmarkTelemetry() {}
 
     static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
             QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected) {
+        return configurationJson(
+                runId,
+                mode,
+                tuning,
+                profile,
+                qnnRuntimeExpected,
+                VideoEvidenceStore.CaptureSpec.none());
+    }
+
+    static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
+            QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
+            VideoEvidenceStore.CaptureSpec captureSpec) {
         StringBuilder value = envelope("configuration", runId);
         stringField(value, "mode", mode);
         stringField(value, "tuning", tuning.name());
         stringField(value, "profile", profile.name());
         booleanField(value, "qnnRuntimeExpected", qnnRuntimeExpected);
+        booleanField(value, "qnnStrictRequired", "QUICKSR_QNN".equals(mode));
+        if (captureSpec != null && captureSpec.isRequested()) {
+            stringField(value, "captureSelectorKind", captureSpec.telemetryKind());
+            numberField(value, "captureSelectorValue", captureSpec.value());
+        }
         numberField(value, "modelInputWidth", profile.inputWidth());
         numberField(value, "modelInputHeight", profile.inputHeight());
         numberField(value, "modelOutputWidth", profile.outputWidth());
@@ -82,6 +103,88 @@ final class VideoBenchmarkTelemetry {
         return finish(value);
     }
 
+    static String qnnStrictJson(
+            String runId,
+            QuickSrVideoEffect.Profile profile,
+            JSONObject qnnStrict) {
+        if (qnnStrict == null) {
+            throw new IllegalArgumentException("QNN strict evidence is required");
+        }
+        return qnnStrictJson(
+                runId,
+                profile,
+                qnnStrict.toString(),
+                qnnStrict.optBoolean("providerAssignmentVerified", false),
+                qnnStrict.optBoolean("providerFallbackTraceCaptured", false),
+                qnnStrict.optString(
+                        "evidenceScope",
+                        QnnPluginRuntime.VIDEO_STRICT_EVIDENCE_SCOPE));
+    }
+
+    static String qnnStrictJson(
+            String runId,
+            QuickSrVideoEffect.Profile profile,
+            String qnnStrictJson) {
+        if (qnnStrictJson == null || qnnStrictJson.isBlank()) {
+            throw new IllegalArgumentException("QNN strict evidence is required");
+        }
+        return qnnStrictJson(
+                runId,
+                profile,
+                qnnStrictJson,
+                false,
+                false,
+                QnnPluginRuntime.VIDEO_STRICT_EVIDENCE_SCOPE);
+    }
+
+    private static String qnnStrictJson(
+            String runId,
+            QuickSrVideoEffect.Profile profile,
+            String qnnStrictJson,
+            boolean providerAssignmentVerified,
+            boolean providerFallbackTraceCaptured,
+            String evidenceScope) {
+        StringBuilder value = envelope("qnn_strict", runId);
+        stringField(value, "mode", QuickSrSession.Mode.QNN_HTP.name());
+        stringField(value, "profile", profile.name());
+        stringField(value, "modelVariant", profile.modelVariant().id());
+        booleanField(value, "providerAssignmentVerified", providerAssignmentVerified);
+        booleanField(value, "providerFallbackTraceCaptured", providerFallbackTraceCaptured);
+        stringField(value, "evidenceScope", evidenceScope);
+        jsonField(value, "qnnStrict", qnnStrictJson);
+        return finish(value);
+    }
+
+    static String evidenceCaptureJson(String runId, JSONObject evidence) {
+        StringBuilder value = envelope("evidence_capture", runId);
+        jsonField(value, "evidence", evidence);
+        return finish(value);
+    }
+
+    static String terminalJson(String runId, String status, String stage, JSONObject qnnStrict) {
+        StringBuilder value = envelope("terminal", runId);
+        stringField(value, "status", status);
+        stringField(value, "stage", stage);
+        if (qnnStrict != null) {
+            booleanField(
+                    value,
+                    "providerAssignmentVerified",
+                    qnnStrict.optBoolean("providerAssignmentVerified", false));
+            booleanField(
+                    value,
+                    "providerFallbackTraceCaptured",
+                    qnnStrict.optBoolean("providerFallbackTraceCaptured", false));
+            stringField(
+                    value,
+                    "evidenceScope",
+                    qnnStrict.optString(
+                            "evidenceScope",
+                            QnnPluginRuntime.VIDEO_STRICT_EVIDENCE_SCOPE));
+            jsonField(value, "qnnStrict", qnnStrict);
+        }
+        return finish(value);
+    }
+
     private static StringBuilder envelope(String event, String runId) {
         StringBuilder value = new StringBuilder(512);
         value.append('{');
@@ -106,6 +209,14 @@ final class VideoBenchmarkTelemetry {
     }
 
     private static void booleanField(StringBuilder value, String name, boolean fieldValue) {
+        separator(value); quoted(value, name); value.append(':').append(fieldValue);
+    }
+
+    private static void jsonField(StringBuilder value, String name, JSONObject fieldValue) {
+        jsonField(value, name, fieldValue.toString());
+    }
+
+    private static void jsonField(StringBuilder value, String name, String fieldValue) {
         separator(value); quoted(value, name); value.append(':').append(fieldValue);
     }
 

@@ -1,6 +1,8 @@
 """Unit tests for the structured Android QNN Logcat validator."""
 
 import json
+import hashlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +34,19 @@ class ValidatorTests(unittest.TestCase):
             "modelOutputWidth": 1920, "modelOutputHeight": 1080,
             "canvasWidth": 1920, "canvasHeight": 1080,
         }
+        strict = {
+            "schemaVersion": 1, "event": "qnn_strict", "runId": "run-1",
+            "mode": "QNN_HTP", "profile": "FULL_1080P_3X",
+            "modelVariant": "fixed640x360-3x-full",
+            "qnnStrict": {
+                "registrationStatus": "PASS", "npuSelectionStatus": "PASS",
+                "providerConfigurationStatus": "PASS", "backendType": "htp",
+                "cpuEpFallbackDisabled": True, "diagnosticOnly": False,
+                "selectedNpuDeviceCount": 1, "strictReady": True,
+                "providerAssignmentVerified": False, "providerFallbackTraceCaptured": False,
+                "evidenceScope": "SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF",
+            },
+        }
         samples = []
         for frame in range(3):
             sample = {field: 1 for field in validator.TIMING_FIELDS}
@@ -45,7 +60,7 @@ class ValidatorTests(unittest.TestCase):
             "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080, "samples": samples,
         }
-        return [config, batch]
+        return [config, strict, batch]
 
     def validate(self, events):
         return validator.validate(self.plan, self.case, events, "run-1", [])
@@ -57,8 +72,52 @@ class ValidatorTests(unittest.TestCase):
 
     def test_cpu_batch_is_rejected(self):
         events = self.events()
-        events[1]["mode"] = "CPU"
+        events[2]["mode"] = "CPU"
         self.assertEqual("FAIL", self.validate(events)["functional_gate"])
+
+    def test_missing_strict_qnn_attestation_is_rejected(self):
+        events = self.events()
+        del events[1]["qnnStrict"]["registrationStatus"]
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("qnn strict registrationStatus" in failure for failure in result["failures"]))
+
+    def test_missing_qnn_strict_event_is_rejected(self):
+        events = self.events()
+        del events[1]
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("expected exactly one qnn_strict event" in failure for failure in result["failures"]))
+
+    def test_cpu_fallback_not_disabled_is_rejected(self):
+        events = self.events()
+        events[1]["qnnStrict"]["cpuEpFallbackDisabled"] = False
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("cpuEpFallbackDisabled" in failure for failure in result["failures"]))
+
+    def test_unknown_qnn_evidence_scope_is_rejected(self):
+        events = self.events()
+        events[1]["qnnStrict"]["evidenceScope"] = "UNRECOGNIZED_SCOPE"
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("evidenceScope" in failure for failure in result["failures"]))
+
+    def test_per_node_or_trace_attestation_cannot_overclaim_configuration_scope(self):
+        events = self.events()
+        events[1]["qnnStrict"]["providerAssignmentVerified"] = True
+        events[1]["qnnStrict"]["providerFallbackTraceCaptured"] = True
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("providerAssignmentVerified" in failure for failure in result["failures"]))
+        self.assertTrue(any("providerFallbackTraceCaptured" in failure for failure in result["failures"]))
+
+    def test_zero_selected_qnn_npu_devices_is_rejected(self):
+        events = self.events()
+        events[1]["qnnStrict"]["selectedNpuDeviceCount"] = 0
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("selectedNpuDeviceCount" in failure for failure in result["failures"]))
 
     def test_dimension_mismatch_is_rejected(self):
         events = self.events()
@@ -71,7 +130,7 @@ class ValidatorTests(unittest.TestCase):
 
     def test_insufficient_frames_are_rejected(self):
         events = self.events()
-        events[1]["samples"] = events[1]["samples"][:2]
+        events[2]["samples"] = events[2]["samples"][:2]
         self.assertEqual("FAIL", self.validate(events)["functional_gate"])
 
     def test_log_loader_accepts_logcat_prefix(self):
@@ -81,6 +140,36 @@ class ValidatorTests(unittest.TestCase):
             events, errors = validator.load_events(path, "run-1")
         self.assertEqual(1, len(events))
         self.assertEqual([], errors)
+
+    def test_cli_records_plan_and_raw_log_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_path = root / "plan.json"
+            log_path = root / "device.log"
+            output_path = root / "report.json"
+            plan = dict(self.plan)
+            plan["cases"] = [self.case]
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            log_path.write_text(
+                "\n".join("I/QuickSRBenchmark: " + json.dumps(event) for event in self.events())
+                + "\n",
+                encoding="utf-8",
+            )
+            previous_argv = sys.argv
+            try:
+                sys.argv = [
+                    "validate_android_qnn_resolution_log.py", "--plan", str(plan_path),
+                    "--case", "1080p-primary", "--run-id", "run-1", "--log", str(log_path),
+                    "--output", str(output_path),
+                ]
+                self.assertEqual(0, validator.main())
+            finally:
+                sys.argv = previous_argv
+            report = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(2, report["schema_version"])
+            self.assertEqual(validator.VALIDATOR_VERSION, report["validator_version"])
+            self.assertEqual(hashlib.sha256(plan_path.read_bytes()).hexdigest(), report["plan_sha256"])
+            self.assertEqual(hashlib.sha256(log_path.read_bytes()).hexdigest(), report["raw_log_sha256"])
 
 
 if __name__ == "__main__":
