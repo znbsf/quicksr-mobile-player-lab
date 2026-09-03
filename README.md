@@ -50,7 +50,7 @@
 - v0.15.0 的 Anime4K v4.0.1 x2 Small 已在一台 Android 16 / Adreno 740 设备完成 720p/1080p/1440p 有界播放：三档首帧均 model-active、MediaCodec Drop=0、PSS 峰值约 173-175 MiB、温度代理保持 38.9-39.0 C；同位置视觉 A/B 未可靠取得，仍不声称与 mpv 输出等价或具有通用实时性能。
 - 由实际 Java 适配器生成的五段 model fragment 与 `mediump` fallback 已在 Android Emulator 随附的 SwiftShader OpenGL ES 3 环境 6/6 compile+link PASS；同一宿主 context 的 half-float 扩展预检和 RGBA16F FBO completeness 也通过。这仍只是 DLL 级主机 smoke，不是模拟器 App 或目标手机执行。
 
-完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)。新增的实时瓶颈、动漫模型、cadence 稀疏超分、插帧研究以及任务/工作树依赖见 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
+完整证据边界见 [项目状态](docs/STATUS.md) 和 [完成度审计](docs/GOAL_COMPLETION_AUDIT.md)。当前代码接线、已完成/停止/待执行项及工作树顺序见 [实现计划与进展](docs/IMPLEMENTATION_PLAN_AND_PROGRESS.md)。Anime4K pass、颜色适配、回退与真机门禁见 [Android GPU 集成说明](docs/ANIME4K_ANDROID_GPU_INTEGRATION.md)；研究理由和原始任务拆分保留在 [动漫视频实时超分与插帧执行计划](docs/ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)。
 cadence 实验的队列、generation、缓存所有权、运行时开关和代理指标边界见 [动漫 cadence 感知复用说明](docs/ANIME_CADENCE_REUSE.md)。
 
 ## 支持机型与系统
