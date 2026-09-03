@@ -24,7 +24,7 @@ if ((git -C (Join-Path $ResolvedRoot "src\libwebp") rev-parse HEAD) -ne $Expecte
 
 $PatchPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "patches\rife-ncnn-vulkan-model-timing.txt")).Path
 $MainSource = Join-Path $ResolvedRoot "src\main.cpp"
-if (-not (Select-String -Quiet -LiteralPath $MainSource -Pattern "VFI_MODEL_WALL_NS")) {
+if (-not (Select-String -Quiet -LiteralPath $MainSource -Pattern "VFI_VULKAN_INIT_WALL_NS")) {
     git -C $ResolvedRoot apply --check $PatchPath
     if ($LASTEXITCODE -ne 0) { throw "Timing patch does not apply" }
     git -C $ResolvedRoot apply $PatchPath

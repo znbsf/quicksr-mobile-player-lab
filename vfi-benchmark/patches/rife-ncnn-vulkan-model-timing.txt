@@ -1,13 +1,47 @@
 diff --git a/src/main.cpp b/src/main.cpp
-index 2b47317..30b4abf 100644
+index 2b47317..beea112 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
-@@ -4,0 +5 @@
+@@ -3,0 +4 @@
++#include <stdlib.h>
+@@ -4,0 +6 @@
 +#include <chrono>
-@@ -359,0 +361 @@ void* proc(void* args)
+@@ -326,0 +329 @@ void* load(void* args)
++        const std::chrono::steady_clock::time_point decode_started = std::chrono::steady_clock::now();
+@@ -328,0 +332,4 @@ void* load(void* args)
++        const std::chrono::steady_clock::time_point decode_ended = std::chrono::steady_clock::now();
++        const long long decode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            decode_ended - decode_started).count();
++        fprintf(stderr, "VFI_DECODE_WALL_NS id=%d ns=%lld\n", v.id, decode_wall_ns);
+@@ -359,0 +367 @@ void* proc(void* args)
 +        const std::chrono::steady_clock::time_point model_started = std::chrono::steady_clock::now();
-@@ -360,0 +363,4 @@ void* proc(void* args)
+@@ -360,0 +369,8 @@ void* proc(void* args)
 +        const std::chrono::steady_clock::time_point model_ended = std::chrono::steady_clock::now();
 +        const long long model_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
 +            model_ended - model_started).count();
-+        fprintf(stderr, "VFI_MODEL_WALL_NS=%lld\n", model_wall_ns);
++        const int padded_width = (v.in0image.w + 31) / 32 * 32;
++        const int padded_height = (v.in0image.h + 31) / 32 * 32;
++        fprintf(stderr,
++                "VFI_MODEL_WALL_NS id=%d ns=%lld timestep=%.6f width=%d height=%d padded_width=%d padded_height=%d\n",
++                v.id, model_wall_ns, v.timestep, v.in0image.w, v.in0image.h, padded_width, padded_height);
+@@ -387,0 +404 @@ void* save(void* args)
++        const std::chrono::steady_clock::time_point encode_started = std::chrono::steady_clock::now();
+@@ -388,0 +406,4 @@ void* save(void* args)
++        const std::chrono::steady_clock::time_point encode_ended = std::chrono::steady_clock::now();
++        const long long encode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            encode_ended - encode_started).count();
++        fprintf(stderr, "VFI_ENCODE_WALL_NS id=%d ns=%lld\n", v.id, encode_wall_ns);
+@@ -773,0 +795 @@ int main(int argc, char** argv)
++    const std::chrono::steady_clock::time_point vulkan_started = std::chrono::steady_clock::now();
+@@ -774,0 +797,4 @@ int main(int argc, char** argv)
++    const std::chrono::steady_clock::time_point vulkan_ended = std::chrono::steady_clock::now();
++    const long long vulkan_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++        vulkan_ended - vulkan_started).count();
++    fprintf(stderr, "VFI_VULKAN_INIT_WALL_NS=%lld\n", vulkan_wall_ns);
+@@ -824,0 +851 @@ int main(int argc, char** argv)
++            const std::chrono::steady_clock::time_point load_started = std::chrono::steady_clock::now();
+@@ -827,0 +855,4 @@ int main(int argc, char** argv)
++            const std::chrono::steady_clock::time_point load_ended = std::chrono::steady_clock::now();
++            const long long load_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                load_ended - load_started).count();
++            fprintf(stderr, "VFI_MODEL_LOAD_WALL_NS gpu=%d ns=%lld\n", gpuid[i], load_wall_ns);

@@ -45,6 +45,36 @@ python vfi-benchmark/run_vfi_android_probe.py `
   --output-dir local-artifacts/vfi/device/rife-v4.6
 ```
 
+Generate the resident-process resolution ladder. Every level contains seven distinct project-owned
+source frames and six known midpoints; the manifest must classify all six adjacent pairs as
+`INTERPOLATE / DISTINCT_DRAWING`:
+
+```powershell
+python vfi-benchmark/generate_resident_fixtures.py `
+  --output-dir local-artifacts/vfi/resident-fixtures `
+  --levels 160x90 256x144 320x180 480x270 640x360
+```
+
+Run one unpolled latency process and one separate PSS/RSS-sampled process per level. The upstream
+directory mode initializes Vulkan and loads the model once, then processes all seven input frames.
+The first `timestep=0.5` call is warmup; the following five midpoint calls form the stable latency
+summary. Memory polling is confined to the second run and excluded from that summary:
+
+```powershell
+python vfi-benchmark/run_vfi_android_resident_matrix.py `
+  --serial <one-connected-device-serial> `
+  --binary local-artifacts/vfi-upstream/rife-ncnn-vulkan/build-android-arm64/rife-ncnn-vulkan `
+  --model-dir local-artifacts/vfi-upstream/rife-ncnn-vulkan/models/rife-v4.6 `
+  --fixture-manifest local-artifacts/vfi/resident-fixtures/resident-fixture-manifest.json `
+  --output-dir local-artifacts/vfi/resident-device `
+  --levels 160x90 256x144 320x180 480x270 640x360
+```
+
+The report keeps cold process wall time, Vulkan initialization, model loading, midpoint warmup,
+five stable midpoint calls, PNG decode/encode, sampled memory, input/padded dimensions, temperature
+proxies, output hashes, and known-midpoint quality proxies separate. The upstream pipeline overlaps
+decode/model/encode stages, so their individual times are not additive to whole-process time.
+
 Generated PNGs, outputs, reports, weights, binaries, APKs, and raw logs must remain under
 `local-artifacts/` or another ignored path. The committed candidate manifest records observed
 hashes and rights status, but it is not a redistribution grant. Quality fields are reproducible

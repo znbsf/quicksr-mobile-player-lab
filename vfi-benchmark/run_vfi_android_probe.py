@@ -54,18 +54,28 @@ def thermal_snapshot(adb_path: str, serial: str) -> dict[str, Any]:
         if len(parts) != 3:
             continue
         value = None
+        excluded_from_max = bool(re.search(r"(?:lvl|limit|threshold|trip)", parts[1], re.IGNORECASE))
         try:
             raw = float(parts[2])
             value = raw / 1000.0 if abs(raw) > 200 else raw
-            if -50 <= value <= 200:
+            if -50 <= value <= 200 and not excluded_from_max:
                 numeric_celsius.append(value)
         except ValueError:
             pass
-        zones.append({"zone": parts[0], "type": parts[1], "raw": parts[2], "celsius_proxy": value})
+        zones.append(
+            {
+                "zone": parts[0], "type": parts[1], "raw": parts[2],
+                "celsius_proxy": value, "excluded_from_max": excluded_from_max,
+            }
+        )
+    battery_dump = adb(adb_path, serial, "shell", "dumpsys", "battery", check=False).stdout
+    battery_match = re.search(r"^\s*temperature:\s*(-?\d+)", battery_dump, re.MULTILINE)
+    battery_celsius = int(battery_match.group(1)) / 10.0 if battery_match else None
     return {
         "available": bool(numeric_celsius),
         "zones": zones,
         "max_celsius_proxy": max(numeric_celsius) if numeric_celsius else None,
+        "battery_celsius_proxy": battery_celsius,
         "stderr": result.stderr[-2000:],
     }
 

@@ -193,7 +193,7 @@ scene-cut detection
 
 | 候选 | 当前定位 | 主要限制 |
 | --- | --- | --- |
-| RIFE + ncnn Vulkan | 最现实的移动部署原型 | ncnn 端口落后于较新的动漫优化版本；当前设备未验证 |
+| RIFE + ncnn Vulkan | 已完成独立 CLI 单设备驻留矩阵的离线原型 | ncnn 端口落后于较新的动漫优化版本；尚无播放器实时余量或时序画质审核 |
 | IFRNet + ncnn Vulkan | 更紧凑的高效候选 | 以自然视频为主；ncnn 路径仍偏实验性 |
 | AnimeInterp | 动漫专用质量基准 | 旧 PyTorch 桌面研究栈，无移动实时证据 |
 | EISAI | 动漫线条与评价上界 | GPU/Docker 研究路径，AGPL-3 与数据边界需单独审计 |
@@ -273,12 +273,15 @@ A + B + C 的结果稳定
 
 只有 A/B/C 表明播放器仍有热预算、已选定 SR backend，且用户接受可选流畅模式后再创建。首轮只允许离线评测，不直接进入默认播放路径。
 
-2026-09-03 执行状态：已在独立分支完成首轮 source-only 离线评测。该轮没有修改
-`QuickSrVideoEffect` 或注册播放器 effect；实现了 hold/cut/seek/stream-epoch fail-closed
-prefilter，并只把 RIFE ncnn Vulkan v4.6 晋级到一台 Adreno 740 上的独立 native CLI
-有界探针。约 107 ms 的设备内 `RIFE::process` 中位 wall time不满足 24/30 fps 预算，
-模型权重再分发、代表性动漫时序质量、人工审核、驻留 runtime、A/V sync 和长时热稳仍然
-开放。详见 [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md)。
+2026-09-03 执行状态：已在独立分支完成两轮 source-only 离线评测，均未修改
+`QuickSrVideoEffect` 或注册播放器 effect。首轮建立 hold/cut/seek/stream-epoch fail-closed
+prefilter，并只把 RIFE ncnn Vulkan v4.6 晋级到一台 Adreno 740 上的独立 native CLI。
+第二轮让模型在单个进程内驻留，跑完 160x90 到 640x360 的五档矩阵：160x90 稳态中位
+30.335 ms，但 max 33.343 ms 已略超 30 fps 预算；320x180 中位 36.106 ms，但 max
+42.868 ms 超出 24 fps 预算。播放器调度、解码、SR、合成、A/V sync 和长时 thermal
+仍未计入，因此继续归类为 offline-only。低分辨率 VFI 后接现有 SR/Anime4K 只是下一项
+待验证假设，本分支未实现。模型权重再分发、代表性动漫时序质量和人工审核仍然开放。
+详见 [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md)。
 
 ## 8. 合并和新工作树规则
 

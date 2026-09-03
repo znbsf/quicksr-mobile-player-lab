@@ -176,3 +176,21 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   is already over 24/30 fps budgets before player costs. No visual-superiority, representative
   anime, sustained thermal, A/V sync, resident-runtime, or redistribution claim was promoted.
 - **Details:** see [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md).
+
+## 2026-09-03 — Resident RIFE Android resolution ladder
+
+- **Protocol:** generated seven distinct project-owned frames and six known midpoints at each of
+  160x90, 256x144, 320x180, 480x270 and 640x360. Each unpolled directory-mode process initialized
+  Vulkan and loaded RIFE v4.6 once; the first midpoint was warmup and the next five were measured.
+  PSS/RSS polling ran in a separate process and was excluded from latency statistics.
+- **Observed:** stable midpoint medians were 30.335/42.551/36.106/56.970/79.082 ms. Corresponding
+  maxima were 33.343/44.911/42.868/64.508/83.233 ms and sampled PSS peaks were
+  186,107/186,217/190,489/191,497/201,912 kB. The non-monotonic low-resolution timings and spread
+  remain visible; clocks were not controlled.
+- **Thermal boundary:** corrected thermal parsing excludes threshold/limit zones. The bounded
+  temperature-zone maximum was 46.9 C and the battery proxy stayed at 36.0 C. This is not a
+  sustained thermal result.
+- **Decision:** 160x90 fits the 30 fps kernel budget by median but misses it by about 0.010 ms at
+  max; 320x180 fits 24 fps by median but not max. Decode, SR, composition, display and A/V sync are
+  omitted, so no level has defensible end-to-end realtime margin. RIFE remains offline-only;
+  low-resolution VFI followed by the existing SR/Anime4K route is a recorded hypothesis only.

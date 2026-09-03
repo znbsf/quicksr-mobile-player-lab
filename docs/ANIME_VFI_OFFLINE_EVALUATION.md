@@ -2,9 +2,9 @@
 
 Date: 2026-09-03
 
-Status: one host comparison and one bounded physical-device native probe completed. This is not a
-player integration, realtime claim, visual-quality approval, sustained thermal result, or model
-redistribution approval.
+Status: one host comparison, one bounded physical-device native probe, and one resident-process
+resolution ladder completed. This is not a player integration, realtime claim, visual-quality
+approval, sustained thermal result, or model redistribution approval.
 
 ## Outcome
 
@@ -76,9 +76,9 @@ do not establish visual superiority across anime.
 ## Adreno 740 bounded probe
 
 The upstream RIFE source and pinned ncnn/libwebp submodules were cross-compiled as a standalone
-arm64 CLI with Android NDK 25.2.9519653. A six-line reproducible timing patch measures only
-`RIFE::process`; model loading, Vulkan startup, PNG decode/encode, adb, and process startup remain in
-the separate end-to-end measurement. The binary was not packaged into an APK.
+arm64 CLI with Android NDK 25.2.9519653. The reproducible timing patch records Vulkan startup,
+model loading, each PNG decode/model/encode task, actual input dimensions, and 32-pixel-padded model
+dimensions separately. The binary was not packaged into an APK.
 
 Observed device: `2304FPN6DC / ishtar`, SM8550, Android 16 API 36, Adreno 740. All pushed files were
 SHA-256 checked again on device.
@@ -99,6 +99,53 @@ The approximately 103 ms model time is already above 24 fps and 30 fps frame bud
 player scheduling, decode, composition, A/V sync, and sustained thermal cost. The approximately
 1.7 second process time is dominated by a fresh CLI process and is not a resident-runtime estimate.
 
+## Resident-process resolution ladder
+
+The follow-up fixture generates seven project-owned, visually distinct source frames and six exact
+known midpoints at each resolution. The existing prefilter accepted all six adjacent pairs as
+`INTERPOLATE / DISTINCT_DRAWING`. One directory-mode process initializes Vulkan and loads RIFE v4.6
+once, then emits 14 upstream tasks. Midpoint task IDs are `1/3/5/7/9/11`: the first is warmup and the
+remaining five form the unpolled stable distribution. A second process is used only for PSS/RSS
+sampling and is excluded from latency statistics.
+
+The instrumented binary SHA-256 is
+`d624f9cb509c719fdcb5f10c60698888ccaf74c580e95f2c6bc6ce1f1fda8824`; the expanded timing patch is
+`90586c0f2de819de73e56871421244aec5a858b4c21e4cd045310bec8eb17020`; and the fixture manifest is
+`1ed87a4c92fefd0c6cb722d39ed9e0c5155dc264bc087a1feb231066f423e13d`.
+
+| Input -> padded | Stable midpoint calls (ms) | Median / min / max | Decode pair / encode median | PSS / RSS peak |
+| --- | --- | --- | --- | --- |
+| `160x90 -> 160x96` | 33.343 / 33.316 / 24.738 / 30.335 / 27.296 | 30.335 / 24.738 / 33.343 ms | 0.706 / 2.300 ms | 186,107 / 227,524 kB |
+| `256x144 -> 256x160` | 42.277 / 41.638 / 44.911 / 42.551 / 44.036 | 42.551 / 41.638 / 44.911 ms | 0.389 / 2.976 ms | 186,217 / 227,448 kB |
+| `320x180 -> 320x192` | 29.001 / 30.494 / 36.106 / 37.875 / 42.868 | 36.106 / 29.001 / 42.868 ms | 1.152 / 7.936 ms | 190,489 / 232,128 kB |
+| `480x270 -> 480x288` | 54.107 / 60.871 / 64.508 / 56.970 / 56.344 | 56.970 / 54.107 / 64.508 ms | 1.510 / 6.914 ms | 191,497 / 233,056 kB |
+| `640x360 -> 640x384` | 83.233 / 81.688 / 77.718 / 79.082 / 72.407 | 79.082 / 72.407 / 83.233 ms | 2.232 / 10.057 ms | 201,912 / 243,328 kB |
+
+Cold Vulkan initialization was 23.127-26.488 ms and model loading was 1304.762-1666.530 ms. The
+first midpoint warmups were 100.156-173.555 ms; whole-process times were 1794.112-2219.553 ms.
+These are separate clocks: upstream decode/model/encode tasks overlap in a pipeline and must not be
+summed. The non-monotonic 256x144/320x180 results and within-run spread are retained rather than
+smoothed away; this bounded pass does not control clocks or prove sustained performance.
+
+All levels produced 14 hashed PNG outputs and six quality comparisons. Mean PSNR ranges from
+26.378 to 31.073 dB, global SSIM from 0.980406 to 0.992237, and edge-gradient MAE from 0.003138 to
+0.010590. These synthetic known-midpoint proxies validate execution and scoring only; human review
+remains pending. Corrected temperature-zone maxima were at most 46.9 C, threshold/limit zones were
+excluded, and the battery proxy remained 36.0 C before and after each bounded level. This is not a
+sustained thermal result.
+
+### Budget decision
+
+The comparison budgets are 33.333 ms for 30 fps, 41.667 ms for 24 fps, and 83.333 ms for one
+12-to-24 fps source interval. At 160x90 the 30.335 ms median fits the 30 fps kernel-only budget, but
+the 33.343 ms maximum misses it by about 0.010 ms. At 320x180 the 36.106 ms median fits 24 fps, but
+the 42.868 ms maximum does not. The 640x360 distribution only narrowly fits the 12-to-24 interval.
+
+Those clocks omit player scheduling, video decode, SR, composition, final display, A/V sync, and
+sustained thermal behavior. Therefore no resolution has meaningful end-to-end realtime margin and
+the candidate remains offline-only. The next bounded hypothesis is low-resolution VFI followed by
+the existing SR or Anime4K path; it is recorded here, not implemented in this branch.
+
 ## Reproduction and publication boundary
 
 `vfi-benchmark/README.md` provides host commands. The Android build
@@ -116,7 +163,7 @@ this task.
 - representative rights-clear anime clips, difficult occlusion, pans, subtitles, line boil, and
   more than one known synthetic midpoint;
 - LPIPS, warp/flicker metrics, and human visual review;
-- resident Android runtime startup, buffer ownership, scheduling, A/V sync, seek/flush integration,
+- player-resident Android runtime ownership, scheduling, A/V sync, seek/flush integration,
   sustained 10-30 minute temperature/power, or a safe frame-rate policy;
 - compatibility outside the single observed device/firmware/driver;
 - model-weight redistribution rights.
