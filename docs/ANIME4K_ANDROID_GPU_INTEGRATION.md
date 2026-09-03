@@ -117,19 +117,27 @@ python scripts/anime4k_reference_fixture.py prepare `
 ```
 
 The pinned mpv route and Android adapter must render that exact input to 64x48
-P6 PPM without alpha compositing. Compare the two captures with:
+P6 PPM without alpha compositing. Record the supplied-file declarations and compare with:
 
 ```powershell
+$inputSha = (Get-FileHash build/anime4k-reference/anime4k-reference-input-32x24.ppm).Hash.ToLowerInvariant()
+$androidSha = (Get-FileHash build/anime4k-reference/android-output.ppm).Hash.ToLowerInvariant()
+$mpvSha = (Get-FileHash build/anime4k-reference/mpv-output.ppm).Hash.ToLowerInvariant()
 python scripts/anime4k_reference_fixture.py compare `
+  --manifest build/anime4k-reference/anime4k-reference-manifest.json `
   --android build/anime4k-reference/android-output.ppm `
-  --mpv build/anime4k-reference/mpv-output.ppm
+  --mpv build/anime4k-reference/mpv-output.ppm `
+  --android-input-sha256 $inputSha --mpv-input-sha256 $inputSha `
+  --android-output-sha256 $androidSha --mpv-output-sha256 $mpvSha
 ```
 
-The report freezes both pixel hashes, exact equality, uint8 MAE, maximum channel
-error, mismatching-pixel count, PSNR, global SSIM and edge MAE. The comparison
-returns nonzero on any non-exact difference. Threshold acceptance is deliberately
-not invented before the first paired capture; until a reviewed threshold or exact
-match passes, mpv equivalence remains open.
+The tool rejects a non-canonical manifest/input or changed current shader pin, validates every
+declared input/output SHA-256, then reports both pixel hashes, equality, uint8 MAE, maximum channel
+error, mismatching-pixel count, PSNR, global SSIM and edge MAE. A match is labelled
+`DECLARED_PIXEL_MATCH_ONLY`, not PASS. The comparison returns nonzero on a pixel difference, but
+without a replayable capture trace/receipt and execution identity it cannot establish that either
+file came from mpv or Android. Threshold acceptance is deliberately not invented before a real
+paired capture and review; mpv equivalence remains open.
 
 The broader host contract in [ANIME_VISUAL_QUALITY_GATES.md](ANIME_VISUAL_QUALITY_GATES.md)
 reuses the existing source pin, spatial fixture/degradation contract and metrics, then adds clean

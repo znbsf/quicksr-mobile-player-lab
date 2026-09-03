@@ -15,8 +15,16 @@ INPUT_WIDTH = 32
 INPUT_HEIGHT = 24
 OUTPUT_WIDTH = INPUT_WIDTH * 2
 OUTPUT_HEIGHT = INPUT_HEIGHT * 2
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_STATUS = "prepared-anime4k-fixed-reference-fixture"
+FIXTURE_ID = "anime4k-fixed-opaque-32x24-v1"
+INPUT_FILE_NAME = "anime4k-reference-input-32x24.ppm"
+SHADER_ARTIFACT_ID = "anime4k-v4.0.1-upscale-cnn-x2-s"
+SHADER_SOURCE_COMMIT = "4029bf701ecaa15f163cdc49cffe5501c1acf410"
 SHADER_BYTES = 18_638
 SHADER_SHA256 = "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4"
+VENDORED_SHADER_PATH = ROOT / "app/src/main/assets/anime4k/Anime4K_Upscale_CNN_x2_S.txt"
 
 
 def fixed_opaque_rgb() -> bytes:
@@ -60,7 +68,7 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
 
 
 def verify_shader(shader_path: Path) -> None:
-    payload = shader_path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    payload = shader_path.read_bytes()
     observed = hashlib.sha256(payload).hexdigest()
     if len(payload) != SHADER_BYTES or observed != SHADER_SHA256:
         raise ValueError(
@@ -119,7 +127,85 @@ def quality_metrics(reference: bytes, actual: bytes, width: int, height: int) ->
     }
 
 
-def compare_outputs(android_path: Path, mpv_path: Path) -> dict[str, object]:
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_manifest(input_path: Path) -> dict[str, object]:
+    width, height, rgb = read_ppm(input_path)
+    return {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "status": MANIFEST_STATUS,
+        "fixture_id": FIXTURE_ID,
+        "input": {
+            "path": input_path.name,
+            "file_sha256": file_sha256(input_path),
+            "rgb_sha256": hashlib.sha256(rgb).hexdigest(),
+            "dimensions": [width, height],
+        },
+        "expected_output_dimensions": [OUTPUT_WIDTH, OUTPUT_HEIGHT],
+        "alpha_contract": "opaque; PPM RGB is equivalent to alpha=255",
+        "anime4k_source": {
+            "artifact_id": SHADER_ARTIFACT_ID,
+            "source_commit": SHADER_SOURCE_COMMIT,
+            "bytes": SHADER_BYTES,
+            "sha256": SHADER_SHA256,
+            "vendored_path": VENDORED_SHADER_PATH.relative_to(ROOT).as_posix(),
+        },
+        "comparison_semantics": {
+            "status": "declared-pixel-comparison-only",
+            "runtime_equivalence_requires": "replayable capture trace, receipt and execution identity",
+        },
+    }
+
+
+def verify_manifest(manifest_path: Path) -> tuple[dict[str, object], Path]:
+    manifest_path = manifest_path.resolve()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    input_value = manifest.get("input")
+    if not isinstance(input_value, dict):
+        raise ValueError("fixture manifest input is invalid")
+    relative = input_value.get("path")
+    if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+        raise ValueError("fixture manifest input path must be relative")
+    input_path = (manifest_path.parent / relative).resolve()
+    try:
+        input_path.relative_to(manifest_path.parent)
+    except ValueError as failure:
+        raise ValueError("fixture manifest input path escapes its directory") from failure
+    if not input_path.is_file():
+        raise FileNotFoundError(input_path)
+    if input_path.name != INPUT_FILE_NAME:
+        raise ValueError("fixture manifest input file name is not canonical")
+    verify_shader(VENDORED_SHADER_PATH)
+    width, height, rgb = read_ppm(input_path)
+    if (width, height) != (INPUT_WIDTH, INPUT_HEIGHT) or rgb != fixed_opaque_rgb():
+        raise ValueError("fixture manifest input is not the canonical prepared frame")
+    expected = canonical_manifest(input_path)
+    if manifest != expected:
+        raise ValueError("fixture manifest does not match the canonical generator and source pin")
+    return manifest, input_path
+
+
+def compare_outputs(
+    android_path: Path,
+    mpv_path: Path,
+    manifest_path: Path,
+    android_input_sha256: str,
+    mpv_input_sha256: str,
+    android_output_sha256: str,
+    mpv_output_sha256: str,
+) -> dict[str, object]:
+    manifest, input_path = verify_manifest(manifest_path)
+    fixture_input_sha256 = file_sha256(input_path)
+    if android_input_sha256 != fixture_input_sha256 or mpv_input_sha256 != fixture_input_sha256:
+        raise ValueError("declared Android/mpv input SHA-256 does not match the prepared fixture")
+    observed_android_file_sha256 = file_sha256(android_path)
+    observed_mpv_file_sha256 = file_sha256(mpv_path)
+    if android_output_sha256 != observed_android_file_sha256:
+        raise ValueError("declared Android output SHA-256 does not match the supplied file")
+    if mpv_output_sha256 != observed_mpv_file_sha256:
+        raise ValueError("declared mpv output SHA-256 does not match the supplied file")
     android_width, android_height, android_rgb = read_ppm(android_path)
     mpv_width, mpv_height, mpv_rgb = read_ppm(mpv_path)
     expected_dimensions = (OUTPUT_WIDTH, OUTPUT_HEIGHT)
@@ -132,11 +218,20 @@ def compare_outputs(android_path: Path, mpv_path: Path) -> dict[str, object]:
         any(errors[index + channel] != 0 for channel in range(3))
         for index in range(0, len(errors), 3))
     return {
-        "status": "PASS" if not any(errors) else "DIFF",
+        "status": "DECLARED_PIXEL_MATCH_ONLY" if not any(errors) else "DECLARED_PIXEL_DIFF",
+        "declared_pixel_comparison": "MATCH" if not any(errors) else "DIFF",
+        "runtime_equivalence": "NOT_ESTABLISHED_NO_REPLAYABLE_CAPTURE_RECEIPT",
+        "manifest_sha256": file_sha256(manifest_path),
+        "fixture_id": manifest["fixture_id"],
+        "fixture_input_sha256": fixture_input_sha256,
         "width": OUTPUT_WIDTH,
         "height": OUTPUT_HEIGHT,
-        "android_sha256": hashlib.sha256(android_rgb).hexdigest(),
-        "mpv_sha256": hashlib.sha256(mpv_rgb).hexdigest(),
+        "android_declared_input_sha256": android_input_sha256,
+        "mpv_declared_input_sha256": mpv_input_sha256,
+        "android_output_file_sha256": observed_android_file_sha256,
+        "mpv_output_file_sha256": observed_mpv_file_sha256,
+        "android_rgb_sha256": hashlib.sha256(android_rgb).hexdigest(),
+        "mpv_rgb_sha256": hashlib.sha256(mpv_rgb).hexdigest(),
         "mae_u8": sum(errors) / len(errors),
         "max_channel_error_u8": max(errors, default=0),
         "mismatch_pixels": mismatch_pixels,
@@ -148,17 +243,9 @@ def compare_outputs(android_path: Path, mpv_path: Path) -> dict[str, object]:
 def prepare(output_dir: Path, shader_path: Path) -> dict[str, object]:
     verify_shader(shader_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    input_path = output_dir / "anime4k-reference-input-32x24.ppm"
+    input_path = output_dir / INPUT_FILE_NAME
     write_ppm(input_path, INPUT_WIDTH, INPUT_HEIGHT, fixed_opaque_rgb())
-    manifest = {
-        "input": input_path.name,
-        "input_sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
-        "input_dimensions": [INPUT_WIDTH, INPUT_HEIGHT],
-        "expected_output_dimensions": [OUTPUT_WIDTH, OUTPUT_HEIGHT],
-        "alpha_contract": "opaque; PPM RGB is equivalent to alpha=255",
-        "shader_sha256": SHADER_SHA256,
-        "gate": "Run both pinned mpv and Android adapters, then compare their P6 PPM outputs.",
-    }
+    manifest = canonical_manifest(input_path)
     (output_dir / "anime4k-reference-manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
@@ -173,11 +260,31 @@ def main() -> int:
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("--android", type=Path, required=True)
     compare_parser.add_argument("--mpv", type=Path, required=True)
+    compare_parser.add_argument("--manifest", type=Path, required=True)
+    compare_parser.add_argument("--android-input-sha256", required=True)
+    compare_parser.add_argument("--mpv-input-sha256", required=True)
+    compare_parser.add_argument("--android-output-sha256", required=True)
+    compare_parser.add_argument("--mpv-output-sha256", required=True)
     args = parser.parse_args()
-    result = (prepare(args.output_dir, args.shader) if args.command == "prepare"
-              else compare_outputs(args.android, args.mpv))
+    result = (
+        prepare(args.output_dir, args.shader)
+        if args.command == "prepare"
+        else compare_outputs(
+            args.android,
+            args.mpv,
+            args.manifest,
+            args.android_input_sha256,
+            args.mpv_input_sha256,
+            args.android_output_sha256,
+            args.mpv_output_sha256,
+        )
+    )
     print(json.dumps(result, indent=2))
-    return 0 if args.command == "prepare" or result["status"] == "PASS" else 1
+    return (
+        0
+        if args.command == "prepare" or result["declared_pixel_comparison"] == "MATCH"
+        else 1
+    )
 
 
 if __name__ == "__main__":

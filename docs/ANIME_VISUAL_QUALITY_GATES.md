@@ -35,40 +35,61 @@ python .\pc-benchmark\anime_visual_quality_gate.py prepare `
   --output .\build\pc-benchmark\anime-visual-quality-gate
 ```
 
-The command also writes `submission-template.json`. A real offscreen GL, mpv or Android capture
-adapter must replace every template marker with observed values and place its RGB PNG outputs
-under the submission directory. Copying the oracle fields without observing the adapter is not
-evidence.
+The command also writes `submission-template.json`. Its decision, PTS, reference and input fields
+are submitter declarations. Copying the oracle into this template can pass declared conformance,
+but it is not evidence that an adapter or analyzer ran. RGB PNG files remain directly hash-checked
+artifacts; their association with runtime frames is still declared until trace evidence is bound.
 
-## Fail-closed evaluation
+## Fail-closed declared-oracle conformance
 
 ```powershell
 python .\pc-benchmark\anime_visual_quality_gate.py evaluate `
   --contract .\build\pc-benchmark\anime-visual-quality-gate\contract.json `
-  --submission .\build\pc-benchmark\anime-visual-quality-gate\observed\submission.json `
-  --output .\build\pc-benchmark\anime-visual-quality-gate\observed\report.json
+  --submission .\build\pc-benchmark\anime-visual-quality-gate\declared\submission.json `
+  --output .\build\pc-benchmark\anime-visual-quality-gate\declared\report.json
 ```
 
-The evaluator rejects unsupported schema/status values, a mismatched contract hash, missing,
-unknown, duplicate or reordered cases/frames, paths escaping the submission root, missing files,
-and non-RGB or wrong-sized outputs. The machine gate is `FAIL` if any observed input hash is not
-the contract's same-frame identity, an output hash is false, a PTS differs, a processed-frame
-reference differs, a material change is reused, an exact hold is unnecessarily processed, or a
-claimed reused output is not byte-identical to its referenced processed output. The CLI returns a
-nonzero exit code for a completed `FAIL` report and for structural rejection.
+Evaluation first rebuilds a canonical contract in a temporary directory from the version-controlled
+generator, degradation profiles and current Anime4K pin. It compares the supplied contract against
+that identity before reading a submission. Only descriptive top-level and nested `runtime`
+metadata is normalized away; all fixture paths, bytes/hashes, oracle decisions, PTS, references,
+protocol fields and limits remain in the canonical comparison. Editing a hold to `PROCESS` and
+re-signing the submission's contract hash is therefore rejected.
 
-The summary records both counts and rates: wrong reuse is divided by expected process frames, and
-missed reuse is divided by expected hold/reuse frames. First-frame processing remains part of the
-safety denominator.
+The evaluator also rejects unsupported schema/status values, missing, unknown, duplicate or
+reordered cases/frames, paths escaping the submission root, missing files, artifact hash drift and
+non-RGB or wrong-sized outputs. Its only PASS/FAIL field is
+`declared_oracle_conformance`. `FAIL` means a submission declaration or supplied file conflicts
+with the canonical synthetic oracle; `PASS` means only that those declarations and files conform.
+Neither result classifies actual analyzer behavior.
+
+The summary names semantic fields `declared_wrong_reuse_*`, `declared_missed_reuse_*`,
+`declared_pts_identity_*`, `declared_reference_identity_*` and
+`declared_same_frame_identity_*`. Rates use expected process or hold frames as denominators, but
+they are differences between declarations and the oracle—not observed runtime error rates.
 
 Every structurally readable output receives PSNR, global SSIM and edge MAE against its current
 high-resolution reference. Spatial rows also include the existing Lanczos measurement. Infinite
 PSNR is represented as `psnr_db: null` plus `psnr_is_infinite: true`, keeping the report strict
 JSON.
 
-The older 32x24 PPM equality gate remains available through
-`scripts/anime4k_reference_fixture.py`. Its comparison now reports the same three diagnostics and
-returns nonzero on any non-exact Android/mpv pixel difference.
+The older 32x24 PPM tool now requires the manifest written by `prepare`, verifies the canonical
+fixture bytes and current Anime4K source pin, and requires declared input and output SHA-256 values
+for both Android and mpv files. Identical pixels produce `DECLARED_PIXEL_MATCH_ONLY`, never
+`PASS` or runtime equivalence. Without a replayable capture receipt, even two identical uniform
+PPMs establish only a declared comparison.
+
+## Runtime evidence still required
+
+`runtime_evidence.status` always remains `NOT_BOUND`. A submitted trace SHA-256 is integrity
+metadata for alleged bytes; by itself it does not prove that those bytes came from an execution.
+An observed runtime claim needs all of the following in a later gate:
+
+- replayable per-frame trace bytes containing actual frame/input/output identity, PTS, decision,
+  reference, generation and stream epoch;
+- a receipt binding that trace, this canonical contract, output files, runtime configuration,
+  executable/App source identity and execution environment;
+- validator replay of the trace against every bound artifact and oracle field.
 
 ## What this host work proves
 
@@ -78,18 +99,22 @@ Confirmed by source and tests:
 - generated contracts are reproducible across independent directories on the same pinned
   Pillow/NumPy environment;
 - the pinned Anime4K source identity is checked before preparation;
-- an ideal bound submission passes, while wrong reuse, missed reuse, one-microsecond PTS drift,
-  wrong reference identity, missing frames and contract-hash substitution fail closed;
+- an oracle-filled submission can pass only `declared_oracle_conformance`; a trace hash alone
+  leaves runtime evidence `NOT_BOUND`;
+- declared reuse/PTS/reference mismatches, missing frames, output substitution, and a modified
+  cadence oracle with a freshly signed submission hash fail closed;
 - the report emits PSNR, global SSIM and edge MAE for all supplied spatial and temporal outputs.
 
 Not visually proven:
 
-- no Anime4K/mpv/Android adapter output was captured in this host task;
+- no replayable Anime4K/mpv/Android adapter or cadence-analyzer trace/receipt was captured in this
+  host task;
 - no target GPU shader equivalence, cadence analyzer result, final display cadence, representative
   anime quality, halo/line/subtitle preference or human rhythm judgment passed;
 - no PSNR/SSIM/edge acceptance threshold was invented before paired outputs and human review;
 - low-contrast subtitle safety remains an explicit open gate even though the fixture and oracle
   now exist.
 
-The machine result, metric observations and human review must remain separate. A fixture/evaluator
-test PASS proves the gate works; it is not a visual-quality PASS for Anime4K or cadence reuse.
+Declared-oracle conformance, bound runtime evidence, metric observations and human review remain
+separate. A fixture/evaluator test PASS proves the declared-conformance gate works; it is neither
+an observed cadence result nor a visual-quality PASS for Anime4K or cadence reuse.

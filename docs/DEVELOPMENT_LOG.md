@@ -241,10 +241,12 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   mixed one/two/three holds, one-pixel pan, mouth/particle motion, hard cuts, fades and subtitle
   changes.
 - **Binding:** preparation revalidates the existing Anime4K v4.0.1 x2 Small commit/bytes/SHA-256
-  source pin. The submission evaluator rejects incomplete or substituted contracts and checks
-  same-frame input hashes, output hashes, PTS, wrong/missed reuse, cache-reference identity and
-  byte-identical reused output.
+  source pin. Evaluation rebuilds the canonical contract from checked-in source and rejects a
+  modified oracle even when the submission hash is recomputed. It checks only declared
+  same-frame/reuse/PTS/reference fields and supplied files against that oracle.
 - **Metrics and boundary:** every supplied output receives PSNR, global SSIM and edge MAE; no
-  quality threshold was invented. Host tests prove deterministic generation and fail-closed gate
-  behavior only. No mpv, Android/GL, QNN, device or human visual/rhythm review ran, so neither
-  Anime4K equivalence nor cadence visual quality is promoted.
+  quality threshold was invented. Host tests prove deterministic generation and fail-closed
+  declared-oracle conformance only. A trace hash alone is not execution proof; replayable
+  per-frame bytes, a binding receipt and execution identity remain absent. No mpv, Android/GL,
+  QNN, device or human visual/rhythm review ran, so neither Anime4K equivalence nor actual cadence
+  behavior/visual quality is promoted.

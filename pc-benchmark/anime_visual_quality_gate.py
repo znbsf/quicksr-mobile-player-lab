@@ -6,6 +6,8 @@ import json
 import math
 import platform
 from pathlib import Path
+import re
+import tempfile
 from typing import Any
 
 from PIL import Image, ImageDraw, __version__ as pillow_version
@@ -20,8 +22,10 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = ROOT / "build" / "pc-benchmark" / "anime-visual-quality-gate"
 CANDIDATE_MANIFEST = HERE / "anime-model-candidates.json"
 ANIME4K_ARTIFACT_ID = "anime4k-v4.0.1-upscale-cnn-x2-s"
+CONTRACT_SCHEMA_VERSION = 2
+SUBMISSION_SCHEMA_VERSION = 2
 CONTRACT_STATUS = "prepared-rights-clear-anime-visual-quality-gate"
-SUBMISSION_STATUS = "observed-host-anime-visual-quality-output"
+SUBMISSION_STATUS = "declared-host-anime-visual-quality-output"
 TEMPORAL_WIDTH = 320
 TEMPORAL_HEIGHT = 180
 TEMPORAL_FPS = 24
@@ -233,7 +237,7 @@ def prepare_contract(output: Path) -> dict[str, Any]:
     spatial_path = output / "spatial" / "contract.json"
     temporal_cases = prepare_temporal_cases(output)
     contract = {
-        "schema_version": 1,
+        "schema_version": CONTRACT_SCHEMA_VERSION,
         "status": CONTRACT_STATUS,
         "anime4k_source": anime4k,
         "spatial_contract": {
@@ -244,10 +248,12 @@ def prepare_contract(output: Path) -> dict[str, Any]:
         },
         "temporal_cases": temporal_cases,
         "submission_protocol": {
+            "schema_version": SUBMISSION_SCHEMA_VERSION,
             "status": SUBMISSION_STATUS,
             "image_format": "RGB PNG at each contract reference size",
             "path_scope": "all output paths are relative to and remain under the submission directory",
-            "identity": "record exact case/frame, input SHA-256, PTS, decision and cache reference from the observed run",
+            "semantics": "declared-oracle-conformance; submitted case/frame, input SHA-256, PTS, decision and cache reference are declarations, not observed runtime proof",
+            "runtime_evidence": "unbound until replayable per-frame trace, receipt and execution identity are jointly validated",
         },
         "runtime": {
             "platform": platform.platform(),
@@ -257,7 +263,7 @@ def prepare_contract(output: Path) -> dict[str, Any]:
         },
         "limits": [
             "Fixtures are deterministic project-original drawings, not representative commercial-anime evidence.",
-            "The machine gate checks bindings, decisions, PTS, cache identity and reports frame metrics; it does not set a perceptual acceptance threshold.",
+            "The declared-conformance gate checks submitted bindings, decisions, PTS, cache identity and frame files against the synthetic oracle; it does not prove runtime behavior.",
             "Human rhythm, halo, line and subtitle review remains not-reviewed until separately recorded.",
             "Preparing this contract does not execute mpv, Android, OpenGL ES, QNN or a physical device.",
         ],
@@ -275,16 +281,17 @@ def write_submission_template(contract_path: Path, output: Path) -> None:
     spatial_path = contract_root / contract["spatial_contract"]["path"]
     spatial = json.loads(spatial_path.read_text(encoding="utf-8"))
     template = {
-        "schema_version": 1,
+        "schema_version": SUBMISSION_SCHEMA_VERSION,
         "status": SUBMISSION_STATUS,
         "contract_sha256": file_sha256(contract_path),
-        "adapter_id": "REPLACE_WITH_OBSERVED_ADAPTER_ID",
+        "producer_label": "REPLACE_WITH_SUBMISSION_PRODUCER_LABEL",
+        "runtime_trace_sha256": None,
         "spatial_outputs": [
             {
                 "case_id": case["id"],
                 "input_sha256": case["input"]["sha256"],
                 "output_path": f"outputs/spatial/{case['id']}.png",
-                "output_sha256": "REPLACE_WITH_OBSERVED_SHA256",
+                "output_sha256": "REPLACE_WITH_SUPPLIED_FILE_SHA256",
             }
             for case in spatial["cases"]
         ],
@@ -296,13 +303,13 @@ def write_submission_template(contract_path: Path, output: Path) -> None:
                         "frame_id": frame["frame_id"],
                         "pts_us": frame["pts_us"],
                         "input_sha256": frame["input"]["sha256"],
-                        "decision": "REPLACE_WITH_OBSERVED_PROCESS_OR_REUSE",
-                        "reference_frame_id": "REPLACE_WITH_OBSERVED_NULL_OR_FRAME_ID",
-                        "reference_input_sha256": "REPLACE_WITH_OBSERVED_NULL_OR_SHA256",
+                        "decision": "REPLACE_WITH_DECLARED_PROCESS_OR_REUSE",
+                        "reference_frame_id": "REPLACE_WITH_DECLARED_NULL_OR_FRAME_ID",
+                        "reference_input_sha256": "REPLACE_WITH_DECLARED_NULL_OR_SHA256",
                         "output_path": (
                             f"outputs/temporal/{case['id']}/frame-{frame['frame_id']:03d}.png"
                         ),
-                        "output_sha256": "REPLACE_WITH_OBSERVED_SHA256",
+                        "output_sha256": "REPLACE_WITH_SUPPLIED_FILE_SHA256",
                     }
                     for frame in case["frames"]
                 ],
@@ -324,6 +331,46 @@ def safe_path(root: Path, relative: object, label: str) -> Path:
     if not path.is_file():
         raise FileNotFoundError(path)
     return path
+
+
+def canonical_json_sha256(value: object) -> str:
+    payload = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def deterministic_contract_identity(contract_path: Path, contract: dict[str, Any]) -> dict[str, Any]:
+    """Return every canonical field except descriptive host runtime metadata."""
+    contract_root = contract_path.parent
+    spatial_meta = dict(contract.get("spatial_contract", {}))
+    spatial_path = safe_path(
+        contract_root, spatial_meta.get("path"), "canonical spatial contract path")
+    spatial = json.loads(spatial_path.read_text(encoding="utf-8"))
+    normalized_spatial = dict(spatial)
+    normalized_spatial.pop("runtime", None)
+    spatial_meta.pop("sha256", None)
+    spatial_meta["deterministic_contract_sha256"] = canonical_json_sha256(normalized_spatial)
+
+    identity = dict(contract)
+    identity.pop("runtime", None)
+    identity["spatial_contract"] = spatial_meta
+    return identity
+
+
+def rebuild_and_verify_canonical_contract(
+    contract_path: Path, contract: dict[str, Any]
+) -> str:
+    supplied_identity = deterministic_contract_identity(contract_path, contract)
+    with tempfile.TemporaryDirectory(prefix="quicksr-anime-visual-canonical-") as temporary:
+        regenerated_root = Path(temporary) / "contract"
+        regenerated = prepare_contract(regenerated_root)
+        regenerated_path = regenerated_root / "contract.json"
+        regenerated_identity = deterministic_contract_identity(regenerated_path, regenerated)
+    if supplied_identity != regenerated_identity:
+        raise ValueError(
+            "visual contract does not match the canonical checked-in generator and source pin")
+    return canonical_json_sha256(regenerated_identity)
 
 
 def index_exact(items: object, key_name: str, expected: set[str], label: str) -> dict[str, dict[str, Any]]:
@@ -377,16 +424,24 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
     submission_root = submission_path.parent
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     submission = json.loads(submission_path.read_text(encoding="utf-8"))
-    if contract.get("schema_version") != 1 or contract.get("status") != CONTRACT_STATUS:
+    if (contract.get("schema_version") != CONTRACT_SCHEMA_VERSION
+            or contract.get("status") != CONTRACT_STATUS):
         raise ValueError("unsupported visual-quality contract")
-    if submission.get("schema_version") != 1 or submission.get("status") != SUBMISSION_STATUS:
+    if (submission.get("schema_version") != SUBMISSION_SCHEMA_VERSION
+            or submission.get("status") != SUBMISSION_STATUS):
         raise ValueError("unsupported visual-quality submission")
     if submission.get("contract_sha256") != file_sha256(contract_path):
         raise ValueError("submission contract SHA-256 does not match")
-    if not isinstance(submission.get("adapter_id"), str) or not submission["adapter_id"].strip():
-        raise ValueError("submission adapter_id must be non-empty")
+    if (not isinstance(submission.get("producer_label"), str)
+            or not submission["producer_label"].strip()):
+        raise ValueError("submission producer_label must be non-empty")
+    submitted_trace_hash = submission.get("runtime_trace_sha256")
+    if (submitted_trace_hash is not None
+            and not re.fullmatch(r"[0-9a-f]{64}", str(submitted_trace_hash))):
+        raise ValueError("runtime_trace_sha256 must be null or a lowercase SHA-256")
     if contract.get("anime4k_source") != load_anime4k_pin():
         raise ValueError("visual contract Anime4K source binding does not match the current pin")
+    canonical_identity_sha256 = rebuild_and_verify_canonical_contract(contract_path, contract)
 
     spatial_contract_path = safe_path(
         contract_root, contract["spatial_contract"].get("path"), "spatial contract path")
@@ -405,13 +460,13 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
     spatial_rows: list[dict[str, Any]] = []
     spatial_output_identity: dict[str, tuple[str, str]] = {}
     for case_id, case in spatial_cases.items():
-        observed = spatial_outputs[case_id]
-        if observed.get("input_sha256") != case["input"]["sha256"]:
-            failures.append({"kind": "same_frame_identity", "case_id": case_id})
+        declared = spatial_outputs[case_id]
+        if declared.get("input_sha256") != case["input"]["sha256"]:
+            failures.append({"kind": "declared_same_frame_identity", "case_id": case_id})
         output_path = safe_path(
-            submission_root, observed.get("output_path"), f"spatial output {case_id}")
+            submission_root, declared.get("output_path"), f"spatial output {case_id}")
         observed_hash = file_sha256(output_path)
-        if observed.get("output_sha256") != observed_hash:
+        if declared.get("output_sha256") != observed_hash:
             failures.append({"kind": "output_hash", "case_id": case_id})
         expected_size = (case["reference"]["width"], case["reference"]["height"])
         input_path = safe_path(
@@ -438,7 +493,7 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
         previous = spatial_output_identity.get(observed_hash)
         if previous is not None and previous[0] != case["reference"]["sha256"]:
             failures.append({
-                "kind": "same_frame_output_identity", "case_id": case_id,
+                "kind": "declared_same_frame_output_identity", "case_id": case_id,
                 "collides_with_case_id": previous[1],
             })
         else:
@@ -453,19 +508,20 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
     temporal_outputs = index_exact(
         submission.get("temporal_outputs"), "case_id", set(temporal_contracts), "temporal outputs")
     temporal_rows: list[dict[str, Any]] = []
-    wrong_reuse = 0
-    missed_reuse = 0
+    declared_wrong_reuse = 0
+    declared_missed_reuse = 0
     expected_process_frames = 0
     expected_reuse_frames = 0
     pts_failures = 0
     reference_failures = 0
     same_frame_failures = sum(
-        item["kind"] in {"same_frame_identity", "same_frame_output_identity"}
+        item["kind"] in {
+            "declared_same_frame_identity", "declared_same_frame_output_identity"}
         for item in failures)
     for case_id, case in temporal_contracts.items():
-        observed_case = temporal_outputs[case_id]
-        observed_frames = observed_case.get("frames")
-        if not isinstance(observed_frames, list):
+        declared_case = temporal_outputs[case_id]
+        declared_frames = declared_case.get("frames")
+        if not isinstance(declared_frames, list):
             raise ValueError(f"temporal output {case_id} frames must be a list")
         expected_frames = case["frames"]
         if [frame.get("frame_id") for frame in expected_frames] != list(
@@ -502,73 +558,88 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
                 contract_reference, expected_frame["reference"]["sha256"],
                 f"temporal reference {case_id} frame {frame_id}")
         expected_ids = [frame["frame_id"] for frame in expected_frames]
-        observed_ids = [frame.get("frame_id") for frame in observed_frames if isinstance(frame, dict)]
-        if observed_ids != expected_ids or len(observed_frames) != len(expected_frames):
+        declared_ids = [frame.get("frame_id") for frame in declared_frames if isinstance(frame, dict)]
+        if declared_ids != expected_ids or len(declared_frames) != len(expected_frames):
             raise ValueError(f"temporal output {case_id} is not the complete ordered frame sequence")
-        observed_by_id = {frame["frame_id"]: frame for frame in observed_frames}
+        declared_by_id = {frame["frame_id"]: frame for frame in declared_frames}
         output_hashes: dict[int, str] = {}
         output_reference_identity: dict[str, tuple[str, int]] = {}
         for expected_frame in expected_frames:
             frame_id = expected_frame["frame_id"]
-            observed = observed_by_id[frame_id]
-            if observed.get("decision") not in {"PROCESS", "REUSE"}:
+            declared = declared_by_id[frame_id]
+            if declared.get("decision") not in {"PROCESS", "REUSE"}:
                 raise ValueError(f"{case_id} frame {frame_id} has invalid cadence decision")
-            if observed.get("input_sha256") != expected_frame["input"]["sha256"]:
+            if declared.get("input_sha256") != expected_frame["input"]["sha256"]:
                 same_frame_failures += 1
-                failures.append({"kind": "same_frame_identity", "case_id": case_id, "frame_id": frame_id})
-            if observed.get("pts_us") != expected_frame["pts_us"]:
+                failures.append({
+                    "kind": "declared_same_frame_identity", "case_id": case_id,
+                    "frame_id": frame_id,
+                })
+            if declared.get("pts_us") != expected_frame["pts_us"]:
                 pts_failures += 1
-                failures.append({"kind": "pts_identity", "case_id": case_id, "frame_id": frame_id})
+                failures.append({
+                    "kind": "declared_pts_identity", "case_id": case_id,
+                    "frame_id": frame_id,
+                })
             expected_decision = expected_frame["expected_decision"]
             if expected_decision == "PROCESS":
                 expected_process_frames += 1
             else:
                 expected_reuse_frames += 1
-            if observed["decision"] == "REUSE" and expected_decision == "PROCESS":
-                wrong_reuse += 1
-                failures.append({"kind": "wrong_reuse", "case_id": case_id, "frame_id": frame_id})
-            elif observed["decision"] == "PROCESS" and expected_decision == "REUSE":
-                missed_reuse += 1
-                failures.append({"kind": "missed_reuse", "case_id": case_id, "frame_id": frame_id})
+            if declared["decision"] == "REUSE" and expected_decision == "PROCESS":
+                declared_wrong_reuse += 1
+                failures.append({
+                    "kind": "declared_wrong_reuse", "case_id": case_id,
+                    "frame_id": frame_id,
+                })
+            elif declared["decision"] == "PROCESS" and expected_decision == "REUSE":
+                declared_missed_reuse += 1
+                failures.append({
+                    "kind": "declared_missed_reuse", "case_id": case_id,
+                    "frame_id": frame_id,
+                })
             expected_reference = expected_frame["expected_reference_frame_id"]
             expected_reference_input = (
                 expected_frames[expected_reference - 1]["input"]["sha256"]
                 if expected_reference is not None else None
             )
-            observed_reference = observed.get("reference_frame_id")
-            observed_reference_input = observed.get("reference_input_sha256")
-            invalid_observed_reference = (
-                (observed["decision"] == "PROCESS"
-                 and (observed_reference is not None or observed_reference_input is not None))
-                or (observed["decision"] == "REUSE"
-                    and (not isinstance(observed_reference, int)
-                         or not 1 <= observed_reference < frame_id
-                         or not isinstance(observed_reference_input, str)
-                         or len(observed_reference_input) != 64))
+            declared_reference = declared.get("reference_frame_id")
+            declared_reference_input = declared.get("reference_input_sha256")
+            invalid_declared_reference = (
+                (declared["decision"] == "PROCESS"
+                 and (declared_reference is not None or declared_reference_input is not None))
+                or (declared["decision"] == "REUSE"
+                    and (not isinstance(declared_reference, int)
+                         or not 1 <= declared_reference < frame_id
+                         or not isinstance(declared_reference_input, str)
+                         or len(declared_reference_input) != 64))
             )
-            if invalid_observed_reference:
+            if invalid_declared_reference:
                 reference_failures += 1
                 failures.append({
-                    "kind": "observed_reference_semantics", "case_id": case_id,
+                    "kind": "declared_reference_semantics", "case_id": case_id,
                     "frame_id": frame_id,
                 })
-            if (observed.get("reference_frame_id") != expected_reference
-                    or observed.get("reference_input_sha256") != expected_reference_input):
+            if (declared.get("reference_frame_id") != expected_reference
+                    or declared.get("reference_input_sha256") != expected_reference_input):
                 reference_failures += 1
-                failures.append({"kind": "reference_identity", "case_id": case_id, "frame_id": frame_id})
+                failures.append({
+                    "kind": "declared_reference_identity", "case_id": case_id,
+                    "frame_id": frame_id,
+                })
             output_path = safe_path(
-                submission_root, observed.get("output_path"),
+                submission_root, declared.get("output_path"),
                 f"temporal output {case_id} frame {frame_id}")
             observed_hash = file_sha256(output_path)
             output_hashes[frame_id] = observed_hash
-            if observed.get("output_sha256") != observed_hash:
+            if declared.get("output_sha256") != observed_hash:
                 failures.append({"kind": "output_hash", "case_id": case_id, "frame_id": frame_id})
             previous_output = output_reference_identity.get(observed_hash)
             if (previous_output is not None
                     and previous_output[0] != expected_frame["reference"]["sha256"]):
                 same_frame_failures += 1
                 failures.append({
-                    "kind": "same_frame_output_identity", "case_id": case_id,
+                    "kind": "declared_same_frame_output_identity", "case_id": case_id,
                     "frame_id": frame_id, "collides_with_frame_id": previous_output[1],
                 })
             else:
@@ -588,61 +659,73 @@ def evaluate(contract_path: Path, submission_path: Path, output: Path) -> dict[s
                 "scenario": case["scenario"],
                 "degradation": case["degradation"]["id"],
                 "frame_id": frame_id,
-                "pts_us": observed.get("pts_us"),
+                "declared_pts_us": declared.get("pts_us"),
                 "expected_decision": expected_decision,
-                "observed_decision": observed["decision"],
+                "declared_decision": declared["decision"],
                 "expected_reference_frame_id": expected_reference,
-                "observed_reference_frame_id": observed.get("reference_frame_id"),
+                "declared_reference_frame_id": declared.get("reference_frame_id"),
                 "output_sha256": observed_hash,
                 "quality": metric_record(reference, actual),
             })
         for expected_frame in expected_frames:
             frame_id = expected_frame["frame_id"]
-            observed = observed_by_id[frame_id]
-            if observed["decision"] != "REUSE":
+            declared = declared_by_id[frame_id]
+            if declared["decision"] != "REUSE":
                 continue
-            reference_frame_id = observed.get("reference_frame_id")
+            reference_frame_id = declared.get("reference_frame_id")
             if not isinstance(reference_frame_id, int) or reference_frame_id not in output_hashes:
                 continue
             if output_hashes[frame_id] != output_hashes[reference_frame_id]:
                 reference_failures += 1
                 failures.append({
-                    "kind": "reference_output_identity", "case_id": case_id,
+                    "kind": "declared_reference_output_identity", "case_id": case_id,
                     "frame_id": frame_id, "reference_frame_id": reference_frame_id,
                 })
-    machine_status = "PASS" if not failures else "FAIL"
+    declared_conformance_status = "PASS" if not failures else "FAIL"
     report = {
-        "schema_version": 1,
-        "status": "observed-host-anime-visual-quality-evaluation",
-        "machine_gate": machine_status,
+        "schema_version": 2,
+        "status": "evaluated-declared-oracle-conformance",
+        "declared_oracle_conformance": declared_conformance_status,
         "quality_acceptance": "NOT_SET_METRICS_ONLY_HUMAN_REVIEW_PENDING",
-        "adapter_id": submission["adapter_id"],
+        "runtime_evidence": {
+            "status": "NOT_BOUND",
+            "submitted_trace_sha256": submitted_trace_hash,
+            "reason": "submission fields and a trace hash alone cannot prove execution",
+            "required": [
+                "replayable per-frame runtime trace bytes",
+                "receipt binding trace, contract, outputs, runtime configuration and execution identity",
+                "validator replay of the trace against the bound artifacts",
+            ],
+        },
+        "producer_label": submission["producer_label"],
         "contract_sha256": file_sha256(contract_path),
+        "canonical_generator_identity_sha256": canonical_identity_sha256,
         "submission_sha256": file_sha256(submission_path),
         "summary": {
             "spatial_case_count": len(spatial_rows),
             "temporal_case_count": len(temporal_contracts),
             "temporal_frame_count": len(temporal_rows),
-            "wrong_reuse_count": wrong_reuse,
-            "wrong_reuse_rate": (
-                wrong_reuse / expected_process_frames if expected_process_frames else 0.0),
-            "missed_reuse_count": missed_reuse,
-            "missed_reuse_rate": (
-                missed_reuse / expected_reuse_frames if expected_reuse_frames else 0.0),
+            "declared_wrong_reuse_count": declared_wrong_reuse,
+            "declared_wrong_reuse_rate": (
+                declared_wrong_reuse / expected_process_frames if expected_process_frames else 0.0),
+            "declared_missed_reuse_count": declared_missed_reuse,
+            "declared_missed_reuse_rate": (
+                declared_missed_reuse / expected_reuse_frames if expected_reuse_frames else 0.0),
             "expected_process_frame_count": expected_process_frames,
             "expected_reuse_frame_count": expected_reuse_frames,
-            "pts_identity_failure_count": pts_failures,
-            "reference_identity_failure_count": reference_failures,
-            "same_frame_identity_failure_count": same_frame_failures,
+            "declared_pts_identity_failure_count": pts_failures,
+            "declared_reference_identity_failure_count": reference_failures,
+            "declared_same_frame_identity_failure_count": same_frame_failures,
             "total_failure_count": len(failures),
         },
         "failures": failures,
         "spatial_rows": spatial_rows,
         "temporal_rows": temporal_rows,
         "limits": [
-            "Machine PASS means complete artifact/identity/cadence binding for these synthetic fixtures only.",
+            "Declared-oracle PASS means the submission declarations and supplied files conform to the synthetic oracle; it is not observed runtime behavior.",
             "PSNR, global SSIM and edge MAE are reported diagnostics without a frozen acceptance threshold.",
             "Human visual and rhythm review is not performed by this evaluator.",
+            "A trace SHA-256 is integrity metadata only and cannot independently prove that the declared decisions were executed.",
             "This report does not establish target-device execution, final display cadence or representative anime quality.",
         ],
     }
@@ -668,7 +751,7 @@ def main() -> int:
         return 0
     result = evaluate(args.contract, args.submission, args.output)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["machine_gate"] == "PASS" else 1
+    return 0 if result["declared_oracle_conformance"] == "PASS" else 1
 
 
 if __name__ == "__main__":

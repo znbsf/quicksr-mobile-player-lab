@@ -68,10 +68,11 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
             temporal_outputs.append({"case_id": case["id"], "frames": observed_frames})
 
         submission = {
-            "schema_version": 1,
+            "schema_version": gate.SUBMISSION_SCHEMA_VERSION,
             "status": gate.SUBMISSION_STATUS,
             "contract_sha256": gate.file_sha256(contract_path),
-            "adapter_id": "unit-test-ideal-reference",
+            "producer_label": "unit-test-oracle-filled-submission",
+            "runtime_trace_sha256": None,
             "spatial_outputs": spatial_outputs,
             "temporal_outputs": temporal_outputs,
         }
@@ -116,17 +117,27 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
                  "PROCESS", "PROCESS", "REUSE"],
             )
 
-    def test_ideal_reference_submission_passes_and_reports_all_metrics(self) -> None:
+    def test_oracle_filled_submission_passes_only_declared_conformance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             contract_path, contract = self.prepare(root)
             submission_path = self.make_passing_submission(root, contract_path, contract)
+            submission = json.loads(submission_path.read_text(encoding="utf-8"))
+            # A hash by itself is not a replayable trace or an execution receipt.
+            submission["runtime_trace_sha256"] = "a" * 64
+            submission_path.write_text(json.dumps(submission, indent=2) + "\n", encoding="utf-8")
             report = gate.evaluate(contract_path, submission_path, root / "report.json")
-            self.assertEqual(report["machine_gate"], "PASS")
-            self.assertEqual(report["summary"]["wrong_reuse_count"], 0)
-            self.assertEqual(report["summary"]["wrong_reuse_rate"], 0.0)
-            self.assertEqual(report["summary"]["missed_reuse_count"], 0)
-            self.assertEqual(report["summary"]["missed_reuse_rate"], 0.0)
+            self.assertEqual(report["status"], "evaluated-declared-oracle-conformance")
+            self.assertEqual(report["declared_oracle_conformance"], "PASS")
+            self.assertNotIn("machine_gate", report)
+            self.assertNotIn("observed_runtime", report)
+            self.assertEqual(report["runtime_evidence"]["status"], "NOT_BOUND")
+            self.assertEqual(report["runtime_evidence"]["submitted_trace_sha256"], "a" * 64)
+            self.assertIn("cannot prove execution", report["runtime_evidence"]["reason"])
+            self.assertEqual(report["summary"]["declared_wrong_reuse_count"], 0)
+            self.assertEqual(report["summary"]["declared_wrong_reuse_rate"], 0.0)
+            self.assertEqual(report["summary"]["declared_missed_reuse_count"], 0)
+            self.assertEqual(report["summary"]["declared_missed_reuse_rate"], 0.0)
             self.assertEqual(report["summary"]["temporal_case_count"], 14)
             self.assertEqual(report["summary"]["spatial_case_count"], 6)
             for row in [*report["spatial_rows"], *report["temporal_rows"]]:
@@ -135,7 +146,7 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
                 self.assertIn("global_ssim", metrics)
                 self.assertIn("edge_mae", metrics)
 
-    def test_wrong_reuse_missed_reuse_pts_and_reference_identity_fail_closed(self) -> None:
+    def test_declared_reuse_pts_and_reference_mismatch_fail_conformance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             contract_path, contract = self.prepare(root)
@@ -150,13 +161,15 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
             mixed["frames"][4]["reference_frame_id"] = 1
             submission_path.write_text(json.dumps(submission, indent=2) + "\n", encoding="utf-8")
             report = gate.evaluate(contract_path, submission_path, root / "failed-report.json")
-            self.assertEqual(report["machine_gate"], "FAIL")
-            self.assertEqual(report["summary"]["wrong_reuse_count"], 1)
-            self.assertGreater(report["summary"]["wrong_reuse_rate"], 0.0)
-            self.assertEqual(report["summary"]["missed_reuse_count"], 1)
-            self.assertGreater(report["summary"]["missed_reuse_rate"], 0.0)
-            self.assertEqual(report["summary"]["pts_identity_failure_count"], 1)
-            self.assertGreaterEqual(report["summary"]["reference_identity_failure_count"], 1)
+            self.assertEqual(report["declared_oracle_conformance"], "FAIL")
+            self.assertEqual(report["runtime_evidence"]["status"], "NOT_BOUND")
+            self.assertEqual(report["summary"]["declared_wrong_reuse_count"], 1)
+            self.assertGreater(report["summary"]["declared_wrong_reuse_rate"], 0.0)
+            self.assertEqual(report["summary"]["declared_missed_reuse_count"], 1)
+            self.assertGreater(report["summary"]["declared_missed_reuse_rate"], 0.0)
+            self.assertEqual(report["summary"]["declared_pts_identity_failure_count"], 1)
+            self.assertGreaterEqual(
+                report["summary"]["declared_reference_identity_failure_count"], 1)
 
     def test_missing_frame_and_contract_hash_mismatch_raise(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -174,6 +187,22 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
             submission_path.write_text(json.dumps(submission, indent=2) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "complete ordered frame sequence"):
                 gate.evaluate(contract_path, submission_path, root / "report.json")
+
+            forged_contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            mixed = next(
+                case for case in forged_contract["temporal_cases"]
+                if case["id"] == "mixed-one-two-three--clean-lanczos")
+            held_frame = mixed["frames"][2]
+            self.assertEqual(held_frame["expected_decision"], "REUSE")
+            held_frame["expected_decision"] = "PROCESS"
+            held_frame["expected_reference_frame_id"] = None
+            contract_path.write_text(
+                json.dumps(forged_contract, indent=2) + "\n", encoding="utf-8")
+            resigned_submission = self.make_passing_submission(
+                root, contract_path, forged_contract)
+            with self.assertRaisesRegex(ValueError, "canonical checked-in generator"):
+                gate.evaluate(
+                    contract_path, resigned_submission, root / "forged-report.json")
 
     def test_same_frame_and_reused_output_identity_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -199,11 +228,17 @@ class AnimeVisualQualityGateTests(unittest.TestCase):
             submission_path.write_text(json.dumps(submission, indent=2) + "\n", encoding="utf-8")
 
             report = gate.evaluate(contract_path, submission_path, root / "failed-report.json")
-            self.assertEqual(report["machine_gate"], "FAIL")
-            self.assertEqual(report["summary"]["same_frame_identity_failure_count"], 2)
-            self.assertGreaterEqual(report["summary"]["reference_identity_failure_count"], 1)
-            self.assertIn("reference_output_identity", {item["kind"] for item in report["failures"]})
-            self.assertIn("same_frame_output_identity", {item["kind"] for item in report["failures"]})
+            self.assertEqual(report["declared_oracle_conformance"], "FAIL")
+            self.assertEqual(report["runtime_evidence"]["status"], "NOT_BOUND")
+            self.assertEqual(report["summary"]["declared_same_frame_identity_failure_count"], 2)
+            self.assertGreaterEqual(
+                report["summary"]["declared_reference_identity_failure_count"], 1)
+            self.assertIn(
+                "declared_reference_output_identity",
+                {item["kind"] for item in report["failures"]})
+            self.assertIn(
+                "declared_same_frame_output_identity",
+                {item["kind"] for item in report["failures"]})
 
 
 if __name__ == "__main__":

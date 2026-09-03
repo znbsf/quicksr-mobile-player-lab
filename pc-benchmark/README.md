@@ -26,9 +26,11 @@ python .\pc-benchmark\anime_visual_quality_gate.py prepare `
   --output .\build\pc-benchmark\anime-visual-quality-gate
 ```
 
-Its bound submission evaluator checks same-frame hashes, wrong/missed reuse, PTS/reference
-identity and reused-output identity, then reports PSNR, global SSIM and edge MAE. See
-`docs/ANIME_VISUAL_QUALITY_GATES.md` for the exact protocol and proof boundary.
+Its evaluator regenerates the canonical contract, checks submitted declarations and files against
+the synthetic oracle, then reports PSNR, global SSIM and edge MAE. A declared-conformance PASS is
+not observed wrong/missed-reuse evidence; runtime claims require replayable per-frame trace bytes,
+a binding receipt and execution identity. See `docs/ANIME_VISUAL_QUALITY_GATES.md` for the exact
+protocol and proof boundary.
 
 ## Anime candidate contract
 
