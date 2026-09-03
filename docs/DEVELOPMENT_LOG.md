@@ -180,17 +180,20 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 ## 2026-09-03 — Resident RIFE Android resolution ladder
 
 - **Protocol:** generated seven distinct project-owned frames and six known midpoints at each of
-  160x90, 256x144, 320x180, 480x270 and 640x360. Each unpolled directory-mode process initialized
-  Vulkan and loaded RIFE v4.6 once; the first midpoint was warmup and the next five were measured.
-  PSS/RSS polling ran in a separate process and was excluded from latency statistics.
-- **Observed:** stable midpoint medians were 30.335/42.551/36.106/56.970/79.082 ms. Corresponding
-  maxima were 33.343/44.911/42.868/64.508/83.233 ms and sampled PSS peaks were
-  186,107/186,217/190,489/191,497/201,912 kB. The non-monotonic low-resolution timings and spread
-  remain visible; clocks were not controlled.
+  160x90, 256x144, 320x180, 480x270 and 640x360. The corrected runner binds manifest metadata,
+  exact local 7+6 bytes/hashes/dimensions, a fresh prefilter replay and every pushed device input
+  hash before execution. Each unpolled directory-mode process initialized Vulkan and loaded RIFE
+  v4.6 once; PSS/RSS polling ran in a separate process and was excluded from latency statistics.
+- **Observed:** the final corrected rerun's stable midpoint medians were
+  30.260/45.441/35.715/50.425/75.053 ms. Corresponding maxima were
+  32.008/48.535/37.806/58.602/85.062 ms and sampled PSS peaks were
+  186,336/187,337/185,929/186,248/186,310 kB. The spread and drift from the superseded preliminary
+  pass remain evidence that clocks were not controlled.
 - **Thermal boundary:** corrected thermal parsing excludes threshold/limit zones. The bounded
-  temperature-zone maximum was 46.9 C and the battery proxy stayed at 36.0 C. This is not a
-  sustained thermal result.
-- **Decision:** 160x90 fits the 30 fps kernel budget by median but misses it by about 0.010 ms at
-  max; 320x180 fits 24 fps by median but not max. Decode, SR, composition, display and A/V sync are
-  omitted, so no level has defensible end-to-end realtime margin. RIFE remains offline-only;
+  temperature-zone maximum was 48.0 C and the battery proxy stayed between 35.8 and 36.0 C. This
+  is not a sustained thermal result.
+- **Decision:** 160x90 and 320x180 fit the 30 fps and 24 fps kernel-only budgets in this pass, but
+  their maxima leave only about 1.325 ms and 3.860 ms. The 640x360 max misses a 12-to-24 interval.
+  Decode, SR, composition, display and A/V sync are omitted, so no level has defensible end-to-end
+  realtime margin. RIFE remains offline-only;
   low-resolution VFI followed by the existing SR/Anime4K route is a recorded hypothesis only.

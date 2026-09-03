@@ -276,10 +276,12 @@ A + B + C 的结果稳定
 2026-09-03 执行状态：已在独立分支完成两轮 source-only 离线评测，均未修改
 `QuickSrVideoEffect` 或注册播放器 effect。首轮建立 hold/cut/seek/stream-epoch fail-closed
 prefilter，并只把 RIFE ncnn Vulkan v4.6 晋级到一台 Adreno 740 上的独立 native CLI。
-第二轮让模型在单个进程内驻留，跑完 160x90 到 640x360 的五档矩阵：160x90 稳态中位
-30.335 ms，但 max 33.343 ms 已略超 30 fps 预算；320x180 中位 36.106 ms，但 max
-42.868 ms 超出 24 fps 预算。播放器调度、解码、SR、合成、A/V sync 和长时 thermal
-仍未计入，因此继续归类为 offline-only。低分辨率 VFI 后接现有 SR/Anime4K 只是下一项
+第二轮让模型在单个进程内驻留，并以 manifest、本地文件、重新计算的 prefilter 决策和
+设备输入 hash 四方绑定的修正版跑完 160x90 到 640x360 五档矩阵。160x90 稳态中位/max
+为 30.260/32.008 ms，320x180 为 35.715/37.806 ms；虽然两档纯模型本次分别守住
+30/24 fps，但最大余量只有约 1.325/3.860 ms。播放器调度、解码、SR、合成、A/V sync
+和长时 thermal 仍未计入，因此继续归类为 offline-only。低分辨率 VFI 后接现有
+SR/Anime4K 只是下一项
 待验证假设，本分支未实现。模型权重再分发、代表性动漫时序质量和人工审核仍然开放。
 详见 [ANIME_VFI_OFFLINE_EVALUATION.md](ANIME_VFI_OFFLINE_EVALUATION.md)。
 

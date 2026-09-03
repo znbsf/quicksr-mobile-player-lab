@@ -108,6 +108,15 @@ once, then emits 14 upstream tasks. Midpoint task IDs are `1/3/5/7/9/11`: the fi
 remaining five form the unpolled stable distribution. A second process is used only for PSS/RSS
 sampling and is excluded from latency statistics.
 
+Before any device work, the runner now requires the expected manifest schema and level metadata,
+exactly seven input plus six ground-truth files per level, matching bytes/SHA-256 and pixel
+dimensions, and an exact match between manifest decisions and a fresh prefilter replay over the
+actual inputs. Every input is then SHA-256 checked again on device immediately after `adb push`.
+Ground truths are rechecked immediately before scoring. Model/decode/encode timing IDs must each be
+exactly `0..13` with no gaps or duplicates. The ignored raw report binds all local and remote input
+identities and has SHA-256
+`626c9123eac3ed73899caca37fabb8a5d2829271a9e95e4be7d0d03ae2455848`.
+
 The instrumented binary SHA-256 is
 `d624f9cb509c719fdcb5f10c60698888ccaf74c580e95f2c6bc6ce1f1fda8824`; the expanded timing patch is
 `90586c0f2de819de73e56871421244aec5a858b4c21e4cd045310bec8eb17020`; and the fixture manifest is
@@ -115,31 +124,33 @@ The instrumented binary SHA-256 is
 
 | Input -> padded | Stable midpoint calls (ms) | Median / min / max | Decode pair / encode median | PSS / RSS peak |
 | --- | --- | --- | --- | --- |
-| `160x90 -> 160x96` | 33.343 / 33.316 / 24.738 / 30.335 / 27.296 | 30.335 / 24.738 / 33.343 ms | 0.706 / 2.300 ms | 186,107 / 227,524 kB |
-| `256x144 -> 256x160` | 42.277 / 41.638 / 44.911 / 42.551 / 44.036 | 42.551 / 41.638 / 44.911 ms | 0.389 / 2.976 ms | 186,217 / 227,448 kB |
-| `320x180 -> 320x192` | 29.001 / 30.494 / 36.106 / 37.875 / 42.868 | 36.106 / 29.001 / 42.868 ms | 1.152 / 7.936 ms | 190,489 / 232,128 kB |
-| `480x270 -> 480x288` | 54.107 / 60.871 / 64.508 / 56.970 / 56.344 | 56.970 / 54.107 / 64.508 ms | 1.510 / 6.914 ms | 191,497 / 233,056 kB |
-| `640x360 -> 640x384` | 83.233 / 81.688 / 77.718 / 79.082 / 72.407 | 79.082 / 72.407 / 83.233 ms | 2.232 / 10.057 ms | 201,912 / 243,328 kB |
+| `160x90 -> 160x96` | 30.260 / 29.954 / 28.742 / 32.008 / 30.492 | 30.260 / 28.742 / 32.008 ms | 0.636 / 2.380 ms | 186,336 / 227,424 kB |
+| `256x144 -> 256x160` | 45.441 / 48.535 / 47.708 / 44.771 / 45.358 | 45.441 / 44.771 / 48.535 ms | 1.009 / 4.295 ms | 187,337 / 228,908 kB |
+| `320x180 -> 320x192` | 35.094 / 35.043 / 36.584 / 37.806 / 35.715 | 35.715 / 35.043 / 37.806 ms | 1.635 / 5.682 ms | 185,929 / 227,384 kB |
+| `480x270 -> 480x288` | 53.271 / 58.602 / 50.367 / 48.701 / 50.425 | 50.425 / 48.701 / 58.602 ms | 2.020 / 6.505 ms | 186,248 / 227,580 kB |
+| `640x360 -> 640x384` | 85.062 / 75.053 / 71.947 / 79.659 / 73.948 | 75.053 / 71.947 / 85.062 ms | 2.203 / 10.100 ms | 186,310 / 228,088 kB |
 
-Cold Vulkan initialization was 23.127-26.488 ms and model loading was 1304.762-1666.530 ms. The
-first midpoint warmups were 100.156-173.555 ms; whole-process times were 1794.112-2219.553 ms.
+Cold Vulkan initialization was 23.446-24.592 ms and model loading was 1346.619-1650.405 ms. The
+first midpoint warmups were 78.600-171.670 ms; whole-process times were 1886.056-2456.608 ms.
 These are separate clocks: upstream decode/model/encode tasks overlap in a pipeline and must not be
-summed. The non-monotonic 256x144/320x180 results and within-run spread are retained rather than
-smoothed away; this bounded pass does not control clocks or prove sustained performance.
+summed. The within-run spread and material drift from the superseded preliminary pass are retained
+as limitations rather than smoothed away; this bounded pass does not control clocks or prove
+sustained performance.
 
 All levels produced 14 hashed PNG outputs and six quality comparisons. Mean PSNR ranges from
 26.378 to 31.073 dB, global SSIM from 0.980406 to 0.992237, and edge-gradient MAE from 0.003138 to
 0.010590. These synthetic known-midpoint proxies validate execution and scoring only; human review
-remains pending. Corrected temperature-zone maxima were at most 46.9 C, threshold/limit zones were
-excluded, and the battery proxy remained 36.0 C before and after each bounded level. This is not a
-sustained thermal result.
+remains pending. Corrected temperature-zone maxima were at most 48.0 C, threshold/limit zones were
+excluded, and the battery proxy remained between 35.8 and 36.0 C. This is not a sustained thermal
+result.
 
 ### Budget decision
 
 The comparison budgets are 33.333 ms for 30 fps, 41.667 ms for 24 fps, and 83.333 ms for one
-12-to-24 fps source interval. At 160x90 the 30.335 ms median fits the 30 fps kernel-only budget, but
-the 33.343 ms maximum misses it by about 0.010 ms. At 320x180 the 36.106 ms median fits 24 fps, but
-the 42.868 ms maximum does not. The 640x360 distribution only narrowly fits the 12-to-24 interval.
+12-to-24 fps source interval. At 160x90 all five model calls fit the 30 fps kernel-only budget, but
+the 32.008 ms maximum leaves only about 1.325 ms. At 320x180 all calls fit 24 fps, but the 37.806 ms
+maximum leaves only about 3.860 ms. The 256x144 and 480x270 medians miss both 24 and 30 fps budgets.
+At 640x360 the 75.053 ms median fits one 12-to-24 interval, but the 85.062 ms maximum does not.
 
 Those clocks omit player scheduling, video decode, SR, composition, final display, A/V sync, and
 sustained thermal behavior. Therefore no resolution has meaningful end-to-end realtime margin and

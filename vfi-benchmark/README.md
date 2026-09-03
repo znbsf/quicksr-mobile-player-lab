@@ -70,10 +70,20 @@ python vfi-benchmark/run_vfi_android_resident_matrix.py `
   --levels 160x90 256x144 320x180 480x270 640x360
 ```
 
+The runner fails before execution unless the manifest schema and level metadata are exact, every
+level has precisely seven input and six ground-truth files with matching bytes/SHA-256/dimensions,
+and a fresh prefilter replay matches the recorded decisions. Each input is SHA-256 checked again on
+device immediately after push; ground truths are rechecked immediately before scoring. Timing
+streams must each contain the unique IDs `0..13`. The raw ignored report records both local fixture
+identities and device-side input hashes.
+
 The report keeps cold process wall time, Vulkan initialization, model loading, midpoint warmup,
 five stable midpoint calls, PNG decode/encode, sampled memory, input/padded dimensions, temperature
 proxies, output hashes, and known-midpoint quality proxies separate. The upstream pipeline overlaps
 decode/model/encode stages, so their individual times are not additive to whole-process time.
+
+The build script also refuses an upstream tree carrying the older `VFI_MODEL_WALL_NS=`-only patch.
+Use a clean checkout at the pinned commit in that case; the script does not reset or rewrite it.
 
 Generated PNGs, outputs, reports, weights, binaries, APKs, and raw logs must remain under
 `local-artifacts/` or another ignored path. The committed candidate manifest records observed

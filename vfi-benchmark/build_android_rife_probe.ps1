@@ -14,20 +14,26 @@ $ResolvedRoot = (Resolve-Path -LiteralPath $UpstreamRoot).Path
 if ((git -C $ResolvedRoot rev-parse HEAD) -ne $ExpectedCommit) {
     throw "Unexpected rife-ncnn-vulkan commit"
 }
+
+$PatchPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "patches\rife-ncnn-vulkan-model-timing.txt")).Path
+$MainSource = Join-Path $ResolvedRoot "src\main.cpp"
+$HasCurrentTimingPatch = Select-String -Quiet -LiteralPath $MainSource -Pattern "VFI_VULKAN_INIT_WALL_NS"
+$HasLegacyTimingPatch = Select-String -Quiet -LiteralPath $MainSource -SimpleMatch "VFI_MODEL_WALL_NS="
+if (-not $HasCurrentTimingPatch -and $HasLegacyTimingPatch) {
+    throw "Legacy VFI timing patch detected. Use a clean pinned rife-ncnn-vulkan clone; this script will not reset or rewrite an existing upstream tree."
+}
+if (-not $HasCurrentTimingPatch) {
+    git -C $ResolvedRoot apply --check $PatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Timing patch does not apply; use a clean pinned rife-ncnn-vulkan clone" }
+    git -C $ResolvedRoot apply $PatchPath
+}
+
 git -C $ResolvedRoot submodule update --init --recursive --depth 1
 if ((git -C (Join-Path $ResolvedRoot "src\ncnn") rev-parse HEAD) -ne $ExpectedNcnnCommit) {
     throw "Unexpected ncnn submodule commit"
 }
 if ((git -C (Join-Path $ResolvedRoot "src\libwebp") rev-parse HEAD) -ne $ExpectedWebpCommit) {
     throw "Unexpected libwebp submodule commit"
-}
-
-$PatchPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "patches\rife-ncnn-vulkan-model-timing.txt")).Path
-$MainSource = Join-Path $ResolvedRoot "src\main.cpp"
-if (-not (Select-String -Quiet -LiteralPath $MainSource -Pattern "VFI_VULKAN_INIT_WALL_NS")) {
-    git -C $ResolvedRoot apply --check $PatchPath
-    if ($LASTEXITCODE -ne 0) { throw "Timing patch does not apply" }
-    git -C $ResolvedRoot apply $PatchPath
 }
 
 $Cmake = Join-Path $AndroidSdk "cmake\$CmakeVersion\bin\cmake.exe"
