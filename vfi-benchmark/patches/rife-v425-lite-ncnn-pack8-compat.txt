@@ -1,0 +1,25 @@
+diff --git a/src/gpu.cpp b/src/gpu.cpp
+index 999ef798..16844dec 100644
+--- a/src/gpu.cpp
++++ b/src/gpu.cpp
+@@ -4888,6 +4888,9 @@ int compile_spirv_module(const char* comp_data, int comp_data_size, const Option
+         custom_defines.append("afp", "float");
+         custom_defines.append("afpvec2", "vec2");
+         custom_defines.append("afpvec4", "vec4");
++        // rife-ncnn-vulkan's legacy pack8 warp shader still consumes the
++        // two-column arithmetic vector alias removed from newer ncnn.
++        custom_defines.append("afpvec8", "mat2x4");
+         custom_defines.append("afpmat4", "mat4");
+     }
+ 
+@@ -5118,6 +5121,10 @@ int compile_spirv_module(const char* comp_data, int comp_data_size, const Option
+         custom_defines.append("buffer_st4(buf,i,v)", "{buf[i]=f16vec4(v);}");
+         custom_defines.append("buffer_cp4(buf,i,sbuf,si)", "{buf[i]=sbuf[si];}");
+         custom_defines.append("buffer_cp4to1(buf,i4,sbuf,si)", "{buf[i4.r]=sbuf[si].r;buf[i4.g]=sbuf[si].g;buf[i4.b]=sbuf[si].b;buf[i4.a]=sbuf[si].a;}");
++        // Compatibility for rife-ncnn-vulkan warp_pack8.comp. The shader
++        // declares sfpvec8 as two f16vec4 columns when fp16 storage is used.
++        custom_defines.append("buffer_ld8(buf,i)", "mat2x4(vec4(buf[i].abcd),vec4(buf[i].efgh))");
++        custom_defines.append("buffer_st8(buf,i,v)", "{buf[i].abcd=f16vec4(v[0]);buf[i].efgh=f16vec4(v[1]);}");
+     }
+     else if (opt.use_fp16_packed)
+     {

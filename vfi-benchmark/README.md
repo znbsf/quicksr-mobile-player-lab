@@ -98,6 +98,57 @@ python vfi-benchmark/run_vfi_android_resident_matrix.py `
 The IFRNet model files are intentionally not supplied by this repository. Their expected identities
 are recorded in `candidates.json`; availability is not redistribution permission.
 
+Build the exact modern runtime required by RIFE v4.25-lite. The Windows script requires Vulkan
+headers and an import/static library supplied from a local SDK or another ignored toolchain path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File vfi-benchmark/build_windows_rife_v425_lite_probe.ps1 `
+  -UpstreamRoot local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan `
+  -VulkanIncludeDir <local-vulkan-include-root> `
+  -VulkanLibrary <local-vulkan-library>
+
+python vfi-benchmark/run_vfi_host_benchmark.py `
+  --fixture-manifest local-artifacts/vfi-mobile/fixtures/fixture-manifest.json `
+  --executable local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan/build-windows-x64/Release/rife-ncnn-vulkan.exe `
+  --model-dir local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan/models/rife-v4.25-lite `
+  --candidate-id rife-ncnn-vulkan-v4.25-lite `
+  --source-commit 13338e38debe2e400b3eeecf6792312d01a692f9 `
+  --output-dir local-artifacts/vfi-mobile/host/rife-v4.25-lite
+
+powershell -ExecutionPolicy Bypass -File vfi-benchmark/build_android_rife_v425_lite_probe.ps1 `
+  -UpstreamRoot local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan
+```
+
+When the reviewed physical device is available, run only the same three resident levels:
+
+```powershell
+python vfi-benchmark/generate_resident_fixtures.py `
+  --output-dir local-artifacts/vfi-mobile/resident-fixtures-rife-v425-lite `
+  --levels 160x90 256x144 320x180 `
+  --padding-multiple 128
+
+python vfi-benchmark/run_vfi_android_resident_matrix.py `
+  --serial <one-connected-device-serial> `
+  --binary local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan/build-android-arm64/rife-ncnn-vulkan `
+  --model-dir local-artifacts/vfi-mobile/upstream/rife-ncnn-vulkan/models/rife-v4.25-lite `
+  --fixture-manifest local-artifacts/vfi-mobile/resident-fixtures-rife-v425-lite/resident-fixture-manifest.json `
+  --output-dir local-artifacts/vfi-mobile/device/rife-v4.25-lite `
+  --levels 160x90 256x144 320x180 `
+  --candidate-id rife-ncnn-vulkan-v4.25-lite `
+  --source-commit 13338e38debe2e400b3eeecf6792312d01a692f9 `
+  --ncnn-commit ec19da2b615cc8be438ae3d31fd34fe23df03d52 `
+  --libwebp-commit 5abb55823bb6196a918dd87202b2f32bbaff4c18 `
+  --remote-model-name rife-v4.25-lite `
+  --timing-patch vfi-benchmark/patches/rife-v425-lite-model-timing.txt
+```
+
+The source pixels, decisions, and three resolution levels are the same as the frozen resident
+fixture; only the declared model padding changes from 32 to the v4.25-lite runtime's actual 128.
+The modern runtime still needs the committed ncnn pack8 compatibility patch. The Android build
+script applies both that compatibility patch and the timing-only patch, checks all source/model
+identities, and refuses an incompatible tree. The 2026-09-03 cycle completed the host gate and
+Android cross-build but not device execution; see `rife-v425-lite-evidence-summary.json`.
+
 The runner fails before execution unless the manifest schema and level metadata are exact, every
 level has precisely seven input and six ground-truth files with matching bytes/SHA-256/dimensions,
 and a fresh prefilter replay matches the recorded decisions. Each input is SHA-256 checked again on

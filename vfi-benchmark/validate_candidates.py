@@ -11,6 +11,9 @@ def main() -> None:
     evidence = json.loads(
         path.with_name("mobile-candidate-evidence-summary.json").read_text(encoding="utf-8")
     )
+    rife_v425_evidence = json.loads(
+        path.with_name("rife-v425-lite-evidence-summary.json").read_text(encoding="utf-8")
+    )
     assert data["schema"] == "anime-vfi-candidates.v2"
     assert data["baseline"]["id"] == "rife-ncnn-vulkan-v4.6"
     assert data["baseline"]["status"] == "offline-baseline-not-realtime"
@@ -42,7 +45,22 @@ def main() -> None:
     assert evidence["decision"]["replace_rife_v4_6"] is False
     assert evidence["decision"]["stop_ifrnet_s"] is True
     assert evidence["decision"]["player_integration"] == "absent"
-    print(f"VFI CANDIDATE CHECK: PASS ({len(candidates)} shortlisted, 1 device-probed lower bound)")
+    assert rife_v425_evidence["schema"] == "anime-vfi-rife-v425-lite-evidence.v1"
+    assert rife_v425_evidence["host"]["event_count"] == 12
+    assert rife_v425_evidence["host"]["interpolated_pair_count"] == 1
+    assert rife_v425_evidence["host"]["outputs_stable_across_runs"] is True
+    assert rife_v425_evidence["android_build"]["status"] == "build-succeeded-not-device-executed"
+    assert rife_v425_evidence["device_matrix"]["status"] == "pending"
+    assert rife_v425_evidence["device_matrix"]["measurements"] is None
+    assert rife_v425_evidence["device_matrix"]["device_compatibility_claim"] is False
+    assert rife_v425_evidence["device_matrix"]["prepared_fixture_padding_multiple"] == 128
+    assert rife_v425_evidence["device_matrix"]["source_pixels_and_decisions_match_frozen_three_level_fixture"] is True
+    assert rife_v425_evidence["decision"]["replace_rife_v4_6"] is False
+    assert rife_v425_evidence["decision"]["player_integration"] == "absent"
+    print(
+        f"VFI CANDIDATE CHECK: PASS ({len(candidates)} shortlisted, "
+        "1 device-probed lower bound, RIFE v4.25-lite device matrix pending)"
+    )
 
 
 if __name__ == "__main__":

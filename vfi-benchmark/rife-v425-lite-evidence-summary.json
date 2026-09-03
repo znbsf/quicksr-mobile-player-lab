@@ -1,0 +1,75 @@
+{
+  "schema": "anime-vfi-rife-v425-lite-evidence.v1",
+  "measured_at": "2026-09-03",
+  "scope": "sanitized aggregate of the 12-event host gate and an Android arm64 build; physical-device execution was not completed",
+  "candidate": {
+    "id": "rife-ncnn-vulkan-v4.25-lite",
+    "source_commit": "13338e38debe2e400b3eeecf6792312d01a692f9",
+    "ncnn_commit": "ec19da2b615cc8be438ae3d31fd34fe23df03d52",
+    "libwebp_commit": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
+    "model_tree_sha256": "5272b197f661d2d5f1e5eeb247fa0b5c163db53f6cf1050a6671b4faea938d25",
+    "model_redistribution": "blocked-pending-rights-review"
+  },
+  "runtime_patches": {
+    "ncnn_pack8_compat_sha256": "2e5d22360ad6552ac7586f3397663fb674bf068c3a9f75b3cf0a4befc08257c4",
+    "android_timing_sha256": "5a755744d85dd429f26aef2c1ff4c863a9527f767084221a73a697159bdec0ab",
+    "compatibility_reason": "newer ncnn omitted legacy afpvec8 and fp16 pack8 buffer aliases still required by rife-ncnn-vulkan warp_pack8.comp"
+  },
+  "host": {
+    "fixture_manifest_sha256": "2e829049491b35e4838a7ed7a657b999d8f9b37064f17af0ec6c457e6deb90af",
+    "ignored_raw_report_sha256": "93cdecd181469fedf4589aa24232ced8400e291cded45614a75d759c788e8814",
+    "instrumented_binary_sha256": "48fc04e5a58feb1f2eba36f2508b8e663ee4a628890d26f144c89e573440ced9",
+    "event_count": 12,
+    "interpolated_pair_count": 1,
+    "bypassed_pair_or_boundary_count": 11,
+    "model_run_count": 3,
+    "process_wall_time_ms": [3704.4505, 1108.6132, 1109.1197],
+    "process_wall_time_ms_median": 1109.1197,
+    "peak_private_bytes_observed": 293257216,
+    "output_sha256": "83cd40e9bcb39f117b1c8f9dc8db64a79828cbfc8daf3139e42ec64cc92b87b9",
+    "outputs_stable_across_runs": true,
+    "quality_proxy": {
+      "psnr_db": 23.686868,
+      "ssim_global": 0.963678,
+      "edge_gradient_mae": 0.011427,
+      "human_review": "pending"
+    },
+    "versus_rife_v4_6": {
+      "process_median_delta_percent": 47.917,
+      "peak_private_bytes_delta_percent": -2.724,
+      "psnr_delta_db": -3.433115,
+      "ssim_delta": -0.019998,
+      "edge_mae_delta": 0.002072
+    },
+    "versus_ifrnet_s": {
+      "process_median_delta_percent": 100.351,
+      "psnr_delta_db": 7.082855,
+      "ssim_delta": 0.165119,
+      "edge_mae_delta": -0.004411
+    },
+    "gate": "passed for a device probe only; no quality or replacement success"
+  },
+  "android_build": {
+    "abi": "arm64-v8a",
+    "platform": "android-27",
+    "ndk": "25.2.9519653",
+    "binary_bytes": 58157480,
+    "instrumented_binary_sha256": "638568631e7b22cc6576e71275890a888757b036c29d95c94b156a4e7963a26b",
+    "status": "build-succeeded-not-device-executed"
+  },
+  "device_matrix": {
+    "status": "pending",
+    "reason": "the physical device became unavailable before the resident matrix began",
+    "prepared_fixture_manifest_sha256": "a5a0abe4788e2c65417c9513a14c775de4c75444575c325bc099e4c5772daa3c",
+    "prepared_fixture_padding_multiple": 128,
+    "source_pixels_and_decisions_match_frozen_three_level_fixture": true,
+    "measurements": null,
+    "device_compatibility_claim": false
+  },
+  "decision": {
+    "replace_rife_v4_6": false,
+    "stop_rife_v425_lite": false,
+    "reason": "The modern runtime fixes the old MemoryData blocker and the host output is stable, but the host proxies regress versus RIFE v4.6 and no physical-device result exists. Keep the candidate pending exactly the same resident device matrix.",
+    "player_integration": "absent"
+  }
+}

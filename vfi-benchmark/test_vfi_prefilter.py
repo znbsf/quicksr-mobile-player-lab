@@ -99,6 +99,25 @@ class VfiPrefilterTest(unittest.TestCase):
                 self.assertEqual((level["width"] + 31) // 32 * 32, level["padded_width"])
                 self.assertEqual((level["height"] + 31) // 32 * 32, level["padded_height"])
 
+    def test_resident_fixture_supports_candidate_padding_multiple(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("generate_resident_fixtures.py")),
+                    "--output-dir", str(root), "--levels", "160x90", "--padding-multiple", "128",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            manifest = json.loads((root / "resident-fixture-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(128, manifest["padding_multiple"])
+            self.assertEqual(256, manifest["levels"][0]["padded_width"])
+            self.assertEqual(128, manifest["levels"][0]["padded_height"])
+            validate_fixture_manifest(manifest, root)
+
     def test_resident_timing_parser_selects_six_midpoints(self) -> None:
         timing = parse_timing(timing_stderr())
         self.assertEqual([1, 3, 5, 7, 9, 11], [item["id"] for item in timing["midpoint_calls"]])

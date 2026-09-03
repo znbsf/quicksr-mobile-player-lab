@@ -59,6 +59,9 @@ def validate_fixture_manifest(manifest: dict[str, Any], fixture_root: Path) -> d
     levels = manifest.get("levels")
     if not isinstance(levels, list) or not levels:
         raise RuntimeError("fixture manifest must contain a non-empty levels list")
+    padding_multiple = manifest.get("padding_multiple", 32)
+    if not isinstance(padding_multiple, int) or padding_multiple <= 0 or padding_multiple > 1024:
+        raise RuntimeError("fixture manifest padding_multiple must be in the range 1..1024")
 
     validated: dict[str, dict[str, Any]] = {}
     for level in levels:
@@ -72,8 +75,8 @@ def validate_fixture_manifest(manifest: dict[str, Any], fixture_root: Path) -> d
             raise RuntimeError(f"invalid dimensions for fixture level {level_id}")
         expected_metadata = {
             "id": f"{width}x{height}",
-            "padded_width": (width + 31) // 32 * 32,
-            "padded_height": (height + 31) // 32 * 32,
+            "padded_width": (width + padding_multiple - 1) // padding_multiple * padding_multiple,
+            "padded_height": (height + padding_multiple - 1) // padding_multiple * padding_multiple,
             "source_frame_count": 7,
             "midpoint_count": 6,
         }

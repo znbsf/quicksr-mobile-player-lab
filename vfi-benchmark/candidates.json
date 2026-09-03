@@ -12,7 +12,7 @@
   "shortlist": [
     {
       "id": "rife-ncnn-vulkan-v4.25-lite",
-      "status": "next-runtime-specific-probe-not-device-tested",
+      "status": "host-gate-passed-android-built-device-matrix-pending",
       "source": {
         "url": "https://github.com/TNTwise/rife-ncnn-vulkan",
         "commit": "13338e38debe2e400b3eeecf6792312d01a692f9",
@@ -42,14 +42,17 @@
         "operators": ["BinaryOp", "Concat", "Convolution", "Crop", "Deconvolution", "Eltwise", "Input", "Interp", "MemoryData", "PixelShuffle", "ReLU", "rife.Warp", "Sigmoid", "Split"]
       },
       "platform": {
-        "runtime": "candidate-specific current ncnn Vulkan port",
-        "android_binary": "not published",
-        "android_feasibility": "source-level only; current port and ncnn submodule must be pinned and cross-compiled before any device claim"
+        "runtime": "candidate-specific ncnn Vulkan port at pinned source and submodule commits",
+        "ncnn_commit": "ec19da2b615cc8be438ae3d31fd34fe23df03d52",
+        "libwebp_commit": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
+        "android_binary": "locally cross-compiled arm64 standalone CLI only; not published and not device-executed in this cycle",
+        "android_feasibility": "arm64 build confirmed; physical-device compatibility and resident performance remain unmeasured"
       },
       "execution_gate": {
-        "status": "blocked-before-host-benchmark",
-        "observed_error": "The 2022 baseline executable reports 'layer MemoryData not exists or registered' and terminates before inference.",
-        "meaning": "The model is not compatible with the already-measured RIFE v4.6 binary; this is not a benchmark result for v4.25-lite."
+        "status": "host-gate-passed-device-gate-pending",
+        "evidence": "rife-v425-lite-evidence-summary.json",
+        "observed_runtime_fixes": "The current ncnn port supplies MemoryData, but its newer shader preamble removed legacy pack8 aliases still consumed by warp_pack8.comp. A narrow compatibility patch restores afpvec8 plus fp16 buffer load/store aliases.",
+        "meaning": "The exact modern runtime completed the 12-event host fixture with stable output. Its single-pair synthetic proxies are worse than RIFE v4.6 but do not repeat IFRNet-S's collapse, so it cleared only the host gate. The device matrix is still required before any mobile disposition."
       }
     },
     {

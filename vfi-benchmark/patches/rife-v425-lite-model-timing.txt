@@ -1,0 +1,105 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 767d0ef..f414b05 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include <stdio.h>
+ #include <algorithm>
++#include <chrono>
+ #include <queue>
+ #include <vector>
+ #include <clocale>
+@@ -326,8 +327,13 @@ void* load(void* args)
+         v.outpath = ltp->output_files[i];
+         v.timestep = ltp->timesteps[i];
+ 
++        const std::chrono::steady_clock::time_point decode_started = std::chrono::steady_clock::now();
+         int ret0 = decode_image(image0path, v.in0image, &v.webp0);
+         int ret1 = decode_image(image1path, v.in1image, &v.webp1);
++        const std::chrono::steady_clock::time_point decode_ended = std::chrono::steady_clock::now();
++        const long long decode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            decode_ended - decode_started).count();
++        fprintf(stderr, "VFI_DECODE_WALL_NS id=%d ns=%lld\n", v.id, decode_wall_ns);
+ 
+         if (ret0 != 0 || ret1 != 1)
+         {
+@@ -343,12 +349,14 @@ class ProcThreadParams
+ {
+ public:
+     const RIFE* rife;
++    int padding;
+ };
+ 
+ void* proc(void* args)
+ {
+     const ProcThreadParams* ptp = (const ProcThreadParams*)args;
+     const RIFE* rife = ptp->rife;
++    const int padding = ptp->padding;
+ 
+     for (;;)
+     {
+@@ -359,7 +367,16 @@ void* proc(void* args)
+         if (v.id == -233)
+             break;
+ 
++        const std::chrono::steady_clock::time_point model_started = std::chrono::steady_clock::now();
+         rife->process(v.in0image, v.in1image, v.timestep, v.outimage);
++        const std::chrono::steady_clock::time_point model_ended = std::chrono::steady_clock::now();
++        const long long model_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            model_ended - model_started).count();
++        const int padded_width = (v.in0image.w + padding - 1) / padding * padding;
++        const int padded_height = (v.in0image.h + padding - 1) / padding * padding;
++        fprintf(stderr,
++                "VFI_MODEL_WALL_NS id=%d ns=%lld timestep=%.6f width=%d height=%d padded_width=%d padded_height=%d\n",
++                v.id, model_wall_ns, v.timestep, v.in0image.w, v.in0image.h, padded_width, padded_height);
+ 
+         tosave.put(v);
+     }
+@@ -389,7 +406,12 @@ void* save(void* args)
+         if (v.id == -233)
+             break;
+ 
++        const std::chrono::steady_clock::time_point encode_started = std::chrono::steady_clock::now();
+         int ret = encode_image(v.outpath, v.outimage, quality);
++        const std::chrono::steady_clock::time_point encode_ended = std::chrono::steady_clock::now();
++        const long long encode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            encode_ended - encode_started).count();
++        fprintf(stderr, "VFI_ENCODE_WALL_NS id=%d ns=%lld\n", v.id, encode_wall_ns);
+ 
+         // free input pixel data
+         {
+@@ -829,7 +851,12 @@ int main(int argc, char** argv)
+     CoInitializeEx(NULL, COINIT_MULTITHREADED);
+ #endif
+ 
++    const std::chrono::steady_clock::time_point vulkan_started = std::chrono::steady_clock::now();
+     ncnn::create_gpu_instance();
++    const std::chrono::steady_clock::time_point vulkan_ended = std::chrono::steady_clock::now();
++    const long long vulkan_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++        vulkan_ended - vulkan_started).count();
++    fprintf(stderr, "VFI_VULKAN_INIT_WALL_NS=%lld\n", vulkan_wall_ns);
+ 
+     if (gpuid.empty())
+     {
+@@ -882,7 +909,12 @@ int main(int argc, char** argv)
+ 
+             rife[i] = new RIFE(gpuid[i], tta_mode, tta_temporal_mode, uhd_mode, num_threads, rife_v2, rife_v4, padding);
+ 
++            const std::chrono::steady_clock::time_point load_started = std::chrono::steady_clock::now();
+             rife[i]->load(modeldir);
++            const std::chrono::steady_clock::time_point load_ended = std::chrono::steady_clock::now();
++            const long long load_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                load_ended - load_started).count();
++            fprintf(stderr, "VFI_MODEL_LOAD_WALL_NS gpu=%d ns=%lld\n", gpuid[i], load_wall_ns);
+         }
+ 
+         // main routine
+@@ -902,6 +934,7 @@ int main(int argc, char** argv)
+             for (int i=0; i<use_gpu_count; i++)
+             {
+                 ptp[i].rife = rife[i];
++                ptp[i].padding = padding;
+             }
+ 
+             std::vector<ncnn::Thread*> proc_threads(total_jobs_proc);

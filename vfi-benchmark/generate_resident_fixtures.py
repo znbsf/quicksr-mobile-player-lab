@@ -82,7 +82,7 @@ def draw_motion_frame(path: Path, width: int, height: int, phase: float) -> None
     image.save(path)
 
 
-def generate_level(root: Path, width: int, height: int) -> dict:
+def generate_level(root: Path, width: int, height: int, padding_multiple: int = 32) -> dict:
     level_id = f"{width}x{height}"
     level_root = root / level_id
     input_root = level_root / "input"
@@ -114,8 +114,8 @@ def generate_level(root: Path, width: int, height: int) -> dict:
         "id": level_id,
         "width": width,
         "height": height,
-        "padded_width": (width + 31) // 32 * 32,
-        "padded_height": (height + 31) // 32 * 32,
+        "padded_width": (width + padding_multiple - 1) // padding_multiple * padding_multiple,
+        "padded_height": (height + padding_multiple - 1) // padding_multiple * padding_multiple,
         "source_frame_count": 7,
         "midpoint_count": 6,
         "files": {
@@ -130,15 +130,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--levels", nargs="*", default=[f"{w}x{h}" for w, h in DEFAULT_LEVELS])
+    parser.add_argument("--padding-multiple", type=int, default=32)
     args = parser.parse_args()
+    if args.padding_multiple <= 0 or args.padding_multiple > 1024:
+        parser.error("--padding-multiple must be in the range 1..1024")
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     levels = []
     for value in args.levels:
         width, height = (int(part) for part in value.lower().split("x", 1))
-        levels.append(generate_level(output, width, height))
+        levels.append(generate_level(output, width, height, args.padding_multiple))
     manifest = {
         "schema": "anime-vfi-resident-fixture.v1",
+        "padding_multiple": args.padding_multiple,
         "rights": {
             "status": "project-generated",
             "external_sources": [],
