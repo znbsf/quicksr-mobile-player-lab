@@ -1,0 +1,82 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 2f12352..82d59ae 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -5,6 +5,7 @@
+ #include <queue>
+ #include <vector>
+ #include <clocale>
++#include <chrono>
+ 
+ #if _WIN32
+ // image decoder and encoder with wic
+@@ -323,8 +324,13 @@ void* load(void* args)
+         v.outpath = ltp->output_files[i];
+         v.timestep = ltp->timesteps[i];
+ 
++        const std::chrono::steady_clock::time_point decode_started = std::chrono::steady_clock::now();
+         int ret0 = decode_image(image0path, v.in0image, &v.webp0);
+         int ret1 = decode_image(image1path, v.in1image, &v.webp1);
++        const std::chrono::steady_clock::time_point decode_ended = std::chrono::steady_clock::now();
++        const long long decode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            decode_ended - decode_started).count();
++        fprintf(stderr, "VFI_DECODE_WALL_NS id=%d ns=%lld\n", v.id, decode_wall_ns);
+ 
+         if (ret0 != 0 || ret1 != 1)
+         {
+@@ -356,7 +362,16 @@ void* proc(void* args)
+         if (v.id == -233)
+             break;
+ 
++        const std::chrono::steady_clock::time_point model_started = std::chrono::steady_clock::now();
+         ifrnet->process(v.in0image, v.in1image, v.timestep, v.outimage);
++        const std::chrono::steady_clock::time_point model_ended = std::chrono::steady_clock::now();
++        const long long model_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            model_ended - model_started).count();
++        const int padded_width = (v.in0image.w + 31) / 32 * 32;
++        const int padded_height = (v.in0image.h + 31) / 32 * 32;
++        fprintf(stderr,
++                "VFI_MODEL_WALL_NS id=%d ns=%lld timestep=%.6f width=%d height=%d padded_width=%d padded_height=%d\n",
++                v.id, model_wall_ns, v.timestep, v.in0image.w, v.in0image.h, padded_width, padded_height);
+ 
+         tosave.put(v);
+     }
+@@ -384,7 +399,12 @@ void* save(void* args)
+         if (v.id == -233)
+             break;
+ 
++        const std::chrono::steady_clock::time_point encode_started = std::chrono::steady_clock::now();
+         int ret = encode_image(v.outpath, v.outimage);
++        const std::chrono::steady_clock::time_point encode_ended = std::chrono::steady_clock::now();
++        const long long encode_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++            encode_ended - encode_started).count();
++        fprintf(stderr, "VFI_ENCODE_WALL_NS id=%d ns=%lld\n", v.id, encode_wall_ns);
+ 
+         // free input pixel data
+         {
+@@ -753,7 +773,12 @@ int main(int argc, char** argv)
+     CoInitializeEx(NULL, COINIT_MULTITHREADED);
+ #endif
+ 
++    const std::chrono::steady_clock::time_point vulkan_started = std::chrono::steady_clock::now();
+     ncnn::create_gpu_instance();
++    const std::chrono::steady_clock::time_point vulkan_ended = std::chrono::steady_clock::now();
++    const long long vulkan_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++        vulkan_ended - vulkan_started).count();
++    fprintf(stderr, "VFI_VULKAN_INIT_WALL_NS=%lld\n", vulkan_wall_ns);
+ 
+     if (gpuid.empty())
+     {
+@@ -806,7 +831,12 @@ int main(int argc, char** argv)
+ 
+             ifrnet[i] = new IFRNet(gpuid[i], tta_mode, num_threads);
+ 
++            const std::chrono::steady_clock::time_point load_started = std::chrono::steady_clock::now();
+             ifrnet[i]->load(modeldir);
++            const std::chrono::steady_clock::time_point load_ended = std::chrono::steady_clock::now();
++            const long long load_wall_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                load_ended - load_started).count();
++            fprintf(stderr, "VFI_MODEL_LOAD_WALL_NS gpu=%d ns=%lld\n", gpuid[i], load_wall_ns);
+         }
+ 
+         // main routine

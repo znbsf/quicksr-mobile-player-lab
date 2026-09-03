@@ -166,8 +166,8 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   one pair was eligible.
 - **Host comparison:** RIFE v4.6 was slower and larger than IFRNet-S Vimeo90K, but its known-midpoint
   proxies were materially better on the one line-art motion fixture. RIFE alone advanced; IFRNet
-  remains host-only. Model weight redistribution remains blocked because no independent weight
-  license statement was found.
+  was initially host-only and was later measured only as a stopped lower-bound device probe. Model
+  weight redistribution remains blocked because no independent weight license statement was found.
 - **Device:** exact upstream RIFE/ncnn/libwebp commits were cross-compiled into a standalone arm64
   CLI. On one Android 16 / Adreno 740 device, the two unpolled `RIFE::process` runs were
   102.391/103.330 ms (median 102.860 ms); the memory-sampled run peaked at 186,825 kB PSS. All
@@ -197,3 +197,22 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   Decode, SR, composition, display and A/V sync are omitted, so no level has defensible end-to-end
   realtime margin. RIFE remains offline-only;
   low-resolution VFI followed by the existing SR/Anime4K route is a recorded hypothesis only.
+
+## 2026-09-03 — Smaller and newer mobile VFI candidate gate
+
+- **Refresh:** limited the active shortlist to RIFE v4.25-lite and IFRNet-S. The former has an
+  upstream anime-improvement note and a current ncnn conversion; exact-name `MobileVFI` could not be
+  tied to a first-party paper/repository/model. ANVIL is credible but requires H.264 decoder motion
+  vectors and a CPU/Vulkan/QNN pipeline; its public APK is SM8650/V75-specific, so it is not the PNG
+  pair or current-device protocol.
+- **Runtime gate:** the locally acquired RIFE v4.25-lite graph adds `MemoryData`. The frozen 2022
+  RIFE executable failed before inference with `layer MemoryData not exists or registered`, so no
+  fake timing was recorded. A pinned current-port build is the next separate host gate.
+- **IFRNet execution:** the exact port/ncnn/libwebp commits were cross-compiled into an instrumented
+  arm64 CLI. Host prefilter replay again invoked only the distinct pair. On the same physical
+  SM8550/Adreno 740 class device, resident 160x90/256x144/320x180 medians were
+  41.798/60.912/75.932 ms with 93,526-97,329 kB sampled PSS.
+- **Comparison:** IFRNet-S used 47.7-50.1% less PSS than RIFE v4.6 but was
+  38.1/34.0/112.6% slower. Resident synthetic quality proxies were mixed; the original distinct
+  pair remained 10.516 dB below RIFE. The candidate is stopped and the player remains unchanged.
+- **Details:** see [ANIME_VFI_MOBILE_CANDIDATE_PROBE.md](ANIME_VFI_MOBILE_CANDIDATE_PROBE.md).

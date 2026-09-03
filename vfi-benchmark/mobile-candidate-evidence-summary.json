@@ -1,0 +1,124 @@
+{
+  "schema": "anime-vfi-mobile-candidate-evidence.v1",
+  "measured_at": "2026-09-03",
+  "scope": "sanitized aggregate of one host rerun and one bounded physical-device standalone CLI matrix; not player integration",
+  "baseline": {
+    "candidate": "rife-ncnn-vulkan-v4.6",
+    "source": "evidence-summary.json",
+    "status": "offline-only"
+  },
+  "prefilter_contract": {
+    "id": "anime-vfi-prefilter-v1",
+    "hold_cut_seek_epoch": "BYPASS",
+    "distinct_pair": "INTERPOLATE/DISTINCT_DRAWING",
+    "player_path_changed": false
+  },
+  "host": {
+    "candidate": "ifrnet-ncnn-vulkan-s-vimeo90k",
+    "source_commit": "3592a70355ec011fe7cefb3a9ba08b63d82a2b6d",
+    "ignored_raw_report_sha256": "61de124163346613dc09f5bb6b36868df95f2e6f1848b68d5049227f9c642b4a",
+    "process_wall_time_ms": [661.6467, 553.5889, 549.6313],
+    "process_wall_time_ms_median": 553.5889,
+    "peak_private_bytes_observed": 127315968,
+    "quality_proxy": {
+      "psnr_db": 16.604013,
+      "ssim_global": 0.798559,
+      "edge_gradient_mae": 0.015838,
+      "human_review": "pending"
+    },
+    "output_sha256": "687cd2f05ce7f8207a73fc2c5ad9cd21d8ed5fbc0ac7be42fbe46d5ef878c346",
+    "versus_rife_v4_6": {
+      "process_median_delta_percent": -26.171,
+      "peak_private_bytes_delta_percent": -57.768,
+      "quality_result": "failed: 10.516 dB lower PSNR, 0.185117 lower global SSIM, and 0.006482 higher edge-gradient MAE on the single distinct-pair fixture"
+    }
+  },
+  "android_device": {
+    "scope": "same physical SM8550/Adreno 740 class device as the RIFE baseline; serial removed",
+    "candidate": "ifrnet-ncnn-vulkan-s-vimeo90k",
+    "source_commit": "3592a70355ec011fe7cefb3a9ba08b63d82a2b6d",
+    "ncnn_commit": "30ab31cc4194f57866ba48753aeceae40e823d81",
+    "libwebp_commit": "5a2d929cd8a627d7a342e78ce4603167022b76af",
+    "instrumented_binary_sha256": "03a2715e8b5f3f331a446582ae967fb52ba1c280f8911d02fdcfa7fb22ea9ad0",
+    "timing_patch_sha256": "3d947fa819fc6604b41bba80352136b21bc421b919be6f16755f0f363c355a37",
+    "fixture_manifest_sha256": "326ef744a45a889a50cfafac03c945e3132737ba3e7d271e89d02a017cfef1a2",
+    "ignored_raw_report_sha256": "557615793bc257e7f666606a1f4988f5cb13cd990e99f7c10fd0f58e49788504",
+    "protocol": {
+      "levels": ["160x90", "256x144", "320x180"],
+      "source_frames_per_level": 7,
+      "distinct_midpoint_pairs_per_level": 6,
+      "midpoint_warmups": 1,
+      "stable_unpolled_midpoint_calls": 5,
+      "separate_memory_sampled_run": true,
+      "outputs_hash_matched_between_runs": true
+    },
+    "levels": {
+      "160x90": {
+        "stable_model_ms": [34.107, 40.718, 42.209, 42.682, 41.798],
+        "stable_median_ms": 41.798,
+        "stable_min_ms": 34.107,
+        "stable_max_ms": 42.682,
+        "vulkan_init_ms": 25.057,
+        "model_load_ms": 930.589,
+        "midpoint_warmup_ms": 171.890,
+        "whole_process_ms": 1563.969,
+        "decode_pair_median_ms": 0.559,
+        "encode_median_ms": 2.329,
+        "sampled_peak_pss_kb": 94427,
+        "sampled_peak_rss_kb": 135780,
+        "max_temperature_c_proxy": {"before": 44.383, "after": 47.6},
+        "battery_c_proxy": {"before": 36.5, "after": 36.5},
+        "quality_proxy": {"psnr_db_mean": 28.778409, "ssim_global_mean": 0.985774, "edge_gradient_mae_mean": 0.010051},
+        "output_tree_sha256": "9a0fd1ec85ab2408161ac6fe7adf476119473d75fd0a1c348da22eb95f3098de",
+        "versus_rife_v4_6": {"latency_delta_percent": 38.126, "pss_delta_percent": -49.324, "psnr_delta_db": 0.209032, "ssim_delta": -0.000697, "edge_mae_delta": -0.000539}
+      },
+      "256x144": {
+        "stable_model_ms": [64.253, 61.184, 59.686, 60.912, 60.076],
+        "stable_median_ms": 60.912,
+        "stable_min_ms": 59.686,
+        "stable_max_ms": 64.253,
+        "vulkan_init_ms": 23.801,
+        "model_load_ms": 965.992,
+        "midpoint_warmup_ms": 204.509,
+        "whole_process_ms": 1730.551,
+        "decode_pair_median_ms": 1.356,
+        "encode_median_ms": 5.949,
+        "sampled_peak_pss_kb": 93526,
+        "sampled_peak_rss_kb": 134860,
+        "max_temperature_c_proxy": {"before": 44.4, "after": 46.8},
+        "battery_c_proxy": {"before": 36.5, "after": 36.5},
+        "quality_proxy": {"psnr_db_mean": 28.682253, "ssim_global_mean": 0.987330, "edge_gradient_mae_mean": 0.006561},
+        "output_tree_sha256": "c0d04bc30d4fb5e343da890354432426cc9d758df24134f82da186f807aec0fd",
+        "versus_rife_v4_6": {"latency_delta_percent": 34.046, "pss_delta_percent": -50.076, "psnr_delta_db": 0.630300, "ssim_delta": 0.001811, "edge_mae_delta": -0.000825}
+      },
+      "320x180": {
+        "stable_model_ms": [80.267, 75.932, 74.101, 73.806, 78.419],
+        "stable_median_ms": 75.932,
+        "stable_min_ms": 73.806,
+        "stable_max_ms": 80.267,
+        "vulkan_init_ms": 23.896,
+        "model_load_ms": 987.369,
+        "midpoint_warmup_ms": 216.244,
+        "whole_process_ms": 1850.021,
+        "decode_pair_median_ms": 1.667,
+        "encode_median_ms": 5.798,
+        "sampled_peak_pss_kb": 97329,
+        "sampled_peak_rss_kb": 138644,
+        "max_temperature_c_proxy": {"before": 44.9, "after": 46.5},
+        "battery_c_proxy": {"before": 36.5, "after": 36.5},
+        "quality_proxy": {"psnr_db_mean": 27.300243, "ssim_global_mean": 0.983820, "edge_gradient_mae_mean": 0.010337},
+        "output_tree_sha256": "c1d77d396eaa0f83ff63f71786ecb5a5e30b972ebb8f481153a4996193265438",
+        "versus_rife_v4_6": {"latency_delta_percent": 112.605, "pss_delta_percent": -47.653, "psnr_delta_db": 0.922378, "ssim_delta": 0.003414, "edge_mae_delta": 0.000293}
+      }
+    },
+    "budget_interpretation": "offline-only: 160x90 median narrowly misses the 24 fps kernel budget and 256x144 misses it materially; 320x180 fits only inside one 12-to-24 source interval before all omitted player stages",
+    "process_absent_after_matrix": true
+  },
+  "decision": {
+    "replace_rife_v4_6": false,
+    "stop_ifrnet_s": true,
+    "reason": "Memory falls by about half, but every resident level is slower and the original distinct-pair synthetic quality proxy fails badly. Mixed gains on the resident synthetic midpoints do not offset the speed regression or missing anime-domain evidence.",
+    "next_priority": "Build the pinned current ncnn runtime required by RIFE v4.25-lite and repeat the same host gate before considering a separate device probe; otherwise require a new licensed anime-lightweight weight or an SM8550/V73-specific ANVIL runtime/context.",
+    "player_integration": "absent"
+  }
+}

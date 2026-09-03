@@ -10,6 +10,7 @@ gradlew text eol=lf
 *.mjs text eol=lf
 *.properties text eol=lf
 app/src/main/assets/anime4k/*.txt text eol=lf
+vfi-benchmark/patches/*.txt text eol=lf -whitespace
 *.py text eol=lf
 *.xml text eol=lf
 *.yml text eol=lf

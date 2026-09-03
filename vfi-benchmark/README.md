@@ -70,12 +70,41 @@ python vfi-benchmark/run_vfi_android_resident_matrix.py `
   --levels 160x90 256x144 320x180 480x270 640x360
 ```
 
+The same runner accepts an explicitly identified ncnn VFI executable and model layout. Build the
+pinned IFRNet-S lower-bound probe and run only the three reviewed levels with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File vfi-benchmark/build_android_ifrnet_probe.ps1 `
+  -UpstreamRoot local-artifacts/vfi-mobile/upstream/ifrnet-ncnn-vulkan
+
+python vfi-benchmark/run_vfi_android_resident_matrix.py `
+  --serial <one-connected-device-serial> `
+  --binary local-artifacts/vfi-mobile/upstream/ifrnet-ncnn-vulkan/build-android-arm64/ifrnet-ncnn-vulkan `
+  --model-dir local-artifacts/vfi-mobile/models/IFRNet_S_Vimeo90K `
+  --fixture-manifest local-artifacts/vfi-mobile/resident-fixtures/resident-fixture-manifest.json `
+  --output-dir local-artifacts/vfi-mobile/device/ifrnet-s-vimeo90k `
+  --levels 160x90 256x144 320x180 `
+  --candidate-id ifrnet-ncnn-vulkan-s-vimeo90k `
+  --source-commit 3592a70355ec011fe7cefb3a9ba08b63d82a2b6d `
+  --ncnn-commit 30ab31cc4194f57866ba48753aeceae40e823d81 `
+  --libwebp-commit 5a2d929cd8a627d7a342e78ce4603167022b76af `
+  --executable-name ifrnet-ncnn-vulkan `
+  --remote-model-name IFRNet_S_Vimeo90K `
+  --model-param-name ifrnet.param `
+  --model-bin-name ifrnet.bin `
+  --timing-patch vfi-benchmark/patches/ifrnet-ncnn-vulkan-model-timing.txt
+```
+
+The IFRNet model files are intentionally not supplied by this repository. Their expected identities
+are recorded in `candidates.json`; availability is not redistribution permission.
+
 The runner fails before execution unless the manifest schema and level metadata are exact, every
 level has precisely seven input and six ground-truth files with matching bytes/SHA-256/dimensions,
 and a fresh prefilter replay matches the recorded decisions. Each input is SHA-256 checked again on
 device immediately after push; ground truths are rechecked immediately before scoring. Timing
 streams must each contain the unique IDs `0..13`. The raw ignored report records both local fixture
-identities and device-side input hashes.
+identities and device-side input hashes. It also requires every output hash from the unpolled run to
+match the corresponding output from the separate sampled run before scoring.
 
 The report keeps cold process wall time, Vulkan initialization, model loading, midpoint warmup,
 five stable midpoint calls, PNG decode/encode, sampled memory, input/padded dimensions, temperature

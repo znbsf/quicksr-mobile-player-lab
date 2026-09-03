@@ -1,4 +1,4 @@
-"""Measure a resident RIFE v4.6 Android process across a bounded resolution matrix."""
+"""Measure an instrumented resident ncnn Vulkan VFI CLI on Android."""
 
 from __future__ import annotations
 
@@ -31,6 +31,12 @@ STAGE_PATTERNS = {
 
 EXPECTED_TASK_IDS = list(range(14))
 EXPECTED_MIDPOINT_IDS = [1, 3, 5, 7, 9, 11]
+SAFE_REMOTE_COMPONENT = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def validate_safe_remote_component(label: str, value: str) -> None:
+    if value in {".", ".."} or not SAFE_REMOTE_COMPONENT.fullmatch(value):
+        raise RuntimeError(f"unsafe {label}: {value}")
 
 
 def assert_file_identity(path: Path, identity: dict[str, Any], label: str) -> dict[str, Any]:
@@ -167,14 +173,20 @@ def parse_timing(stderr: str) -> dict[str, Any]:
 
 
 def run_remote(
-    adb_path: str, serial: str, remote_root: str, level_id: str, sampled: bool
+    adb_path: str,
+    serial: str,
+    remote_root: str,
+    level_id: str,
+    sampled: bool,
+    executable_name: str,
+    remote_model_name: str,
 ) -> dict[str, Any]:
     suffix = "sampled" if sampled else "latency"
     remote_output = f"{remote_root}/{level_id}/output-{suffix}"
     adb(adb_path, serial, "shell", "mkdir", "-p", remote_output)
     command = (
-        f"cd {remote_root} && ./rife-ncnn-vulkan -i {level_id}/input "
-        f"-o {level_id}/output-{suffix} -m rife-v4.6 -g 0 -j 1:1:1 -v"
+        f"cd {remote_root} && ./{executable_name} -i {level_id}/input "
+        f"-o {level_id}/output-{suffix} -m {remote_model_name} -g 0 -j 1:1:1 -v"
     )
     started_ns = time.perf_counter_ns()
     peak_pss_kb = None
@@ -190,7 +202,7 @@ def run_remote(
         )
         if sampled:
             while process.poll() is None:
-                pid_text = adb(adb_path, serial, "shell", "pidof", "rife-ncnn-vulkan", check=False).stdout.strip()
+                pid_text = adb(adb_path, serial, "shell", "pidof", executable_name, check=False).stdout.strip()
                 if pid_text:
                     pid = pid_text.split()[0]
                     memory = adb(adb_path, serial, "shell", "cat", f"/proc/{pid}/smaps_rollup", check=False).stdout
@@ -228,6 +240,8 @@ def summarize_level(
     fixture_root: Path,
     local_output_root: Path,
     level: dict[str, Any],
+    executable_name: str,
+    remote_model_name: str,
 ) -> dict[str, Any]:
     level_id = level["id"]
     remote_level = f"{remote_root}/{level_id}"
@@ -250,8 +264,14 @@ def summarize_level(
         )
 
     temperature_before = thermal_snapshot(adb_path, serial)
-    latency = run_remote(adb_path, serial, remote_root, level_id, sampled=False)
-    sampled = run_remote(adb_path, serial, remote_root, level_id, sampled=True)
+    latency = run_remote(
+        adb_path, serial, remote_root, level_id, sampled=False,
+        executable_name=executable_name, remote_model_name=remote_model_name,
+    )
+    sampled = run_remote(
+        adb_path, serial, remote_root, level_id, sampled=True,
+        executable_name=executable_name, remote_model_name=remote_model_name,
+    )
     temperature_after = thermal_snapshot(adb_path, serial)
 
     level_output = local_output_root / level_id
@@ -261,8 +281,29 @@ def summarize_level(
     for output_index in range(1, 15):
         name = f"{output_index:08d}.png"
         local = level_output / name
-        adb(adb_path, serial, "pull", f"{remote_level}/output-latency/{name}", str(local))
-        item = {"name": name, "bytes": local.stat().st_size, "sha256": file_sha256(local)}
+        remote_latency = f"{remote_level}/output-latency/{name}"
+        remote_sampled = f"{remote_level}/output-sampled/{name}"
+        remote_result = adb(
+            adb_path, serial, "shell", "toybox", "sha256sum", remote_latency, remote_sampled
+        )
+        remote_lines = [line.split() for line in remote_result.stdout.splitlines() if line.strip()]
+        if len(remote_lines) != 2 or any(len(parts) < 2 for parts in remote_lines):
+            raise RuntimeError(f"could not bind both remote output hashes: {level_id}/{name}")
+        latency_sha256, sampled_sha256 = remote_lines[0][0], remote_lines[1][0]
+        if latency_sha256 != sampled_sha256:
+            raise RuntimeError(f"output changed between latency and sampled runs: {level_id}/{name}")
+        adb(adb_path, serial, "pull", remote_latency, str(local))
+        local_sha256 = file_sha256(local)
+        if local_sha256 != latency_sha256:
+            raise RuntimeError(f"pulled output hash mismatch: {level_id}/{name}")
+        item = {
+            "name": name,
+            "bytes": local.stat().st_size,
+            "sha256": local_sha256,
+            "remote_latency_sha256": latency_sha256,
+            "remote_sampled_sha256": sampled_sha256,
+            "stable_across_runs": True,
+        }
         task_id = output_index - 1
         if task_id in EXPECTED_MIDPOINT_IDS:
             pair_index = task_id // 2
@@ -324,7 +365,12 @@ def summarize_level(
             "excluded_from_latency_summary": True,
         },
         "temperature_proxy": {"before": temperature_before, "after": temperature_after},
-        "outputs": {"count": len(outputs), "tree_sha256": output_tree_hash, "files": outputs},
+        "outputs": {
+            "count": len(outputs),
+            "tree_sha256": output_tree_hash,
+            "stable_across_latency_and_sampled_runs": all(item["stable_across_runs"] for item in outputs),
+            "files": outputs,
+        },
         "quality_proxy_midpoints": {
             "count": len(midpoint_quality),
             "psnr_db_mean": mean(item["psnr_db"] for item in midpoint_quality),
@@ -344,6 +390,18 @@ def main() -> None:
     parser.add_argument("--fixture-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--levels", nargs="+", required=True)
+    parser.add_argument("--candidate-id", default="rife-ncnn-vulkan-v4.6")
+    parser.add_argument("--source-commit", default="a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7")
+    parser.add_argument("--ncnn-commit", default="b4ba207c18d3103d6df890c0e3a97b469b196b26")
+    parser.add_argument("--libwebp-commit", default="5abb55823bb6196a918dd87202b2f32bbaff4c18")
+    parser.add_argument("--executable-name", default="rife-ncnn-vulkan")
+    parser.add_argument("--remote-model-name", default="rife-v4.6")
+    parser.add_argument("--model-param-name", default="flownet.param")
+    parser.add_argument("--model-bin-name", default="flownet.bin")
+    parser.add_argument(
+        "--timing-patch",
+        default=str(Path(__file__).with_name("patches") / "rife-ncnn-vulkan-model-timing.txt"),
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.fixture_manifest).resolve()
@@ -352,6 +410,23 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     binary = Path(args.binary).resolve()
     model_dir = Path(args.model_dir).resolve()
+    timing_patch = Path(args.timing_patch).resolve()
+    for label, value in {
+        "executable name": args.executable_name,
+        "remote model name": args.remote_model_name,
+        "model param name": args.model_param_name,
+        "model bin name": args.model_bin_name,
+    }.items():
+        validate_safe_remote_component(label, value)
+    required_local = [
+        binary,
+        model_dir / args.model_param_name,
+        model_dir / args.model_bin_name,
+        timing_patch,
+    ]
+    missing_local = [str(path) for path in required_local if not path.is_file()]
+    if missing_local:
+        raise RuntimeError(f"missing binary, model, or timing patch file(s): {missing_local}")
     manifest_bytes = manifest_path.read_bytes()
     manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
     manifest = json.loads(manifest_bytes)
@@ -368,11 +443,17 @@ def main() -> None:
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     remote_root = f"/data/local/tmp/quicksr-vfi-resident-{stamp}"
-    adb(args.adb, args.serial, "shell", "mkdir", "-p", f"{remote_root}/rife-v4.6")
+    adb(args.adb, args.serial, "shell", "mkdir", "-p", f"{remote_root}/{args.remote_model_name}")
     push_files = [
-        (binary, f"{remote_root}/rife-ncnn-vulkan"),
-        (model_dir / "flownet.param", f"{remote_root}/rife-v4.6/flownet.param"),
-        (model_dir / "flownet.bin", f"{remote_root}/rife-v4.6/flownet.bin"),
+        (binary, f"{remote_root}/{args.executable_name}"),
+        (
+            model_dir / args.model_param_name,
+            f"{remote_root}/{args.remote_model_name}/{args.model_param_name}",
+        ),
+        (
+            model_dir / args.model_bin_name,
+            f"{remote_root}/{args.remote_model_name}/{args.model_bin_name}",
+        ),
     ]
     remote_hashes = {}
     for local, remote in push_files:
@@ -381,7 +462,7 @@ def main() -> None:
         if observed != file_sha256(local):
             raise RuntimeError(f"remote hash mismatch: {remote}")
         remote_hashes[remote] = {"sha256": observed, "bytes": local.stat().st_size}
-    adb(args.adb, args.serial, "shell", "chmod", "0755", f"{remote_root}/rife-ncnn-vulkan")
+    adb(args.adb, args.serial, "shell", "chmod", "0755", f"{remote_root}/{args.executable_name}")
 
     report: dict[str, Any] = {
         "schema": "anime-vfi-resident-android-matrix.v1",
@@ -389,11 +470,12 @@ def main() -> None:
         "scope": "ignored raw physical-device evidence; standalone native CLI",
         "device_serial": args.serial,
         "candidate": {
-            "source_commit": "a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7",
-            "ncnn_commit": "b4ba207c18d3103d6df890c0e3a97b469b196b26",
-            "libwebp_commit": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
+            "id": args.candidate_id,
+            "source_commit": args.source_commit,
+            "ncnn_commit": args.ncnn_commit,
+            "libwebp_commit": args.libwebp_commit,
             "binary_sha256": file_sha256(binary),
-            "timing_patch_sha256": file_sha256(Path(__file__).with_name("patches") / "rife-ncnn-vulkan-model-timing.txt"),
+            "timing_patch_sha256": file_sha256(timing_patch),
             "remote_hashes": remote_hashes,
         },
         "fixture_manifest_sha256": manifest_sha256,
@@ -404,7 +486,8 @@ def main() -> None:
     for level_id in args.levels:
         try:
             result = summarize_level(
-                args.adb, args.serial, remote_root, fixture_root, output_root, levels_by_id[level_id]
+                args.adb, args.serial, remote_root, fixture_root, output_root,
+                levels_by_id[level_id], args.executable_name, args.remote_model_name,
             )
         except Exception as error:
             result = {"id": level_id, "status": "FAILED", "reason": str(error)}
@@ -414,7 +497,7 @@ def main() -> None:
         report["levels"].append(result)
         report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     report["process_absent_after_matrix"] = not adb(
-        args.adb, args.serial, "shell", "pidof", "rife-ncnn-vulkan", check=False
+        args.adb, args.serial, "shell", "pidof", args.executable_name, check=False
     ).stdout.strip()
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(report_path)

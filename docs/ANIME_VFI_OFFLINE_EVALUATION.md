@@ -2,16 +2,18 @@
 
 Date: 2026-09-03
 
-Status: one host comparison, one bounded physical-device native probe, and one resident-process
-resolution ladder completed. This is not a player integration, realtime claim, visual-quality
-approval, sustained thermal result, or model redistribution approval.
+Status: the RIFE v4.6 baseline plus a bounded IFRNet-S lower-bound follow-up are complete. This is
+not a player integration, realtime claim, visual-quality approval, sustained thermal result, or
+model redistribution approval. The newer-candidate decision is in
+[`ANIME_VFI_MOBILE_CANDIDATE_PROBE.md`](ANIME_VFI_MOBILE_CANDIDATE_PROBE.md).
 
 ## Outcome
 
-Only RIFE ncnn Vulkan v4.6 advances as the current offline mobile probe. IFRNet-S remains a host
-comparison. The decision is narrow: on the same project-generated 320x180 line-art motion pair,
-RIFE produced a substantially better ground-truth proxy result, while IFRNet-S was smaller and
-faster. Neither result is evidence for representative anime or normal playback.
+Only RIFE ncnn Vulkan v4.6 remains as the current offline mobile baseline. IFRNet-S was subsequently
+cross-compiled and measured as a standalone resident Android CLI, then stopped: it roughly halves
+PSS but is slower at all three repeated resident resolutions and still fails the original 320x180
+distinct-pair ground-truth proxy badly. Neither result is evidence for representative anime or
+normal playback.
 
 No file under `app/` changed. `QuickSrVideoEffect`, Media3 frame ownership, QNN queueing, cadence
 reuse, and Anime4K remain authoritative and unchanged. VFI is still an optional smooth-mode
@@ -22,7 +24,7 @@ experiment whose default state is absent/off.
 | Candidate | Source identity | Code license | Selected model | Model bytes | Weight rights | Result |
 | --- | --- | --- | --- | ---: | --- | --- |
 | RIFE ncnn Vulkan | [`a7532fc`](https://github.com/nihui/rife-ncnn-vulkan/commit/a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7) | MIT | `rife-v4.6` | 10,631,069 | No independent weight license statement found; redistribution blocked | Advanced to standalone Android CLI probe |
-| IFRNet ncnn Vulkan | [`3592a70`](https://github.com/nihui/ifrnet-ncnn-vulkan/commit/3592a70355ec011fe7cefb3a9ba08b63d82a2b6d) | MIT | `IFRNet_S_Vimeo90K` | 5,935,644 | No independent weight license statement found; redistribution blocked | Host comparison only |
+| IFRNet ncnn Vulkan | [`3592a70`](https://github.com/nihui/ifrnet-ncnn-vulkan/commit/3592a70355ec011fe7cefb3a9ba08b63d82a2b6d) | MIT | `IFRNet_S_Vimeo90K` | 5,935,644 | No independent weight license statement found; redistribution blocked | Host plus Android lower-bound probe; stopped |
 
 The research sources were refreshed at RIFE commit
 [`5d8adbd`](https://github.com/hzwer/ECCV2022-RIFE/commit/5d8adbdd40e12c2c8f91930eff838aebe561c086)
