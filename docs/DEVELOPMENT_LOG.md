@@ -250,3 +250,19 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   per-frame bytes, a binding receipt and execution identity remain absent. No mpv, Android/GL,
   QNN, device or human visual/rhythm review ran, so neither Anime4K equivalence nor actual cadence
   behavior/visual quality is promoted.
+
+## 2026-09-03 — Native output packer host implementation; device A/B pending
+
+- **Worktree implementation:** added a JNI/arm64 NEON NCHW-to-RGBA direct-buffer packer behind an
+  explicit benchmark-only selection. The Java pack/copy path remains the default and fallback;
+  native startup performs a fail-closed equivalence/lifecycle self-check before use.
+- **Host verification:** the isolated worktree passed 107 JVM tests, 28 Python contract tests,
+  lint, arm64 CMake/JNI compilation and APK assembly. Tests cover rectangular scaling, alpha,
+  finite/boundary conversion, ownership and lifecycle. Generated `.cxx`, APK, model and logs remain
+  ignored.
+- **Device boundary:** the final APK was not installed. The device ROM rejected unattended USB
+  installs with `INSTALL_FAILED_USER_RESTRICTED` and does not accept ADB-injected confirmation; a
+  real touch is required. Instrumentation, 1080p A-to-B-to-B-to-A, sanitized evidence and a
+  performance disposition therefore remain unexecuted.
+- **Integration decision:** keep the worktree uncommitted and out of `main` until that single
+  physical confirmation allows the planned device run. Host-ready is not recorded as device-tested.

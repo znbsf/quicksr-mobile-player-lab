@@ -27,6 +27,9 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
 4. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
    native CLI/离线评测。IFRNet-S 与 v4.25-lite 已分别完成真机探针并停止；后者虽然在
    观察设备上兼容，但只在 256x144 更快，另两档慢 56.0-77.2%，没有一致替换收益。
+5. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
+   case/74 帧已由 canonical generator、manifest 和 hash 约束；结果只允许写成
+   `declared_oracle_conformance`，真实 Anime4K/cadence 运行、代表性动漫和人工审核仍待补。
 
 2026-09-03 的 P0 真机裁决已经完成。三档均 `PASS`，每档两次进程的 14 个输出全部 hash
 一致，进程退出干净；这证明限定设备兼容，不改变 `OFFLINE_ONLY` 或播放器未接线的边界。
@@ -83,8 +86,10 @@ RIFE / IFRNet / ANVIL
 | Media3 播放器与 QuickSR CPU/QNN | `IMPLEMENTED` | 单设备 720p/1080p/1440p/4K-display 功能矩阵 | 保留；实时、最终显示和长时热稳分开判断 |
 | 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
 | QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；下一变量是 native direct packer |
+| QuickSR native direct packer | 独立工作树原型，未提交、未进入 `main` | `HOST_ONLY`：JNI/arm64 NEON、Java fallback/default、107 JVM、28 Python、lint 与 arm64 APK/JNI 构建通过；最终 APK 未装入手机 | `DEVICE_PENDING`：MIUI 返回 `INSTALL_FAILED_USER_RESTRICTED`，需一次真实触摸后再做 1080p ABBA；此前不得合入或声称收益 |
 | Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
 | cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
+| Anime4K/cadence 画质合同 | `IMPLEMENTED`，主机工具已进入 `main` | `HOST_ONLY`：6 个空间 case、14 个时序 case/74 帧；只验证 declared-oracle conformance，runtime evidence=`NOT_BOUND` | 下一步接真实 offscreen GL/mpv/Android trace/receipt 和人工盲审；不能用 oracle-filled PASS 关闭画质门禁 |
 | 动漫 SISR 候选筛选 | 工具与清单完成 | Anime4K 已进入设备门禁；SESR-M5 仅有来源/接口方案 | SESR 先做导出与 CPU/QNN 一致性，不直接接播放器 |
 | RIFE v4.6 | 独立 CLI | `OFFLINE_ONLY`：五档单设备 resident 矩阵 | 作为冻结基线，不宣称播放器实时 |
 | IFRNet-S | 独立 CLI | `OFFLINE_ONLY`：PSS 低约一半但三档更慢 | `STOPPED` |
@@ -108,9 +113,9 @@ P0 已完成
   -> RIFE v4.25-lite 三档 resident matrix
   -> 裁决：兼容，但无一致替换收益，STOPPED
 
-当前可并行
-  |-- P1A QuickSR：serial baseline -> JNI/NEON direct packer 单变量 A/B
-  `-- P1B 画质：Anime4K 固定同帧 + cadence 混合节奏/字幕/平移审核
+当前状态
+  |-- P1A QuickSR：主机原型已完成，MIUI 安装确认未完成 -> 1080p ABBA 待执行
+  `-- P1B 画质：canonical 主机合同已合入 -> 真实 adapter/trace + 人工审核待执行
 
 P1 共同检查点
   -> 性能、数值、画质、生命周期均过门：再讨论实验 UI 和长时热稳
@@ -146,6 +151,13 @@ P1 共同检查点
 
 只有在数值一致、p95 不恶化且有可重复净收益时，才讨论默认化；否则保留 Java 路径。
 
+独立工作树已实现 JNI/arm64 NEON NCHW→RGBA direct-buffer packer、默认 Java 路径、启动前
+正确性自检、矩形缩放/alpha/边界值/ownership/lifecycle 测试和 ABBA runner 支持。主机侧
+107 个 JVM 测试、28 个 Python 合同测试、lint、arm64 CMake/JNI 和 APK 构建通过。设备 ROM
+要求对 USB 安装做一次真实触摸确认；无人确认的安装均以 `INSTALL_FAILED_USER_RESTRICTED`
+结束，因此最终 APK 尚未安装，instrumentation、1080p ABBA、sanitized evidence 和性能裁决
+均未发生。该工作树有意保持未提交、未合入，不能把 host-ready 写成 device-tested。
+
 ### P1B：代表性画质与 cadence 安全性
 
 Anime4K 不再依赖 OEM 截图或 UI 位置。应从确定的 effect 输出或受控离屏 GL fixture 获取
@@ -180,9 +192,9 @@ reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这�
 
 1. **P0 已在主线完成，不继续 RIFE v4.25-lite 集成。** 既有离线 runner 和负结果保留，
    避免后续会话重复探测同一候选。
-2. 下一轮可以开两个互不重叠的工作树：
-   `native-output-packer` 只拥有 App/native build 和对应测试；`visual-quality-gates` 只拥有
-   fixture、捕获/比较工具和报告。
+2. 两个互不重叠的工作树已经执行：`visual-quality-gates` 经审查修正三项 P1 后已合入
+   `main`；`native-output-packer` 只拥有 App/native build 和对应测试，因设备安装确认仍
+   保持未提交。真实触摸完成后应继续原工作树，不重新实现或创建重复任务。
 3. SESR 或 ANVIL 一次只启动一个。二者会引入新的 runtime、模型和许可证据，不与播放器
    热路径实验混在同一分支。
 4. 各任务完成后先回报结果，再由主线审查 patch equivalence、测试、证据边界和 source-only
@@ -192,8 +204,10 @@ reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这�
 ## 7. 本次盘点验证
 
 - `:app:testDebugUnitTest`：105/105 PASS；
-- Python：`scripts` 40/40、`golden-correctness` 14/14、`pc-benchmark` 22/22、
-  `derived-models` 19/19、`vfi-benchmark` 12/12，共 107/107 PASS；
+- Python：`scripts` 40/40、`golden-correctness` 14/14、`pc-benchmark` 27/27、
+  `derived-models` 19/19、`vfi-benchmark` 12/12，共 112/112 PASS；
+- 画质合同合入后 source-only publication scan 193 项 PASS；oracle 重签和任意 PPM 冒充
+  的对抗路径均由测试覆盖，runtime evidence 仍固定为 `NOT_BOUND`；
 - `adb devices -l`：唯一 arm64 真机在线；RIFE v4.25-lite 三档均 PASS，42 个输出在延迟/
   采样进程间逐个 hash 一致，矩阵结束后进程不存在；
 - 原始报告保留在忽略目录，提交只记录去标识汇总；设备兼容没有被扩写成播放器实时成功。

@@ -17,6 +17,7 @@ v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN pos
 | Media3 播放器 | IMPLEMENTED / DEVICE SMOKE PASS | 本地视频、PlayerView、原画/GPU Lanczos/Anime4K x2 Small/QuickSR CPU/QuickSR QNN HTP 切换已实现；Anime4K 暂停、seek、恢复、HOME/resume 与三轮返回/重开无崩溃 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
 | QNN 运行时 | IMPLEMENTED | fixed-shape 模型 hash 校验、HTP tuning、graph finalization、持久 input/output tensor、资源释放和有限值抽查已实现 | 当前视频 smoke 没有附带发布级 placement/底层 HTP trace |
+| QuickSR native output packer | WORKTREE HOST-READY / NOT IN MAIN | 独立工作树已有 JNI/arm64 NEON direct-buffer packer、默认 Java fallback、自检和测试；107 JVM、28 Python、lint、arm64 CMake/JNI/APK 构建通过 | MIUI USB 安装需要真实触摸且返回 `INSTALL_FAILED_USER_RESTRICTED`；最终 APK、instrumentation 与 1080p ABBA 均未完成，代码未提交/未合入，不得声称设备收益 |
 | 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
 | 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
 | 数值正确性 | PASS（观察性张量范围） | 11 个权利清晰 clip 的 27 个合同选帧均用 Android 捕获的原始 NCHW 输入与 PC CPU ORT 对照；零失配、零非有限值，并生成 Lanczos 基线 | 不是 P4 real-image/SSIM、全帧/视频/显示画质或 per-node placement 证明 |
@@ -76,7 +77,7 @@ local SDR video
 - 同一轮中，1440p 实验档为 195 measured frames、7.71 fps，4K 显示回退为 305 measured frames、11.36 fps；两者功能 PASS、均 `offline`。4K 不是原生神经 4K。
 - 1080p 的无抓取中位 queue/ORT/output-conversion/total p50 为 329/43/37/414 ms，p95 为 348/47/42/435 ms。它们是 effect-pipeline 样本，不是 NPU kernel、最终显示或端到端 A/V 延迟。
 - 27 个合同选帧的 Android QNN→PC CPU 比较全部零失配、零非有限值，并各有主机 Lanczos 基线；比较只证明观察性张量一致性，不解冻 P4 或质量门禁。
-- 后处理重叠的单变量 A/B 已完成：720p 受源 cadence 限制、收益约 +0.6%；1080p 代理吞吐提高约 57.1%，但仍只有 17.960 fps、p95 变差并增加 23.73 MiB 张量，因此默认仍是 SERIAL。下一项热路径变量是 JNI/NEON direct output packer。
+- 后处理重叠的单变量 A/B 已完成：720p 受源 cadence 限制、收益约 +0.6%；1080p 代理吞吐提高约 57.1%，但仍只有 17.960 fps、p95 变差并增加 23.73 MiB 张量，因此默认仍是 SERIAL。JNI/NEON direct output packer 已到独立工作树 host-ready，但尚未安装最终 APK或执行设备 ABBA。
 - cadence-aware 720p A/B 实测减少 37.79% 推理，effect output-submit 代理由 23.717 提升至 24.069 fps；这只对冻结 15→24 重复映射有效，不能外推到复杂动漫语义或最终显示。
 - QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
 - C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。
@@ -85,7 +86,7 @@ local SDR video
 
 ## 仍然开放的门禁
 
-1. 以 1080p SERIAL 为基线做 JNI/NEON direct output packer 单变量 ABBA，保持模型、tuning、队列、cadence 与片源不变；
+1. 手机旁有人时重新拉起一次最终 APK 安装并真实点击确认；随后在现有工作树以 1080p SERIAL 为基线做 JNI/NEON direct output packer 单变量 ABBA，保持模型、tuning、队列、cadence 与片源不变；
 2. Anime4K 获取确定 effect 输出的固定同帧参考，补 clean、退化、线稿、字幕边缘和人工盲审，不再依赖 OEM UI 截图；
 3. cadence 增加混合一拍一/二/三、慢平移、嘴型、粒子、切镜、淡入淡出和低对比字幕的错误复用/漏复用审核；
 4. 加入 SurfaceFlinger 或等价最终显示观测，并继续检查 A/V sync、seek、flush、pause/resume；
