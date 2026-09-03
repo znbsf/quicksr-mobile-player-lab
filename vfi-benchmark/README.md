@@ -146,8 +146,9 @@ The source pixels, decisions, and three resolution levels are the same as the fr
 fixture; only the declared model padding changes from 32 to the v4.25-lite runtime's actual 128.
 The modern runtime still needs the committed ncnn pack8 compatibility patch. The Android build
 script applies both that compatibility patch and the timing-only patch, checks all source/model
-identities, and refuses an incompatible tree. The 2026-09-03 cycle completed the host gate and
-Android cross-build but not device execution; see `rife-v425-lite-evidence-summary.json`.
+identities, and refuses an incompatible tree. The 2026-09-03 cycle completed the host gate,
+Android cross-build and three-level device matrix. The candidate was compatible but failed the
+RIFE v4.6 replacement gate and is stopped; see `rife-v425-lite-evidence-summary.json`.
 
 The runner fails before execution unless the manifest schema and level metadata are exact, every
 level has precisely seven input and six ground-truth files with matching bytes/SHA-256/dimensions,

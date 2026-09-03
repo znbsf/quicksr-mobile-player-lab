@@ -12,7 +12,7 @@
   "shortlist": [
     {
       "id": "rife-ncnn-vulkan-v4.25-lite",
-      "status": "host-gate-passed-android-built-device-matrix-pending",
+      "status": "stopped-after-host-and-device-resident-probe",
       "source": {
         "url": "https://github.com/TNTwise/rife-ncnn-vulkan",
         "commit": "13338e38debe2e400b3eeecf6792312d01a692f9",
@@ -45,14 +45,14 @@
         "runtime": "candidate-specific ncnn Vulkan port at pinned source and submodule commits",
         "ncnn_commit": "ec19da2b615cc8be438ae3d31fd34fe23df03d52",
         "libwebp_commit": "5abb55823bb6196a918dd87202b2f32bbaff4c18",
-        "android_binary": "locally cross-compiled arm64 standalone CLI only; not published and not device-executed in this cycle",
-        "android_feasibility": "arm64 build confirmed; physical-device compatibility and resident performance remain unmeasured"
+        "android_binary": "locally cross-compiled arm64 standalone CLI only; executed on one bounded physical device and not published",
+        "android_feasibility": "compatible with the observed Android 16, SM8550, Adreno 740 device; no consistent RIFE v4.6 replacement gain or player realtime margin"
       },
       "execution_gate": {
-        "status": "host-gate-passed-device-gate-pending",
+        "status": "failed-replacement-gate",
         "evidence": "rife-v425-lite-evidence-summary.json",
         "observed_runtime_fixes": "The current ncnn port supplies MemoryData, but its newer shader preamble removed legacy pack8 aliases still consumed by warp_pack8.comp. A narrow compatibility patch restores afpvec8 plus fp16 buffer load/store aliases.",
-        "meaning": "The exact modern runtime completed the 12-event host fixture with stable output. Its single-pair synthetic proxies are worse than RIFE v4.6 but do not repeat IFRNet-S's collapse, so it cleared only the host gate. The device matrix is still required before any mobile disposition."
+        "meaning": "The exact modern runtime completed the host and three-level device fixtures with stable outputs. It is faster only at 256x144, slower at 160x90 and 320x180, slightly larger in sampled PSS at every level, and mixed but mostly worse in synthetic quality. It is stopped as a RIFE v4.6 replacement and remains absent from the player."
       }
     },
     {

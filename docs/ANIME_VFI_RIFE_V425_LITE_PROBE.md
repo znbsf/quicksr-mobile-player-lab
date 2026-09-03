@@ -2,24 +2,24 @@
 
 Date: 2026-09-03
 
-Status: the exact current ncnn Vulkan port completed the same 12-event Windows host gate, and its
-instrumented Android arm64 CLI compiled successfully. The phone became unavailable before the
-resident matrix began, so there is no SM8550/Adreno 740 execution, latency, memory, thermal, or
-quality result in this cycle. No file under `app/` changed.
+Status: the exact current ncnn Vulkan port completed the 12-event Windows host gate and a bounded
+three-level resident matrix on one Android 16 / SM8550 / Adreno 740 device. The runtime is compatible,
+but the candidate failed the RIFE v4.6 replacement gate and is stopped. No file under `app/` changed.
 
 ## Bounded conclusion
 
-RIFE v4.25-lite remains a device-probe candidate, not a replacement. The modern runtime removes the
-old `MemoryData` registration blocker and produces a deterministic host midpoint. Against frozen
-RIFE v4.6, however, this fresh-process host proxy is 47.9% slower and regresses all three synthetic
-quality proxies. It is much better than the stopped IFRNet-S result on that distinct pair, so the
-host gate is not a catastrophic failure and does not justify stopping before a device run.
+Do not replace RIFE v4.6 with RIFE v4.25-lite in this project. The modern runtime removes the old
+`MemoryData` blocker and runs deterministically on the observed phone, but its device result is not
+a consistent mobile improvement. Relative to the frozen v4.6 matrix, the stable median is 77.2%
+slower at `160x90`, 18.7% faster at `256x144`, and 56.0% slower at `320x180`. Sampled PSS rises
+1.0-1.8% at all three levels. Synthetic quality regresses at the first two levels and improves at
+the third.
 
-The next valid step is exactly the existing three-level resident fixture (`160x90`, `256x144`,
-`320x180`) on the same SM8550/Adreno 740 class device. The generated pixels and decisions remain
-identical, while the manifest records this model's actual 128-pixel padding rather than the baseline
-runtime's 32. Until that is done, there is no device-side compatibility claim and no realtime or
-player-integration claim.
+Only the `256x144` median fits the 24 fps kernel budget, while its maximum misses it. Decode, SR,
+composition, scheduling, A/V sync, final display and sustained thermal cost are still omitted.
+The mixed single-device result provides neither a replacement advantage nor player headroom, so the
+ncnn RIFE replacement line stops here. RIFE v4.6 remains a frozen offline baseline, not a realtime
+player success.
 
 ## Exact pins and runtime correction
 
@@ -54,12 +54,31 @@ discarded. These are whole subprocess times including runtime/model startup and 
 kernel latency. The fixture is synthetic and only one distinct pair is scored; human review remains
 pending.
 
+## Physical-device resident matrix
+
+The fixture uses the same generated source pixels and prefilter decisions as the frozen v4.6
+three-level subset, but records this model's actual 128-pixel padding. Each level ran one unpolled
+latency process and a separate PSS/RSS-sampled process. All 14 outputs at every level matched across
+the two processes, all levels returned `PASS`, and the process was absent after the matrix.
+
+| Input -> padded | Stable model calls (ms) | Median / min / max | v4.6 median | Latency delta | PSS / RSS peak | PSNR / SSIM / edge |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `160x90 -> 256x128` | 40.778 / 42.948 / 53.614 / 64.132 / 56.463 | 53.614 / 40.778 / 64.132 | 30.260 ms | +77.2% | 189,324 / 231,356 kB | 27.060 / 0.980235 / 0.011026 |
+| `256x144 -> 256x256` | 31.925 / 36.066 / 36.933 / 38.102 / 47.775 | 36.933 / 31.925 / 47.775 | 45.441 ms | -18.7% | 189,266 / 231,508 kB | 26.838 / 0.980590 / 0.008769 |
+| `320x180 -> 384x256` | 50.290 / 54.129 / 55.716 / 58.820 / 57.274 | 55.716 / 50.290 / 58.820 | 35.715 ms | +56.0% | 189,349 / 231,216 kB | 27.595 / 0.981523 / 0.008163 |
+
+The v4.6 comparison uses different model-required padding (`160x96`, `256x160`, `320x192`), so the
+result answers the practical candidate question rather than isolating architecture from padding.
+Maximum temperature-zone proxies stayed within 44.4-45.2 C after each short run and the battery
+proxy ended at 35.7 C. This is not sustained thermal evidence. The ignored raw report SHA-256 is
+`bf09495e7a0b9e31ce42f6a403ae136d0c0c33eef073663d65c542fd2965933e`.
+
 ## Android build and evidence boundary
 
 Android NDK 25.2.9519653 produced a 58,157,480-byte `arm64-v8a`, API-27 standalone binary with
 SHA-256 `638568631e7b22cc6576e71275890a888757b036c29d95c94b156a4e7963a26b`.
-This proves cross-compilation only. The unexecuted binary, source checkout, model, host outputs, and
-raw host report remain ignored under `local-artifacts/`.
+The exact binary was subsequently executed in the matrix above. The binary, source checkout, model,
+host/device outputs, and raw reports remain ignored under `local-artifacts/`.
 
 The sanitized aggregate is `vfi-benchmark/rife-v425-lite-evidence-summary.json`. Model
 redistribution stays blocked pending human rights review. The repository contains build scripts and

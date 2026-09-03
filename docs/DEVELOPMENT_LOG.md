@@ -216,3 +216,20 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   38.1/34.0/112.6% slower. Resident synthetic quality proxies were mixed; the original distinct
   pair remained 10.516 dB below RIFE. The candidate is stopped and the player remains unchanged.
 - **Details:** see [ANIME_VFI_MOBILE_CANDIDATE_PROBE.md](ANIME_VFI_MOBILE_CANDIDATE_PROBE.md).
+
+## 2026-09-03 — RIFE v4.25-lite modern-runtime device disposition
+
+- **Execution:** reused the hash-pinned 58,157,480-byte arm64/API-27 binary and v4.25-lite model
+  with the prepared 128-padding fixture on the same Android 16 / SM8550 / Adreno 740 class device.
+  The runner revalidated all local and device inputs, prefilter decisions and task IDs; each of the
+  three levels produced 14 outputs that matched between the unpolled latency and sampled-memory
+  processes. All levels passed and the process was absent after the matrix.
+- **Observed:** stable medians/maxima were 53.614/64.132 ms at 160x90, 36.933/47.775 ms at
+  256x144, and 55.716/58.820 ms at 320x180. Sampled PSS was 189,266-189,349 kB.
+- **Comparison:** versus frozen RIFE v4.6, median latency changed by +77.2%/-18.7%/+56.0% and PSS
+  rose 1.0-1.8%. Synthetic PSNR/SSIM/edge proxies all regressed at the first two levels and all
+  improved at the third. Only the 256x144 median fits 24 fps; its maximum does not.
+- **Decision:** the exact runtime is compatible with this bounded device, but it has no consistent
+  replacement advantage and no defensible player margin. RIFE v4.25-lite is stopped, remains
+  offline-only, and is not added to the App. The next active paths are the QuickSR native output
+  packer and Anime4K/cadence visual gates.

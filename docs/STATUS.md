@@ -28,7 +28,7 @@ v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN pos
 | Anime4K Android GPU | DEVICE FUNCTION PASS（单设备、有界） | Android 16 / Adreno 740 / GLES 3.2 直接报告 half-float/float color-buffer 扩展；720p/1080p/1440p 五段首帧均 model-active，未走两级 fallback；7.5 秒 24 fps clip 的 SF buffer 代理为 180/179/179，PSS 峰值 177,443-179,664 KiB，电池温度代理 38.9-39.0 C；恢复状态机按错误类型/key/generation 锁存，API 28 cleanup 与 Media3 规避对齐 | 同位置视觉 A/B 未取得；固定帧 mpv 等价、字幕/线条质量、GPU timing、长时 thermal、p50/p95/p99、功耗、最终显示和其他设备仍未证明 |
 | Anime cadence SR 复用 | IMPLEMENTED / DEVICE A/B（默认 OFF） | 只允许 benchmark Intent 开启；generation/stream epoch/缓存 ownership/最多连续 2 帧复用已测试。单设备 720p ON 共 680 帧，423 processed、257 reused，推理减少 37.79%；257 次均对齐冻结 hold map，映射 motion false reuse 为 0，队列最大 2、runtime drop 0 | 结果是 effect output-submit 代理；低对比字幕、代表性动漫混合节奏、最终显示、人工画质、1080p 与长时热稳未证明，普通交互 UI 仍保持 OFF |
 | QNN postprocess overlap | IMPLEMENTED / DEVICE A/B（默认 OFF） | 有界双阶段和额外单个输出张量已接线；720p 平均 23.573→23.711 fps（+0.6%），1080p 11.435→17.960 fps（+57.1%） | 1080p 仍属 offline，total p95 由 536.44 增至 625.37 ms，另增 23.73 MiB 张量；不是默认候选，最终显示/A-V/thermal 未证明 |
-| Anime VFI 离线探针 | HOST + DEVICE RESIDENT MATRIX（单设备、有界） | RIFE v4.6 五档基线保留；IFRNet-S 同机三档完成但更慢，已停止。RIFE v4.25-lite 的 current ncnn 已解除 `MemoryData` 阻塞并通过 12-event host gate，Android arm64/API 27 CLI 已构建 | 全部仍为 offline-only，未进入播放器/APK；RIFE v4.25-lite 三档真机矩阵仍待设备重新连接。ANVIL 需 H.264 MV + SM8550/V73 专用 QNN runtime/context；权重再分发、代表性动漫时序质量、人工审核和长时热稳未证明 |
+| Anime VFI 离线探针 | HOST + DEVICE RESIDENT MATRIX（单设备、有界） | RIFE v4.6 五档基线保留；IFRNet-S 同机三档完成但更慢，已停止。RIFE v4.25-lite 的 current ncnn 已解除 `MemoryData` 阻塞并完成三档真机矩阵：256x144 快 18.7%，但 160x90/320x180 慢 77.2%/56.0%，PSS 全档略高，已停止 | 全部仍为 offline-only，未进入播放器/APK。ANVIL 需 H.264 MV + SM8550/V73 专用 QNN runtime/context；权重再分发、代表性动漫时序质量、人工审核和长时热稳未证明 |
 | Android 高分辨率档 | PASS（单设备功能限定） | 权利清晰子集在一台物理 Qualcomm 设备完成 1080p 主档、受门禁 1440p 实验档与 4K 显示回退档；4K 是 1080p neural→4K GL canvas | 未证明实时、热稳定、内存压力、最终显示、通用设备或原生 4K 神经输出 |
 | x86_64 模拟器路径 | PASS（既有 v0.14.0 功能限定）/ v0.15.0 BUILD READY | Android Studio API 35 AVD 曾完成 720p/1080p/1440p/4K 首帧；本轮 x86_64 assemble 通过 | 本轮按设备占用约束未调用 adb、未安装 v0.15.0，也未让模拟器编译 Anime4K shader；模拟器 CPU/GPU 结果均不能外推目标手机 |
 | 真机 QNN 自动矩阵 | PASS（单设备、离线范围） | 11/11 clip 的 720p 和 1080p 主链均功能 PASS、无报告级失败/设备错误；1440p 和 4K 显示回退在主档门禁后也功能 PASS；严格 QNN 会话配置、绑定收据、样本数和 p50/p95 已验证 | 不证明 realtime、thermal、per-node EP placement/fallback trace、屏幕 latch/A-V sync 或其他设备；详见 [移动子集验证](ANDROID_MOBILE_SUBSET_VALIDATION.md) |
@@ -85,14 +85,13 @@ local SDR video
 
 ## 仍然开放的门禁
 
-1. 设备重新连接后完成 RIFE v4.25-lite 的 160x90/256x144/320x180 三档常驻矩阵，并与冻结 v4.6 同档作停止或继续裁决；
-2. 以 1080p SERIAL 为基线做 JNI/NEON direct output packer 单变量 ABBA，保持模型、tuning、队列、cadence 与片源不变；
-3. Anime4K 获取确定 effect 输出的固定同帧参考，补 clean、退化、线稿、字幕边缘和人工盲审，不再依赖 OEM UI 截图；
-4. cadence 增加混合一拍一/二/三、慢平移、嘴型、粒子、切镜、淡入淡出和低对比字幕的错误复用/漏复用审核；
-5. 加入 SurfaceFlinger 或等价最终显示观测，并继续检查 A/V sync、seek、flush、pause/resume；
-6. 只有候选先达到实时和质量门槛后，才建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
-7. SESR-M5 先关闭导出和 CPU/QNN parity；VFI 则先关闭权重许可、代表性动漫质量和播放器预算，未过门不得接 UI；
-8. 若最终要复用，再拆分稳定 AAR API 和 demo app。
+1. 以 1080p SERIAL 为基线做 JNI/NEON direct output packer 单变量 ABBA，保持模型、tuning、队列、cadence 与片源不变；
+2. Anime4K 获取确定 effect 输出的固定同帧参考，补 clean、退化、线稿、字幕边缘和人工盲审，不再依赖 OEM UI 截图；
+3. cadence 增加混合一拍一/二/三、慢平移、嘴型、粒子、切镜、淡入淡出和低对比字幕的错误复用/漏复用审核；
+4. 加入 SurfaceFlinger 或等价最终显示观测，并继续检查 A/V sync、seek、flush、pause/resume；
+5. 只有候选先达到实时和质量门槛后，才建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
+6. SESR-M5 先关闭导出和 CPU/QNN parity；若仍要 VFI，另立 ANVIL 系统任务，不再继续当前两个 ncnn 候选；
+7. 若最终要复用，再拆分稳定 AAR API 和 demo app。
 
 P0 观测字段、代理/未测边界和下一轮单变量 A/B 门禁见
 [REALTIME_PIPELINE_TELEMETRY.md](REALTIME_PIPELINE_TELEMETRY.md)。

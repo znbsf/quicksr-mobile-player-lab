@@ -24,12 +24,12 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
 3. **QNN inference/postprocess 重叠已实现为默认关闭的构建实验。** 720p 已受源帧率限制，
    平均代理吞吐仅提高约 0.6%；1080p 从 11.435 提高到 17.960 fps，但仍属 `offline`，
    p95 尾部变差且增加 23.73 MiB 输出张量，因此不能改成默认路径。
-4. **插帧仍未进入播放器。** RIFE v4.6 和 IFRNet-S 只存在于独立 native CLI/离线评测；
-   IFRNet-S 已停止。RIFE v4.25-lite 已通过新版 ncnn Windows host gate 并完成 Android
-   arm64 构建，但尚未在手机执行。
+4. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
+   native CLI/离线评测。IFRNet-S 与 v4.25-lite 已分别完成真机探针并停止；后者虽然在
+   观察设备上兼容，但只在 256x144 更快，另两档慢 56.0-77.2%，没有一致替换收益。
 
-本次盘点时 `adb devices -l` 未枚举到设备，因此没有把 RIFE v4.25-lite 的 Android 构建
-误写成真机兼容或性能结果。设备重新连接后，最先执行的就是该候选的三档常驻矩阵。
+2026-09-03 的 P0 真机裁决已经完成。三档均 `PASS`，每档两次进程的 14 个输出全部 hash
+一致，进程退出干净；这证明限定设备兼容，不改变 `OFFLINE_ONLY` 或播放器未接线的边界。
 
 ## 2. 证据标签
 
@@ -88,7 +88,7 @@ RIFE / IFRNet / ANVIL
 | 动漫 SISR 候选筛选 | 工具与清单完成 | Anime4K 已进入设备门禁；SESR-M5 仅有来源/接口方案 | SESR 先做导出与 CPU/QNN 一致性，不直接接播放器 |
 | RIFE v4.6 | 独立 CLI | `OFFLINE_ONLY`：五档单设备 resident 矩阵 | 作为冻结基线，不宣称播放器实时 |
 | IFRNet-S | 独立 CLI | `OFFLINE_ONLY`：PSS 低约一半但三档更慢 | `STOPPED` |
-| RIFE v4.25-lite | host/Android CLI 已构建 | host 确定性 PASS；Android 仅编译，未执行 | `PENDING`：设备回来后跑三档矩阵 |
+| RIFE v4.25-lite | 独立 CLI | `OFFLINE_ONLY`：三档单设备 resident 矩阵；一档更快、两档明显更慢，PSS 均略高 | `STOPPED` |
 | ANVIL | 来源和架构筛选完成 | 论文/源码表明需 H.264 motion vector + Vulkan + QNN | 暂不实现；若继续须另建 SM8550/V73 系统任务 |
 | 播放器内 VFI | 未实现 | 无 | 在 kernel、动漫画质、许可、A/V sync 和热预算过门前不创建 |
 
@@ -104,11 +104,11 @@ RIFE / IFRNet / ANVIL
 ## 5. 下一步执行顺序
 
 ```text
-P0 设备重新连接
+P0 已完成
   -> RIFE v4.25-lite 三档 resident matrix
-  -> 与冻结 RIFE v4.6 同档比较并作 stop/continue 裁决
+  -> 裁决：兼容，但无一致替换收益，STOPPED
 
-P0 完成后可并行
+当前可并行
   |-- P1A QuickSR：serial baseline -> JNI/NEON direct packer 单变量 A/B
   `-- P1B 画质：Anime4K 固定同帧 + cadence 混合节奏/字幕/平移审核
 
@@ -121,21 +121,21 @@ P1 共同检查点
   `-- ANVIL：只在仍明确需要手机 VFI 时建立 H.264 MV + SM8550/V73 专项
 ```
 
-### P0：完成 RIFE v4.25-lite 真机裁决
+### P0：RIFE v4.25-lite 真机裁决（已完成）
 
-前置条件是 `adb` 只枚举一台已授权的 arm64 物理设备，并确认设备/驱动与冻结 RIFE v4.6
-比较口径兼容。只运行已准备的 `160x90`、`256x144`、`320x180` 三档，使用该模型真实的
-128 像素 padding；延迟进程和 PSS 采样进程继续分离。
+唯一已授权的 arm64 物理设备确认为 Android 16 / SM8550 / Adreno 740。矩阵使用
+`160x90`、`256x144`、`320x180` 三档和真实 128 像素 padding，延迟进程与内存采样进程
+分离。输入、manifest、prefilter、设备侧 hash、完整 task timing 和两次输出一致性均通过。
 
-完成条件：
+| 档位 | v4.25-lite median / max | 相对 v4.6 median | PSS 变化 | 合成质量方向 |
+| --- | ---: | ---: | ---: | --- |
+| 160x90 | 53.614 / 64.132 ms | +77.2% | +1.6% | 三项均退步 |
+| 256x144 | 36.933 / 47.775 ms | -18.7% | +1.0% | 三项均退步 |
+| 320x180 | 55.716 / 58.820 ms | +56.0% | +1.8% | 三项均改善 |
 
-1. 输入文件、manifest、prefilter 决策和设备侧 hash 全部重新核验；
-2. 每档完整返回所有 task timing、确定性输出 hash、median/min/max、PSS/RSS 和短时温度代理；
-3. 与 RIFE v4.6 同档比较，不把 host fresh-process 时间与 Android kernel 时间混算；
-4. 结果仍标为 `OFFLINE_ONLY`，不在同一改动里接播放器。
-
-停止条件：Android 不兼容、任一证据绑定失败，或三档相对 v4.6 没有可解释的速度/质量收益。
-后一种情况直接结束 ncnn RIFE 替换线，不为了“已经做了很多”继续集成。
+裁决为 `STOPPED`：一档速度收益不足以抵消另两档大幅回归、全档 PSS 增长和混合质量结果；
+而且没有一档保有完整播放器余量。结果详见
+[RIFE v4.25-lite 新版运行时探针](ANIME_VFI_RIFE_V425_LITE_PROBE.md)。
 
 ### P1A：QuickSR native direct packer
 
@@ -171,9 +171,9 @@ cadence 需要增加一拍一/二/三混合、慢速平移、嘴型、粒子、�
 当前 `main` 已包含这轮有价值的实现和报告；旧实验工作树仍存在，但不是继续开发的权威基线，
 也不在本计划中自动删除。新工作应从当时最新且干净的 `main` 创建，不从旧工作树叠加。
 
-1. **现在不再新增并行工作树。** 先在主线完成 P0 真机矩阵；这一步使用已准备的离线 runner，
-   不需要另开播放器修改线。
-2. P0 裁决后，若两项都继续，再开两个互不重叠的工作树：
+1. **P0 已在主线完成，不继续 RIFE v4.25-lite 集成。** 既有离线 runner 和负结果保留，
+   避免后续会话重复探测同一候选。
+2. 下一轮可以开两个互不重叠的工作树：
    `native-output-packer` 只拥有 App/native build 和对应测试；`visual-quality-gates` 只拥有
    fixture、捕获/比较工具和报告。
 3. SESR 或 ANVIL 一次只启动一个。二者会引入新的 runtime、模型和许可证据，不与播放器
@@ -187,8 +187,9 @@ cadence 需要增加一拍一/二/三混合、慢速平移、嘴型、粒子、�
 - `:app:testDebugUnitTest`：105/105 PASS；
 - Python：`scripts` 40/40、`golden-correctness` 14/14、`pc-benchmark` 22/22、
   `derived-models` 19/19、`vfi-benchmark` 12/12，共 107/107 PASS；
-- `adb devices -l`：本次没有枚举到设备，因此未执行或声称新的真机结果；
-- 所有性能数字继续采用专项报告中的既有、绑定证据；本次没有从构建成功推断运行成功。
+- `adb devices -l`：唯一 arm64 真机在线；RIFE v4.25-lite 三档均 PASS，42 个输出在延迟/
+  采样进程间逐个 hash 一致，矩阵结束后进程不存在；
+- 原始报告保留在忽略目录，提交只记录去标识汇总；设备兼容没有被扩写成播放器实时成功。
 
 ## 8. 计划更新规则
 

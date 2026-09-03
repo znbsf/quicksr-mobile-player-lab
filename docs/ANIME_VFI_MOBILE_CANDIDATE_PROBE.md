@@ -2,12 +2,13 @@
 
 Date: 2026-09-03
 
-Status: candidate refresh, one host rerun, and one bounded physical-device resident native probe
-completed. The result remains offline-only. No file under `app/` changed, no model was added to the
-player, and no realtime, sustained-thermal, representative-anime, or redistribution claim is made.
+Status: candidate refresh plus bounded host and physical-device resident probes are complete for
+IFRNet-S and RIFE v4.25-lite. Both candidates are stopped as RIFE v4.6 replacements. All results
+remain offline-only. No file under `app/` changed, no model was added to the player, and no realtime,
+sustained-thermal, representative-anime, or redistribution claim is made.
 
-Follow-up: the RIFE v4.25-lite modern-runtime host gate and Android arm64 build are now complete;
-its physical-device matrix remains pending. See `ANIME_VFI_RIFE_V425_LITE_PROBE.md`.
+Follow-up: the RIFE v4.25-lite modern-runtime three-level physical-device matrix is complete; see
+`ANIME_VFI_RIFE_V425_LITE_PROBE.md`.
 
 ## Decision
 
@@ -16,11 +17,11 @@ is 34-113% slower across the same three resident fixture levels. Its synthetic m
 mixed, and it is dramatically worse on the original distinct-pair fixture. The candidate is stopped;
 it must not be integrated merely because it is smaller.
 
-The candidate-specific current ncnn runtime and same host gate for `rife-v4.25-lite` are complete.
-The exact modern runtime avoids the 2022 executable's `MemoryData` blocker and cleared the bounded
-host gate, but its physical-device resident matrix is still pending. If that route fails, progress
-requires either a licensed anime-lightweight weight/training path or an SM8550/HTP V73-specific
-ANVIL runtime and context.
+Do not replace RIFE v4.6 with RIFE v4.25-lite either. Its exact modern runtime avoids the 2022
+executable's `MemoryData` blocker and is compatible with the observed SM8550/Adreno 740 device, but
+only `256x144` is faster. The `160x90` and `320x180` medians are 77.2% and 56.0% slower, sampled PSS
+is slightly higher at every level, and synthetic quality is worse at two levels and better at one.
+The mixed result has no defensible player margin, so the candidate is stopped rather than integrated.
 
 RIFE v4.6 remains an offline baseline, not a realtime success.
 
@@ -30,7 +31,7 @@ The shortlist is deliberately limited to two.
 
 | Candidate | Why it survived source screening | Code / weight boundary | Runtime gate | Disposition |
 | --- | --- | --- | --- | --- |
-| RIFE v4.25-lite ncnn | [Practical-RIFE at `bbfd2ea`](https://github.com/hzwer/Practical-RIFE/tree/bbfd2ea90910789a860ea3e2b32a240cd577b75e) says v4.25 improves anime scenes and defines `lite` as lower compute; [TNTwise ncnn port at `13338e3`](https://github.com/TNTwise/rife-ncnn-vulkan/tree/13338e38debe2e400b3eeecf6792312d01a692f9) contains the converted model | Both repositories are MIT. Practical-RIFE says linked trained models share its MIT license, but transformed-weight redistribution is still blocked here pending a human provenance review | 11,312,473 checked-out bytes; custom `rife.Warp` plus `MemoryData`, conv/deconv, interpolation, pixel shuffle, elementwise and split/concat operators; project-built Android arm64 CLI only | Modern host gate passed; Android build passed; device matrix pending |
+| RIFE v4.25-lite ncnn | [Practical-RIFE at `bbfd2ea`](https://github.com/hzwer/Practical-RIFE/tree/bbfd2ea90910789a860ea3e2b32a240cd577b75e) says v4.25 improves anime scenes and defines `lite` as lower compute; [TNTwise ncnn port at `13338e3`](https://github.com/TNTwise/rife-ncnn-vulkan/tree/13338e38debe2e400b3eeecf6792312d01a692f9) contains the converted model | Both repositories are MIT. Practical-RIFE says linked trained models share its MIT license, but transformed-weight redistribution is still blocked here pending a human provenance review | 11,312,473 checked-out bytes; custom `rife.Warp` plus `MemoryData`, conv/deconv, interpolation, pixel shuffle, elementwise and split/concat operators; project-built Android arm64 CLI only | Modern host/device gates completed; inconsistent speed/quality, stopped |
 | IFRNet-S Vimeo90K ncnn | [IFRNet paper](https://openaccess.thecvf.com/content/CVPR2022/papers/Kong_IFRNet_Intermediate_Feature_Refine_Network_for_Efficient_Frame_Interpolation_CVPR_2022_paper.pdf), [author code at `b117bca`](https://github.com/ltkong218/IFRNet/tree/b117bcafcf074b2de756b882f8a6ca02c3169bfe), and [ncnn port at `3592a70`](https://github.com/nihui/ifrnet-ncnn-vulkan/tree/3592a70355ec011fe7cefb3a9ba08b63d82a2b6d) provide executable code and a 5,935,644-byte model | Code is MIT; no independent weight-license statement was found, so model redistribution remains blocked | ncnn Vulkan; custom warp, conv/deconv, interpolation, PReLU, sigmoid, slice/split/concat; project-cross-compiled native Android CLI | Real host/device lower-bound probe completed; stopped |
 
 The upstream RIFE model note is anime-oriented evidence, not project validation on representative

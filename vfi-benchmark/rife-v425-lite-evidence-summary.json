@@ -1,7 +1,7 @@
 {
   "schema": "anime-vfi-rife-v425-lite-evidence.v1",
   "measured_at": "2026-09-03",
-  "scope": "sanitized aggregate of the 12-event host gate and an Android arm64 build; physical-device execution was not completed",
+  "scope": "sanitized aggregate of the 12-event host gate, Android arm64 build, and a bounded three-level physical-device resident matrix",
   "candidate": {
     "id": "rife-ncnn-vulkan-v4.25-lite",
     "source_commit": "13338e38debe2e400b3eeecf6792312d01a692f9",
@@ -55,21 +55,94 @@
     "ndk": "25.2.9519653",
     "binary_bytes": 58157480,
     "instrumented_binary_sha256": "638568631e7b22cc6576e71275890a888757b036c29d95c94b156a4e7963a26b",
-    "status": "build-succeeded-not-device-executed"
+    "status": "build-succeeded-and-device-executed"
   },
   "device_matrix": {
-    "status": "pending",
-    "reason": "the physical device became unavailable before the resident matrix began",
-    "prepared_fixture_manifest_sha256": "a5a0abe4788e2c65417c9513a14c775de4c75444575c325bc099e4c5772daa3c",
-    "prepared_fixture_padding_multiple": 128,
+    "status": "completed",
+    "scope": "one Android 16, SM8550, Adreno 740 device; standalone arm64 native CLI, not an APK or player path",
+    "ignored_raw_report_sha256": "bf09495e7a0b9e31ce42f6a403ae136d0c0c33eef073663d65c542fd2965933e",
+    "fixture_manifest_sha256": "a5a0abe4788e2c65417c9513a14c775de4c75444575c325bc099e4c5772daa3c",
+    "fixture_padding_multiple": 128,
     "source_pixels_and_decisions_match_frozen_three_level_fixture": true,
-    "measurements": null,
-    "device_compatibility_claim": false
+    "protocol": {
+      "source_frames_per_level": 7,
+      "distinct_midpoint_pairs_per_level": 6,
+      "midpoint_warmups": 1,
+      "stable_unpolled_midpoint_calls": 5,
+      "separate_memory_sampled_run": true,
+      "outputs_hash_matched_between_runs": true
+    },
+    "measurements": {
+      "160x90": {
+        "input": [160, 90],
+        "padded": [256, 128],
+        "vulkan_init_ms": 78.260104,
+        "model_load_ms": 2647.421666,
+        "midpoint_warmup_ms": 96.210573,
+        "stable_model_ms": [40.777812, 42.947656, 53.613854, 64.132083, 56.462709],
+        "stable_summary_ms": {"median": 53.613854, "min": 40.777812, "max": 64.132083},
+        "decode_pair_median_ms": 0.474688,
+        "encode_median_ms": 4.059349,
+        "whole_process_ms": 3876.580400,
+        "sampled_peak_pss_kb": 189324,
+        "sampled_peak_rss_kb": 231356,
+        "max_temperature_c_proxy": {"before": 44.787, "after": 45.2},
+        "battery_c_proxy": {"before": 35.9, "after": 35.7},
+        "quality_proxy": {"psnr_db_mean": 27.060483, "ssim_global_mean": 0.980235, "edge_gradient_mae_mean": 0.011026, "human_review": "pending"},
+        "output_count": 14,
+        "output_tree_sha256": "17384e358ab0254fa5184bcdc77cf4bf000ee03ffaef3ff68eed2a60a8e035d7",
+        "versus_rife_v4_6": {"latency_delta_percent": 77.175, "pss_delta_percent": 1.604, "psnr_delta_db": -1.508894, "ssim_delta": -0.006236, "edge_mae_delta": 0.000436}
+      },
+      "256x144": {
+        "input": [256, 144],
+        "padded": [256, 256],
+        "vulkan_init_ms": 21.853177,
+        "model_load_ms": 2442.606614,
+        "midpoint_warmup_ms": 122.099635,
+        "stable_model_ms": [31.924843, 36.065521, 36.933125, 38.102083, 47.775104],
+        "stable_summary_ms": {"median": 36.933125, "min": 31.924843, "max": 47.775104},
+        "decode_pair_median_ms": 0.633152,
+        "encode_median_ms": 6.033307,
+        "whole_process_ms": 3030.538700,
+        "sampled_peak_pss_kb": 189266,
+        "sampled_peak_rss_kb": 231508,
+        "max_temperature_c_proxy": {"before": 44.8, "after": 45.2},
+        "battery_c_proxy": {"before": 35.7, "after": 35.7},
+        "quality_proxy": {"psnr_db_mean": 26.837649, "ssim_global_mean": 0.980590, "edge_gradient_mae_mean": 0.008769, "human_review": "pending"},
+        "output_count": 14,
+        "output_tree_sha256": "79ef9bb34d04071eb2145e73aaec49514356dff480fe8308616b2eb51a9324eb",
+        "versus_rife_v4_6": {"latency_delta_percent": -18.722, "pss_delta_percent": 1.030, "psnr_delta_db": -1.214304, "ssim_delta": -0.004929, "edge_mae_delta": 0.001383}
+      },
+      "320x180": {
+        "input": [320, 180],
+        "padded": [384, 256],
+        "vulkan_init_ms": 25.361146,
+        "model_load_ms": 2948.482551,
+        "midpoint_warmup_ms": 173.116719,
+        "stable_model_ms": [50.290208, 54.128958, 55.716198, 58.820416, 57.273802],
+        "stable_summary_ms": {"median": 55.716198, "min": 50.290208, "max": 58.820416},
+        "decode_pair_median_ms": 1.917318,
+        "encode_median_ms": 11.394766,
+        "whole_process_ms": 3727.106900,
+        "sampled_peak_pss_kb": 189349,
+        "sampled_peak_rss_kb": 231216,
+        "max_temperature_c_proxy": {"before": 44.9, "after": 44.4},
+        "battery_c_proxy": {"before": 35.7, "after": 35.7},
+        "quality_proxy": {"psnr_db_mean": 27.594595, "ssim_global_mean": 0.981523, "edge_gradient_mae_mean": 0.008163, "human_review": "pending"},
+        "output_count": 14,
+        "output_tree_sha256": "464453ed9db2912dcaebc07989bff104b71df97c876b8c2d39f747223195991f",
+        "versus_rife_v4_6": {"latency_delta_percent": 56.002, "pss_delta_percent": 1.839, "psnr_delta_db": 1.216730, "ssim_delta": 0.001117, "edge_mae_delta": -0.001881}
+      }
+    },
+    "budget_interpretation": "offline-only: 160x90 and 320x180 miss the 24 fps kernel budget; 256x144 has a 36.933 ms median but its 47.775 ms maximum misses 24 fps. No level has defensible player headroom after omitted decode, SR, composition, scheduling, A/V sync, display, and sustained thermal costs.",
+    "process_absent_after_matrix": true,
+    "device_compatibility_claim": true,
+    "compatibility_scope": "the exact binary, model, fixture, firmware, and single observed device only"
   },
   "decision": {
     "replace_rife_v4_6": false,
-    "stop_rife_v425_lite": false,
-    "reason": "The modern runtime fixes the old MemoryData blocker and the host output is stable, but the host proxies regress versus RIFE v4.6 and no physical-device result exists. Keep the candidate pending exactly the same resident device matrix.",
+    "stop_rife_v425_lite": true,
+    "reason": "The exact modern runtime is compatible with the observed device, but only 256x144 is faster than RIFE v4.6. The 160x90 and 320x180 medians regress by 77.175% and 56.002%, PSS rises at all three levels, and synthetic quality regresses at two levels while improving at one. There is no consistent replacement advantage or player margin.",
     "player_integration": "absent"
   }
 }

@@ -23,7 +23,10 @@ def main() -> None:
         "rife-ncnn-vulkan-v4.25-lite",
         "ifrnet-ncnn-vulkan-s-vimeo90k",
     }
-    assert sum(item["status"] == "stopped-after-host-and-device-lower-bound-probe" for item in candidates) == 1
+    assert {item["status"] for item in candidates} == {
+        "stopped-after-host-and-device-resident-probe",
+        "stopped-after-host-and-device-lower-bound-probe",
+    }
     for item in candidates:
         assert len(item["source"]["commit"]) == 40
         assert item["source"]["url"].startswith("https://github.com/")
@@ -49,17 +52,22 @@ def main() -> None:
     assert rife_v425_evidence["host"]["event_count"] == 12
     assert rife_v425_evidence["host"]["interpolated_pair_count"] == 1
     assert rife_v425_evidence["host"]["outputs_stable_across_runs"] is True
-    assert rife_v425_evidence["android_build"]["status"] == "build-succeeded-not-device-executed"
-    assert rife_v425_evidence["device_matrix"]["status"] == "pending"
-    assert rife_v425_evidence["device_matrix"]["measurements"] is None
-    assert rife_v425_evidence["device_matrix"]["device_compatibility_claim"] is False
-    assert rife_v425_evidence["device_matrix"]["prepared_fixture_padding_multiple"] == 128
+    assert rife_v425_evidence["android_build"]["status"] == "build-succeeded-and-device-executed"
+    assert rife_v425_evidence["device_matrix"]["status"] == "completed"
+    assert set(rife_v425_evidence["device_matrix"]["measurements"]) == {
+        "160x90", "256x144", "320x180"
+    }
+    assert rife_v425_evidence["device_matrix"]["protocol"]["outputs_hash_matched_between_runs"] is True
+    assert rife_v425_evidence["device_matrix"]["device_compatibility_claim"] is True
+    assert rife_v425_evidence["device_matrix"]["fixture_padding_multiple"] == 128
     assert rife_v425_evidence["device_matrix"]["source_pixels_and_decisions_match_frozen_three_level_fixture"] is True
+    assert rife_v425_evidence["device_matrix"]["process_absent_after_matrix"] is True
     assert rife_v425_evidence["decision"]["replace_rife_v4_6"] is False
+    assert rife_v425_evidence["decision"]["stop_rife_v425_lite"] is True
     assert rife_v425_evidence["decision"]["player_integration"] == "absent"
     print(
         f"VFI CANDIDATE CHECK: PASS ({len(candidates)} shortlisted, "
-        "1 device-probed lower bound, RIFE v4.25-lite device matrix pending)"
+        "2 device-probed candidates, both stopped as replacements)"
     )
 
 
