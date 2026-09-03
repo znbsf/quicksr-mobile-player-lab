@@ -155,6 +155,11 @@ cadence 需要增加一拍一/二/三混合、慢速平移、嘴型、粒子、�
 夹具，检查错误复用率、漏复用率、PTS、reference identity 和人工节奏感。已通过的 BBB
 15→24 重复映射只证明当前片源上的 hold 判断，不能代替动漫语义质量。
 
+主机侧夹具和 fail-closed evaluator 已完成：两种既有退化下生成上述序列，并检查同帧 hash、
+错误/遗漏复用、PTS、reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。
+本轮没有执行 mpv、Android/GL 或真机输出，也没有人工盲审，因此 P1B 视觉门禁仍未关闭；
+详见 [主机画质门禁](ANIME_VISUAL_QUALITY_GATES.md)。
+
 ### P2：模型和 VFI 的条件性路线
 
 - **SESR-M5**：先在忽略目录完成固定 640x360->1280x720 导出，比较 source/CPU ORT/QNN

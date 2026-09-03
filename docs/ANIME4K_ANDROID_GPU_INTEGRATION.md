@@ -126,9 +126,15 @@ python scripts/anime4k_reference_fixture.py compare `
 ```
 
 The report freezes both pixel hashes, exact equality, uint8 MAE, maximum channel
-error and mismatching-pixel count. Threshold acceptance is deliberately not
-invented before the first paired capture; until a reviewed threshold or exact
+error, mismatching-pixel count, PSNR, global SSIM and edge MAE. The comparison
+returns nonzero on any non-exact difference. Threshold acceptance is deliberately
+not invented before the first paired capture; until a reviewed threshold or exact
 match passes, mpv equivalence remains open.
+
+The broader host contract in [ANIME_VISUAL_QUALITY_GATES.md](ANIME_VISUAL_QUALITY_GATES.md)
+reuses the existing source pin, spatial fixture/degradation contract and metrics, then adds clean
+and degraded line art plus high/low-contrast subtitle cases. Its source/tests are complete, but no
+Anime4K/mpv/Android paired output was captured here, so visual equivalence remains open.
 
 ## 2026-09-03 bounded physical-device result
 

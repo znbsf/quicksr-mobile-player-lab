@@ -264,9 +264,13 @@ class AnimeCandidateLabTests(unittest.TestCase):
         with TemporaryDirectory() as first_temp, TemporaryDirectory() as second_temp:
             first = candidate_benchmark.prepare_contract(Path(first_temp), include_open_assets=False)
             second = candidate_benchmark.prepare_contract(Path(second_temp), include_open_assets=False)
-            self.assertEqual(len(first["cases"]), 2)
+            self.assertEqual(len(first["cases"]), 6)
             self.assertEqual({case["degradation"]["id"] for case in first["cases"]}, set(candidate_benchmark.PROFILE_IDS))
-            self.assertTrue(all(case["source"] == "synthetic-lineart-subtitle-edge" for case in first["cases"]))
+            self.assertEqual(
+                {case["source"] for case in first["cases"]},
+                {"synthetic-lineart-edge", "synthetic-high-contrast-subtitle",
+                 "synthetic-low-contrast-subtitle"},
+            )
             self.assertEqual(
                 [case["input"]["sha256"] for case in first["cases"]],
                 [case["input"]["sha256"] for case in second["cases"]],
@@ -294,7 +298,7 @@ class AnimeCandidateLabTests(unittest.TestCase):
                 "fixture-candidate",
                 root / "report.json",
             )
-            self.assertEqual(report["case_count"], 2)
+            self.assertEqual(report["case_count"], 6)
             self.assertEqual(report["candidate_psnr_wins"], 0)
             (outputs / f"{contract['cases'][0]['id']}.png").unlink()
             with self.assertRaises(FileNotFoundError):

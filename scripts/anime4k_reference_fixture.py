@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
+import statistics
 
 
 INPUT_WIDTH = 32
@@ -65,6 +67,58 @@ def verify_shader(shader_path: Path) -> None:
             f"pinned shader mismatch: bytes={len(payload)}, sha256={observed}")
 
 
+def quality_metrics(reference: bytes, actual: bytes, width: int, height: int) -> dict[str, object]:
+    if len(reference) != len(actual) or len(reference) != width * height * 3:
+        raise ValueError("metric payload dimensions do not match")
+    normalized_error = [
+        (left - right) / 255.0 for left, right in zip(reference, actual)
+    ]
+    mse = statistics.fmean(error * error for error in normalized_error)
+    channel_ssim = []
+    for channel in range(3):
+        left = [value / 255.0 for value in reference[channel::3]]
+        right = [value / 255.0 for value in actual[channel::3]]
+        left_mean = statistics.fmean(left)
+        right_mean = statistics.fmean(right)
+        left_var = statistics.fmean((value - left_mean) ** 2 for value in left)
+        right_var = statistics.fmean((value - right_mean) ** 2 for value in right)
+        covariance = statistics.fmean(
+            (left_value - left_mean) * (right_value - right_mean)
+            for left_value, right_value in zip(left, right)
+        )
+        c1, c2 = 0.01**2, 0.03**2
+        channel_ssim.append(
+            ((2 * left_mean * right_mean + c1) * (2 * covariance + c2))
+            / ((left_mean**2 + right_mean**2 + c1) * (left_var + right_var + c2))
+        )
+
+    def edge_axis(horizontal: bool) -> float:
+        total = 0.0
+        count = 0
+        y_stop = height if horizontal else height - 1
+        x_stop = width - 1 if horizontal else width
+        for y in range(y_stop):
+            for x in range(x_stop):
+                next_x = x + 1 if horizontal else x
+                next_y = y if horizontal else y + 1
+                offset = (y * width + x) * 3
+                next_offset = (next_y * width + next_x) * 3
+                for channel in range(3):
+                    reference_edge = reference[next_offset + channel] - reference[offset + channel]
+                    actual_edge = actual[next_offset + channel] - actual[offset + channel]
+                    total += abs(reference_edge - actual_edge) / 255.0
+                    count += 1
+        return total / count
+
+    infinite = mse == 0.0
+    return {
+        "psnr_db": None if infinite else 10.0 * math.log10(1.0 / mse),
+        "psnr_is_infinite": infinite,
+        "global_ssim": statistics.fmean(channel_ssim),
+        "edge_mae": (edge_axis(True) + edge_axis(False)) / 2.0,
+    }
+
+
 def compare_outputs(android_path: Path, mpv_path: Path) -> dict[str, object]:
     android_width, android_height, android_rgb = read_ppm(android_path)
     mpv_width, mpv_height, mpv_rgb = read_ppm(mpv_path)
@@ -87,6 +141,7 @@ def compare_outputs(android_path: Path, mpv_path: Path) -> dict[str, object]:
         "max_channel_error_u8": max(errors, default=0),
         "mismatch_pixels": mismatch_pixels,
         "exact": not any(errors),
+        **quality_metrics(mpv_rgb, android_rgb, OUTPUT_WIDTH, OUTPUT_HEIGHT),
     }
 
 
@@ -122,7 +177,7 @@ def main() -> int:
     result = (prepare(args.output_dir, args.shader) if args.command == "prepare"
               else compare_outputs(args.android, args.mpv))
     print(json.dumps(result, indent=2))
-    return 0
+    return 0 if args.command == "prepare" or result["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":

@@ -22,7 +22,11 @@ class Anime4kReferenceFixtureTests(unittest.TestCase):
             fixture.write_ppm(
                 android, fixture.OUTPUT_WIDTH, fixture.OUTPUT_HEIGHT, payload)
             fixture.write_ppm(mpv, fixture.OUTPUT_WIDTH, fixture.OUTPUT_HEIGHT, payload)
-            self.assertTrue(fixture.compare_outputs(android, mpv)["exact"])
+            exact = fixture.compare_outputs(android, mpv)
+            self.assertTrue(exact["exact"])
+            self.assertTrue(exact["psnr_is_infinite"])
+            self.assertEqual(1.0, exact["global_ssim"])
+            self.assertEqual(0.0, exact["edge_mae"])
 
             changed = bytearray(payload)
             changed[0] += 1
@@ -32,6 +36,8 @@ class Anime4kReferenceFixtureTests(unittest.TestCase):
             self.assertFalse(result["exact"])
             self.assertEqual(1, result["mismatch_pixels"])
             self.assertEqual(1, result["max_channel_error_u8"])
+            self.assertFalse(result["psnr_is_infinite"])
+            self.assertLess(result["global_ssim"], 1.0)
 
 
 if __name__ == "__main__":

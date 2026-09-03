@@ -26,7 +26,7 @@ training/evaluation data boundary are recorded.
 
 ## Common offline output contract
 
-Prepare the source-original synthetic line/subtitle fixture:
+Prepare the source-original synthetic line-art and high/low-contrast subtitle fixtures:
 
 ```powershell
 python .\pc-benchmark\anime_candidate_benchmark.py prepare `

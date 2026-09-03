@@ -233,3 +233,18 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   replacement advantage and no defensible player margin. RIFE v4.25-lite is stopped, remains
   offline-only, and is not added to the App. The next active paths are the QuickSR native output
   packer and Anime4K/cadence visual gates.
+
+## 2026-09-03 — Host Anime4K and cadence visual-quality gate
+
+- **Fixtures:** expanded the project-original spatial contract to line art plus high/low-contrast
+  subtitles under the existing clean and blur/JPEG Q35 profiles. Added matching temporal cases for
+  mixed one/two/three holds, one-pixel pan, mouth/particle motion, hard cuts, fades and subtitle
+  changes.
+- **Binding:** preparation revalidates the existing Anime4K v4.0.1 x2 Small commit/bytes/SHA-256
+  source pin. The submission evaluator rejects incomplete or substituted contracts and checks
+  same-frame input hashes, output hashes, PTS, wrong/missed reuse, cache-reference identity and
+  byte-identical reused output.
+- **Metrics and boundary:** every supplied output receives PSNR, global SSIM and edge MAE; no
+  quality threshold was invented. Host tests prove deterministic generation and fail-closed gate
+  behavior only. No mpv, Android/GL, QNN, device or human visual/rhythm review ran, so neither
+  Anime4K equivalence nor cadence visual quality is promoted.

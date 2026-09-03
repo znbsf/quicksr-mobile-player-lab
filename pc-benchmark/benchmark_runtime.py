@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import onnxruntime as ort
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +94,8 @@ def load_model_spec(registry_path: Path, model_id: str) -> ModelSpec:
 
 class OrtModelRunner:
     def __init__(self, spec: ModelSpec):
+        import onnxruntime as ort
+
         options = ort.SessionOptions()
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL

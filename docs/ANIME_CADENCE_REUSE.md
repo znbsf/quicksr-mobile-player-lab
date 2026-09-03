@@ -112,6 +112,14 @@ rights-clear clip and profile for OFF/ON, retain raw logs and APKs only in ignor
 inference reduction, reuse reasons, FPS/queue/drop, PSS, thermal proxies, pause/seek/reopen behavior.
 No device or quality conclusion is valid until those logs and behaviors are captured and reviewed.
 
+The separate [host visual-quality gate](ANIME_VISUAL_QUALITY_GATES.md) now materializes
+source-original clean and blur/JPEG sequences for mixed one/two/three-frame holds, slow pan,
+mouth/particle motion, hard cuts, fades and high/low-contrast subtitle changes. Its evaluator
+fails the machine gate on wrong reuse, missed reuse, PTS/reference/input-hash drift or a reused
+output that is not byte-identical to the referenced processed output, and emits per-frame
+PSNR/global-SSIM/edge-MAE. This completes the host fixture/evaluator portion only; no current
+analyzer/device output or human rhythm review was run by that gate.
+
 ## Bounded physical-device result (2026-09-03)
 
 This result used one physical Qualcomm `arm64-v8a` device, the same latest-source APK/model, the

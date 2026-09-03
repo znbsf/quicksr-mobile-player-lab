@@ -16,12 +16,24 @@ machine-readable license/source/layout/runtime audit is
 - Planned neural scales: 1.5x, 2x, 3x and 4x. Non-native scales use an explicit neural-plus-linear or cascade route.
 - Current executable models: locally exported QuickSRNetSmall 1.5x, 2x, 3x and 4x models on ONNX Runtime CPU, with dynamic-shape route models and fixed 640x360 benchmark models.
 
-The generated synthetic frame is original deterministic code and may be used for pipeline checks. The open-asset path uses a SHA-256-verified Big Buck Bunny frame and 15-frame sequence under CC BY 3.0, plus native 4K Pepper&Carrot 16:9 illustration and 1:1 comic assets under CC BY 4.0. This is a rights-clear animation/comic-style corpus, not a representative sample of commercial Japanese anime or a substitute for human review.
+The generated synthetic frames are original deterministic code and may be used for pipeline checks. The spatial candidate contract now separates line art, high-contrast subtitles and low-contrast subtitles under both existing degradation profiles. The open-asset path uses a SHA-256-verified Big Buck Bunny frame and 15-frame sequence under CC BY 3.0, plus native 4K Pepper&Carrot 16:9 illustration and 1:1 comic assets under CC BY 4.0. This is a rights-clear animation/comic-style corpus, not a representative sample of commercial Japanese anime or a substitute for human review.
+
+The combined host visual gate adds mixed one/two/three cadence, slow pan, mouth/particle, cut,
+fade and high/low-contrast subtitle sequences without executing Android or changing the player:
+
+```powershell
+python .\pc-benchmark\anime_visual_quality_gate.py prepare `
+  --output .\build\pc-benchmark\anime-visual-quality-gate
+```
+
+Its bound submission evaluator checks same-frame hashes, wrong/missed reuse, PTS/reference
+identity and reused-output identity, then reports PSNR, global SSIM and edge MAE. See
+`docs/ANIME_VISUAL_QUALITY_GATES.md` for the exact protocol and proof boundary.
 
 ## Anime candidate contract
 
-Validate the candidate audit and prepare the original line-art/subtitle/edge
-fixture with the same clean and blur/JPEG profiles:
+Validate the candidate audit and prepare the three original line-art/high-subtitle/low-subtitle
+fixtures with the same clean and blur/JPEG profiles:
 
 ```powershell
 python .\pc-benchmark\validate_anime_model_candidates.py

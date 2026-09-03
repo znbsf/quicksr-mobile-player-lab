@@ -92,9 +92,9 @@ one promoted GPU shader and one promoted mobile SISR model. A name containing
 
 ## Recomputable benchmark
 
-The new contract generates an original 1280x720 line-art frame with thin and
-thick edges plus pixel-drawn subtitles, then creates the same two project
-degradations. Optional open-asset mode adds the already allowlisted
+The current contract generates three original 1280x720 frames: thin/thick line art,
+high-contrast pixel subtitles and deliberately low-contrast pixel subtitles. It creates the same
+two project degradations for all three sources. Optional open-asset mode adds the already allowlisted
 Pepper&Carrot wide and square fixtures. Candidate tooling must write one exact
 RGB 2x PNG per case; evaluation fails closed on missing files, wrong mode or
 wrong dimensions and compares each output with Lanczos using the existing
@@ -105,7 +105,7 @@ not produce candidate quality or timing numbers because the Anime4K adapter
 has not run on a GL device and SESR export was not performed. That is an explicit
 unmeasured result, not a failed quality comparison.
 
-The generated contract SHA-256 was
+The initial, now superseded two-case contract SHA-256 was
 `64dae5f2c2a551053dc2c2a078fa3ac276cb6ff135b03b299c2ede3f9443e121` on
 Python 3.12.3, NumPy 2.2.6 and Pillow 12.3.0. A protocol-only run copied the
 Lanczos baseline into the candidate output directory and reproduced identical
@@ -116,8 +116,9 @@ hashes and metrics, as required:
 | clean Lanczos | 25.4028 dB | 0.984538 | 0.017182 |
 | blur 0.6 + JPEG Q35 | 23.7188 dB | 0.976996 | 0.020485 |
 
-These are Lanczos fixture values that validate the evaluation path, not
-Anime4K, SESR, QuickSR or device results.
+These historical values validate the original evaluation path; they are not the current expanded
+contract hash and are not Anime4K, SESR, QuickSR or device results. The current contract records
+its own hash at preparation time and adds four subtitle/profile cases.
 
 ## Android entry gates
 
