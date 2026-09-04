@@ -54,10 +54,6 @@
 
 ## 3. 模型资产如何真正进入手机
 
-[![模型从上游到手机](diagrams/edge-model-lifecycle.svg)](diagrams/edge-model-lifecycle.svg)
-
-[查看 PlantUML 源码](diagrams/edge-model-lifecycle.puml)
-
 ### 3.1 模型不是一个孤立的 `.onnx` 文件
 
 一个可部署模型至少需要以下身份字段：
@@ -241,12 +237,6 @@ Media3 GL lane:   upload/output-submit(N-1)
 如果只有“线程池 + Future”而没有这些身份，seek 后极易把旧视频帧显示到新位置，或者在 release 时关闭仍被另一个线程使用的 Tensor。
 
 ## 6. 优化手段：哪些保留、哪些停止
-
-[![优化演进与证据边界](diagrams/edge-optimization-evidence.svg)](diagrams/edge-optimization-evidence.svg)
-
-[查看 PlantUML 源码](diagrams/edge-optimization-evidence.puml)
-
-这张图是一条实验证据链，不是可以直接相加的性能分解。不同节点来自不同阶段或受控 A/B；它们说明为什么保留或停止某条路线，而不是声称每一项都独立贡献了固定 FPS。
 
 ### 6.1 默认保留的优化
 
@@ -453,7 +443,7 @@ App inference/postprocess/GL timeline
 
 ## 12. 图的维护方式
 
-五张图同时提交了可编辑的 `.puml` 与 GitHub 可直接显示的 `.svg`。当前 SVG 使用 [PlantUML 1.2026.6](https://github.com/plantuml/plantuml/releases/tag/v1.2026.6) 生成；本轮临时渲染器按官方 SHA-256 `89948f14c93756c7a3fb7b69078ff37e8489fd79dd430c582b931e2f65358690` 校验，JAR 不进入仓库。修改源码后可在仓库根目录重新生成：
+三张图同时提交了可编辑的 `.puml` 与 GitHub 可直接显示的 `.svg`。当前 SVG 使用 [PlantUML 1.2026.6](https://github.com/plantuml/plantuml/releases/tag/v1.2026.6) 生成；本轮临时渲染器按官方 SHA-256 `89948f14c93756c7a3fb7b69078ff37e8489fd79dd430c582b931e2f65358690` 校验，JAR 不进入仓库。修改源码后可在仓库根目录重新生成：
 
 ```powershell
 $plantUmlJar = '<path-to-plantuml-1.2026.6.jar>'

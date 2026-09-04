@@ -1,49 +1,34 @@
 @startuml
-!pragma layout smetana
-title 1080p 单帧数据与内存流 / Per-frame Data Flow
+title QuickSR 3×：一帧的数据形状与体积
 
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
 skinparam defaultFontName Noto Sans SC
-skinparam defaultFontSize 14
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam roundcorner 12
 skinparam ArrowColor #475569
-skinparam ArrowThickness 1.2
-skinparam rectangleBorderColor #64748B
-skinparam rectangleFontColor #0F172A
-skinparam noteBorderColor #94A3B8
-skinparam noteBackgroundColor #F8FAFC
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #64748B
+  FontColor #0F172A
+}
 
 top to bottom direction
 
-rectangle "MediaCodec / Media3 GL texture\nSDR frame + source PTS" as Decode #E0F2FE
-rectangle "CPU RGBA8 readback\n640 x 360 x 4 bytes\n921,600 B = 0.879 MiB" as Readback #F1F5F9
-rectangle "CPU preprocess array\nfloat32 NCHW [1,3,360,640]\n691,200 values = 2.637 MiB" as Nchw #FCE7F3
-rectangle "Pinned ORT input FloatBuffer\nfloat32 NCHW [1,3,360,640]\n2.637 MiB copied per run" as OrtInput #FEF3C7
-rectangle "QuickSRNetSmall 3x\nONNX Runtime QNN EP -> HTP\nRGB only; alpha bypasses the model" as Qnn #EDE9FE
-rectangle "Two pinned ORT output slots\nfloat32 NHWC [1,1080,1920,3]\n6,220,800 values = 23.730 MiB each" as OrtOutput #FEF3C7
-rectangle "Deferred bulk copy on postprocess lane\nNHWC float array, then four fixed row stripes" as CopyPack #ECFDF5
-rectangle "CPU packed output\nRGBA8 1920 x 1080 x 4 bytes\n8,294,400 B = 7.910 MiB" as RgbaOutput #ECFDF5
-rectangle "Direct upload to Media3 output texture\n1920 x 1080; original PTS preserved" as Upload #E0F2FE
-rectangle "SurfaceFlinger\nactual-present cadence proxy" as Surface #F1F5F9
+rectangle "Media3 输入纹理\n640×360 + PTS" as TEX #E0F2FE
+rectangle "CPU RGBA8\n640×360 · 0.879 MiB" as RGBA_IN #F8FAFC
+rectangle "FP32 NCHW 输入\n[1,3,360,640] · 2.637 MiB" as TENSOR_IN #FEF3C7
+rectangle "QuickSR 3× 推理\nQNN HTP" as QNN #DCFCE7
+rectangle "FP32 NHWC 输出\n[1,1080,1920,3] · 23.730 MiB / 槽" as TENSOR_OUT #FEF3C7
+rectangle "RGBA8 输出纹理\n1920×1080 · 7.910 MiB · 原 PTS" as RGBA_OUT #EDE9FE
 
-Decode --> Readback : GPU / GL -> CPU
-Readback --> Nchw : normalize RGB to [0,1]\nreorder RGBA -> NCHW
-Nchw --> OrtInput : float[] -> direct FloatBuffer
-OrtInput --> Qnn : Session.run
-Qnn --> OrtOutput : HTP -> pinned output buffer
-OrtOutput --> CopyPack : transfer output-slot lease
-Readback ..> CopyPack : nearest-neighbor alpha side channel
-CopyPack --> RgbaOutput : clamp + quantize RGB\nrestore alpha
-RgbaOutput --> Upload : CPU -> GL
-Upload --> Surface : Media3 / BufferQueue
+TEX --> RGBA_IN : GL 读回
+RGBA_IN --> TENSOR_IN : 归一化 + 换布局
+TENSOR_IN --> QNN : inference
+QNN --> TENSOR_OUT
+TENSOR_OUT --> RGBA_OUT : NEON pack + GL 上传
 
-note right of OrtOutput
-  双 slot 比单 slot额外增加 23.730 MiB，
-  目的是让 N+1 推理与 N 后处理重叠。
-end note
-
-note right of Upload
-  这就是当前的 GL -> CPU -> QNN -> CPU -> GL 往返。
-  它已经减少了冗余 blit，但尚未成为 shared-buffer zero-copy。
+note right of RGBA_IN
+  Alpha 走旁路，
+  输出打包时合并。
 end note
 @enduml
