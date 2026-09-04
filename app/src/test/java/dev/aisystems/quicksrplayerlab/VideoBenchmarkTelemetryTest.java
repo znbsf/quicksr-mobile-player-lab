@@ -27,6 +27,18 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"modelOutputHeight\":1080"));
         assertTrue(value.contains("\"canvasWidth\":1920"));
         assertTrue(value.contains("\"canvasHeight\":1080"));
+        assertTrue(value.contains("\"modelVariant\":\"fixed640x360-3x-f32-nhwc\""));
+        assertTrue(value.contains("\"outputTensorLayout\":\"NHWC\""));
+        assertTrue(value.contains("\"glUploadRoute\":\"DIRECT_MEDIA3_OUTPUT_TEXTURE\""));
+        assertTrue(value.contains("\"pboUpload\":" + BuildConfig.QUICKSR_PBO_UPLOAD));
+        assertTrue(value.contains(
+                "\"glUploadPboSlotCount\":"
+                        + (BuildConfig.QUICKSR_PBO_UPLOAD ? 2 : 0)));
+        assertTrue(value.contains(
+                "\"additionalGlUploadPboBytes\":"
+                        + (BuildConfig.QUICKSR_PBO_UPLOAD ? 16_588_800L : 0L)));
+        assertTrue(value.contains("\"outputPackStripeCount\":4"));
+        assertTrue(value.contains("\"finiteValidationPolicy\":\"FIRST_OUTPUT_FULL_SCAN\""));
         assertTrue(value.contains("\"qnnRuntimeExpected\":true"));
         assertTrue(value.contains("\"queuePolicy\":\"bounded_blocking_backpressure\""));
         assertTrue(value.contains("\"workerQueueCapacity\":2"));
@@ -47,6 +59,11 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"outputTensorSlotCount\":1"));
         assertTrue(value.contains("\"outputTensorBytesPerSlot\":24883200"));
         assertTrue(value.contains("\"additionalOverlapTensorBytes\":0"));
+        assertTrue(value.contains("\"deferredOutputCopy\":false"));
+        assertTrue(value.contains("\"pinnedOrtOutputTensorSlotCount\":1"));
+        assertTrue(value.contains("\"additionalPinnedOrtOutputBytes\":0"));
+        assertTrue(value.contains(
+                "\"tensorOutputCopyMeasurement\":\"measured_inference_thread_bulk_copy\""));
         assertTrue(value.contains("\"workerQueueDepthMeasurement\":"
                 + "\"measured_frame_admission_queue\""));
         assertTrue(value.contains("\"readbackMeasurement\":"
@@ -90,6 +107,31 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
         assertTrue(value.contains("\"outputPacker\":\"NATIVE_NEON\""));
         assertTrue(value.contains("\"outputPackerSelfTest\":\"PASS\""));
+        assertTrue(value.contains("\"modelVariant\":\"fixed640x360-3x-full\""));
+        assertTrue(value.contains("\"outputTensorLayout\":\"NCHW\""));
+        assertTrue(value.contains("\"outputPackStripeCount\":1"));
+    }
+
+    @Test
+    public void originalDisplayBaselineDoesNotClaimNeuralOrQnnWork() {
+        String value = VideoBenchmarkTelemetry.configurationJson(
+                "original-baseline",
+                "ORIGINAL",
+                QuickSrSession.Tuning.BASELINE,
+                QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                true,
+                VideoEvidenceStore.CaptureSpec.none(),
+                true,
+                false,
+                AnimeCadenceAnalyzer.Mode.OFF);
+
+        assertTrue(value.contains("\"mode\":\"ORIGINAL\""));
+        assertTrue(value.contains("\"neuralProcessingEnabled\":false"));
+        assertTrue(value.contains("\"benchmarkRoute\":\"MEDIA3_DISPLAY_BASELINE\""));
+        assertTrue(value.contains("\"referenceCanvasWidth\":1920"));
+        assertTrue(value.contains("\"qnnStrictRequired\":false"));
+        assertFalse(value.contains("\"modelVariant\""));
+        assertFalse(value.contains("\"finiteValidationPolicy\""));
     }
 
     @Test

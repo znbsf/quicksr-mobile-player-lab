@@ -11,6 +11,7 @@
 - 输出路线覆盖 1080p、1440p 和 4K 显示；
 - 集成 QuickSRNetSmall 1.5×、2×、3×、4× 模型流程；
 - 支持 ONNX Runtime CPU、GPU Lanczos、GPU-resident Anime4K x2 Small 和 Qualcomm QNN HTP/NPU；
+- 1080p QNN 默认使用 float32 NHWC 输出、双 pinned ORT output、deferred copy、四条带 pack 和同尺寸 Media3 output texture 直传；
 - 提供默认关闭的动漫 cadence 感知超分复用实验：不插帧、不改 PTS，最多连续复用 2 帧；
 - 建立 18 条 PC 动漫超分路线和 72 个权利清晰评测案例；
 - 自动统计 PSNR、SSIM、边缘误差、阶段耗时、p50/p95 以及 24/30 FPS 性能等级。
@@ -19,8 +20,8 @@
 
 | 档位 | 神经输入与输出 | 定位 |
 | --- | --- | --- |
-| 720p | `640×360 → 1280×720`，2× | 当前默认与已有真机基线 |
-| 1080p | `640×360 → 1920×1080`，3× | 手机 QNN 首要验证档 |
+| 720p | `640×360 → 1280×720`，2× | 性能归因与回归诊断档 |
+| 1080p | `640×360 → 1920×1080`，3× | 手机 QNN 产品硬门与首要验证档 |
 | 1440p | `640×360 → 2560×1440`，4× | 高分实验档 |
 | 4K 显示 | `640×360 → 神经 1920×1080 → GPU 3840×2160` | 显示保底，不是原生神经 4K |
 
@@ -37,7 +38,7 @@
 - **Media3 `Presentation`：**在推理前建立真正的目标纹理尺寸，避免模型生成 1080p/1440p 后又被缩回源视频尺寸。
 - **PC-first：**手机调试成本高，先在 PC 上淘汰画质差、退化不稳或明显无法实时的路线，再进入设备验证。
 
-当前没有证据表明“把中间流程全部换成 C”就能解决问题。若 profiler 证明 NCHW/RGBA 转换或 GL upload 是主要热点，再针对单个环节引入 C++/NEON、compute shader、PBO 或共享缓冲更合理。
+当前真机负结果已经表明“把中间流程全部换成 C”本身不能解决问题：JNI/NEON packer 和 direct FloatBuffer 路线均更慢。PBO 能降低 CPU 侧 GL 提交尾延迟，但没有提高严格显示通过率，因此默认关闭。后续优化必须先用关联 trace 定位偶发长帧，再针对线程调度、GL fence、BufferQueue 或共享缓冲中的一个环节动手。
 
 ## 当前结果
 
@@ -46,7 +47,8 @@
 - 结论：QuickSRNetSmall 更适合干净线稿和漫画；严重模糊或压缩素材应回退 Lanczos，或换用针对退化训练的模型。
 - 已存档的 v0.12.0 单机 720p QNN smoke：`645 帧 / 26.860 秒 = 24.0134 FPS`，四个约 5 秒 MediaCodec 窗口 Drop=0。
 - API 35 x86_64 模拟器已验证 1080p、1440p 和 4K 显示路径的实际纹理尺寸，但模拟器 CPU 时间不能外推到手机 NPU。
-- v0.14.0 的一台物理 Qualcomm 设备已完成权利清晰 1080p 主档及受门禁 1440p/4K 显示回退功能验证，但全部归类为 `offline`；其他设备、实时与热稳定性仍需逐机验证。
+- 当前最终默认版在一台物理 Qualcomm 设备、权利清晰 30fps 片源上完成 1080p 吞吐：828 个稳态样本、30.0045fps、effect drop/bypass 0；这是 output-submit 吞吐代理，不是最终显示结论。
+- 同 APK 的 SurfaceFlinger ABBA 中，原画 2/2 PASS，QuickSR QNN 1/2 PASS；失败轮平均仍为 30.0341fps，但出现 58.153ms 长间隔和补偿短间隔，因此仍不能声称“保证原片帧率”。
 - v0.15.0 的 Anime4K v4.0.1 x2 Small 已在一台 Android 16 / Adreno 740 设备完成 720p/1080p/1440p 有界播放：三档首帧均 model-active、MediaCodec Drop=0、PSS 峰值约 173-175 MiB、温度代理保持 38.9-39.0 C；同位置视觉 A/B 未可靠取得，仍不声称与 mpv 输出等价或具有通用实时性能。
 - 由实际 Java 适配器生成的五段 model fragment 与 `mediump` fallback 已在 Android Emulator 随附的 SwiftShader OpenGL ES 3 环境 6/6 compile+link PASS；同一宿主 context 的 half-float 扩展预检和 RGBA16F FBO completeness 也通过。这仍只是 DLL 级主机 smoke，不是模拟器 App 或目标手机执行。
 
@@ -82,7 +84,7 @@ cadence 实验的队列、generation、缓存所有权、运行时开关和代�
 3. 选择本地非 DRM 视频并播放；
 4. 根据界面中的排队、输入转换、ORT/QNN run、输出转换和整帧时间判断瓶颈。
 
-720p 是当前稳妥基线；1080p 是下一档首选；1440p 与 4K 显示档应先观察内存、排队和温度，不建议默认开启。
+720p 只作诊断；1080p 是当前产品硬门。1440p 与 4K 显示档应先观察内存、排队和温度，不建议默认开启。
 
 ## 构建与安装
 

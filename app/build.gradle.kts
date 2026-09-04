@@ -28,6 +28,18 @@ val dcr640x360ModelSha256 = "ad7634d8bd831370c018c2570475cbe71b7f136ccd4da860c50
 val fixed640x3603xModelName = "quicksrnet-small-3x-fixed640x360.onnx"
 val fixed640x3603xModelBytes = 111296L
 val fixed640x3603xModelSha256 = "c03d551eec48f4d419290ba774164102cab964a2a65576f8d78a24a42013b077"
+val displayFriendly3xModelName = "quicksrnet-small-3x-fixed640x360-u8-nhwc.onnx"
+val displayFriendly3xModelBytes = 112135L
+val displayFriendly3xModelSha256 =
+    "8d6909084937c14d687c4728b3b2f7b68a5dd243949f9dd2326231ffab0078be"
+val displayU8Nchw3xModelName = "quicksrnet-small-3x-fixed640x360-u8-nchw.onnx"
+val displayU8Nchw3xModelBytes = 112018L
+val displayU8Nchw3xModelSha256 =
+    "6b62f377f0fd2020ef9ff86aeb37981824fad6635c9a633d44ef7725ee1cf2ec"
+val displayF32Nhwc3xModelName = "quicksrnet-small-3x-fixed640x360-f32-nhwc.onnx"
+val displayF32Nhwc3xModelBytes = 111420L
+val displayF32Nhwc3xModelSha256 =
+    "9a9fd7cd9281555d7f5f54e0002a986c701ed124ffee02bc10740cfd711e6b90"
 val fixed640x3604xModelName = "quicksrnet-small-4x-fixed640x360.onnx"
 val fixed640x3604xModelBytes = 135573L
 val fixed640x3604xModelSha256 = "ca3afce1aaad216e30297b0ffce608304cd66e394314c4090a659a963f2f05e2"
@@ -70,6 +82,15 @@ val generatedDcr256x144ModelFile = generatedModelAssets.map { it.file(dcr256x144
 val generatedDcr512x288ModelFile = generatedModelAssets.map { it.file(dcr512x288ModelName) }
 val generatedDcr640x360ModelFile = generatedModelAssets.map { it.file(dcr640x360ModelName) }
 val generatedFixed640x3603xModelFile = generatedModelAssets.map { it.file(fixed640x3603xModelName) }
+val generatedDisplayFriendly3xModelFile = generatedModelAssets.map {
+    it.file(displayFriendly3xModelName)
+}
+val generatedDisplayU8Nchw3xModelFile = generatedModelAssets.map {
+    it.file(displayU8Nchw3xModelName)
+}
+val generatedDisplayF32Nhwc3xModelFile = generatedModelAssets.map {
+    it.file(displayF32Nhwc3xModelName)
+}
 val generatedFixed640x3604xModelFile = generatedModelAssets.map { it.file(fixed640x3604xModelName) }
 val generatedDcr512ModelFile = generatedModelAssets.map { it.file(dcr512ModelName) }
 
@@ -131,12 +152,48 @@ val appSourceSha256 = sourceIdentity(sourceIdentityFiles, rootProject.projectDir
 val prototypeBuildId = providers.gradleProperty("prototypeBuildId").orElse("manual-unlinked").get()
 val quickSrPostprocessOverlap = providers.gradleProperty("quickSrPostprocessOverlap")
     .map { it.toBooleanStrict() }
-    .orElse(false)
+    .orElse(true)
     .get()
 val quickSrNativeOutputPacker = providers.gradleProperty("quickSrNativeOutputPacker")
     .map { it.toBooleanStrict() }
     .orElse(false)
     .get()
+val quickSrDeferredOutputCopy = providers.gradleProperty("quickSrDeferredOutputCopy")
+    .map { it.toBooleanStrict() }
+    .orElse(true)
+    .get()
+val quickSrPboUpload = providers.gradleProperty("quickSrPboUpload")
+    .map { it.toBooleanStrict() }
+    .orElse(false)
+    .get()
+val displayFriendly3xModel = providers.gradleProperty("quickSrDisplayFriendlyModelPath")
+    .map { rootProject.file(it) }
+val displayFriendly3xModelAvailable = displayFriendly3xModel.isPresent
+val displayU8Nchw3xModel = providers.gradleProperty("quickSrDisplayU8NchwModelPath")
+    .map { rootProject.file(it) }
+val displayU8Nchw3xModelAvailable = displayU8Nchw3xModel.isPresent
+val displayF32Nhwc3xModel = providers.gradleProperty("quickSrDisplayF32NhwcModelPath")
+    .map { rootProject.file(it) }
+    .orElse(rootProject.file("derived-models/$displayF32Nhwc3xModelName"))
+val displayF32Nhwc3xModelAvailable = displayF32Nhwc3xModel.get().isFile
+val quickSrFloatNhwcOutput = providers.gradleProperty("quickSrFloatNhwcOutput")
+    .map { it.toBooleanStrict() }
+    .orElse(true)
+    .get()
+require(!quickSrFloatNhwcOutput || displayF32Nhwc3xModelAvailable) {
+    "quickSrFloatNhwcOutput=true requires the default derived float-NHWC model " +
+        "or -PquickSrDisplayF32NhwcModelPath"
+}
+val quickSrPackStripes = providers.gradleProperty("quickSrPackStripes")
+    .map { it.toInt() }
+    .orElse(if (quickSrFloatNhwcOutput) 4 else 1)
+    .get()
+require(quickSrPackStripes in setOf(1, 2, 4)) {
+    "quickSrPackStripes must be 1, 2, or 4"
+}
+require(quickSrPackStripes == 1 || quickSrFloatNhwcOutput) {
+    "parallel output packing is restricted to the float NHWC experiment"
+}
 
 val prepareQuickSrModel by tasks.registering {
     group = "prototype"
@@ -192,6 +249,18 @@ val prepareQuickSrModel by tasks.registering {
         generatedFixed640x3604xModelFile,
         generatedDcr512ModelFile
     )
+    if (displayFriendly3xModelAvailable) {
+        inputs.file(displayFriendly3xModel)
+        outputs.file(generatedDisplayFriendly3xModelFile)
+    }
+    if (displayU8Nchw3xModelAvailable) {
+        inputs.file(displayU8Nchw3xModel)
+        outputs.file(generatedDisplayU8Nchw3xModelFile)
+    }
+    if (displayF32Nhwc3xModelAvailable) {
+        inputs.file(displayF32Nhwc3xModel)
+        outputs.file(generatedDisplayF32Nhwc3xModelFile)
+    }
     outputs.upToDateWhen { false }
 
     doLast {
@@ -259,6 +328,30 @@ val prepareQuickSrModel by tasks.registering {
             fixed640x3604xModelSha256,
             "fixed640x360 4x model"
         )
+        if (displayFriendly3xModelAvailable) {
+            verify(
+                displayFriendly3xModel.get(),
+                displayFriendly3xModelBytes,
+                displayFriendly3xModelSha256,
+                "display-friendly fixed640x360 3x model"
+            )
+        }
+        if (displayU8Nchw3xModelAvailable) {
+            verify(
+                displayU8Nchw3xModel.get(),
+                displayU8Nchw3xModelBytes,
+                displayU8Nchw3xModelSha256,
+                "uint8 NCHW fixed640x360 3x model"
+            )
+        }
+        if (displayF32Nhwc3xModelAvailable) {
+            verify(
+                displayF32Nhwc3xModel.get(),
+                displayF32Nhwc3xModelBytes,
+                displayF32Nhwc3xModelSha256,
+                "float32 NHWC fixed640x360 3x model"
+            )
+        }
         verify(dcr512Model, dcr512ModelBytes, dcr512ModelSha256, "fixed512 DCR model")
         verify(
             derivedManifest,
@@ -343,6 +436,36 @@ val prepareQuickSrModel by tasks.registering {
                 "Verified and staged ${target.name} (${input.length()} bytes, SHA-256 $digest)"
             )
         }
+        if (displayFriendly3xModelAvailable) {
+            val input = displayFriendly3xModel.get()
+            val target = generatedDisplayFriendly3xModelFile.get().asFile
+            target.parentFile.mkdirs()
+            input.copyTo(target, overwrite = true)
+            logger.lifecycle(
+                "Verified and staged ${target.name} (${input.length()} bytes, " +
+                    "SHA-256 $displayFriendly3xModelSha256)"
+            )
+        }
+        if (displayU8Nchw3xModelAvailable) {
+            val input = displayU8Nchw3xModel.get()
+            val target = generatedDisplayU8Nchw3xModelFile.get().asFile
+            target.parentFile.mkdirs()
+            input.copyTo(target, overwrite = true)
+            logger.lifecycle(
+                "Verified and staged ${target.name} (${input.length()} bytes, " +
+                    "SHA-256 $displayU8Nchw3xModelSha256)"
+            )
+        }
+        if (displayF32Nhwc3xModelAvailable) {
+            val input = displayF32Nhwc3xModel.get()
+            val target = generatedDisplayF32Nhwc3xModelFile.get().asFile
+            target.parentFile.mkdirs()
+            input.copyTo(target, overwrite = true)
+            logger.lifecycle(
+                "Verified and staged ${target.name} (${input.length()} bytes, " +
+                    "SHA-256 $displayF32Nhwc3xModelSha256)"
+            )
+        }
     }
 }
 
@@ -416,6 +539,62 @@ android {
         buildConfigField("String", "FIXED640X360_3X_MODEL_FILE", "\"$fixed640x3603xModelName\"")
         buildConfigField("String", "FIXED640X360_3X_MODEL_SHA256", "\"$fixed640x3603xModelSha256\"")
         buildConfigField("long", "FIXED640X360_3X_MODEL_BYTES", "${fixed640x3603xModelBytes}L")
+        buildConfigField(
+            "boolean",
+            "QUICKSR_DISPLAY_FRIENDLY_MODEL_AVAILABLE",
+            displayFriendly3xModelAvailable.toString()
+        )
+        buildConfigField(
+            "String",
+            "QUICKSR_DISPLAY_FRIENDLY_MODEL_FILE",
+            "\"$displayFriendly3xModelName\""
+        )
+        buildConfigField(
+            "String",
+            "QUICKSR_DISPLAY_FRIENDLY_MODEL_SHA256",
+            "\"$displayFriendly3xModelSha256\""
+        )
+        buildConfigField(
+            "long",
+            "QUICKSR_DISPLAY_FRIENDLY_MODEL_BYTES",
+            "${displayFriendly3xModelBytes}L"
+        )
+        buildConfigField(
+            "boolean",
+            "QUICKSR_DISPLAY_U8_NCHW_MODEL_AVAILABLE",
+            displayU8Nchw3xModelAvailable.toString()
+        )
+        buildConfigField(
+            "String",
+            "QUICKSR_DISPLAY_U8_NCHW_MODEL_FILE",
+            "\"$displayU8Nchw3xModelName\""
+        )
+        buildConfigField(
+            "boolean",
+            "QUICKSR_DISPLAY_F32_NHWC_MODEL_AVAILABLE",
+            displayF32Nhwc3xModelAvailable.toString()
+        )
+        buildConfigField(
+            "String",
+            "QUICKSR_DISPLAY_F32_NHWC_MODEL_FILE",
+            "\"$displayF32Nhwc3xModelName\""
+        )
+        buildConfigField(
+            "String",
+            "QUICKSR_DISPLAY_F32_NHWC_MODEL_SHA256",
+            "\"$displayF32Nhwc3xModelSha256\""
+        )
+        buildConfigField(
+            "long",
+            "QUICKSR_DISPLAY_F32_NHWC_MODEL_BYTES",
+            "${displayF32Nhwc3xModelBytes}L"
+        )
+        buildConfigField(
+            "boolean",
+            "QUICKSR_FLOAT_NHWC_OUTPUT",
+            quickSrFloatNhwcOutput.toString()
+        )
+        buildConfigField("int", "QUICKSR_PACK_STRIPES", quickSrPackStripes.toString())
         buildConfigField("String", "FIXED640X360_4X_MODEL_FILE", "\"$fixed640x3604xModelName\"")
         buildConfigField("String", "FIXED640X360_4X_MODEL_SHA256", "\"$fixed640x3604xModelSha256\"")
         buildConfigField("long", "FIXED640X360_4X_MODEL_BYTES", "${fixed640x3604xModelBytes}L")
@@ -449,6 +628,12 @@ android {
         buildConfigField("String", "PROTOTYPE_BUILD_ID", "\"$prototypeBuildId\"")
         buildConfigField("boolean", "QUICKSR_POSTPROCESS_OVERLAP", quickSrPostprocessOverlap.toString())
         buildConfigField("boolean", "QUICKSR_NATIVE_OUTPUT_PACKER", quickSrNativeOutputPacker.toString())
+        buildConfigField(
+            "boolean",
+            "QUICKSR_DEFERRED_OUTPUT_COPY",
+            quickSrDeferredOutputCopy.toString()
+        )
+        buildConfigField("boolean", "QUICKSR_PBO_UPLOAD", quickSrPboUpload.toString())
     }
 
     externalNativeBuild {

@@ -2,6 +2,7 @@ package dev.aisystems.quicksrplayerlab;
 
 import android.content.Context;
 import android.opengl.GLES20;
+import android.opengl.GLES30;
 import android.os.SystemClock;
 
 import androidx.media3.common.GlTextureInfo;
@@ -28,6 +29,8 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Executor;
@@ -632,6 +635,7 @@ final class QuickSrVideoEffect implements GlEffect {
 
     private static final Profile DEFAULT_PROFILE = Profile.FAST_64;
     private static final int RGBA_BYTES_PER_PIXEL = 4;
+    private static final int GL_UPLOAD_PBO_SLOTS = 2;
     private static final int MAX_POOLED_INPUT_BUFFERS = 8;
     private static final int MAX_POOLED_OUTPUT_BUFFERS = 3;
     static final int OVERLAP_POSTPROCESS_QUEUE_CAPACITY = 1;
@@ -657,6 +661,71 @@ final class QuickSrVideoEffect implements GlEffect {
 
     static long additionalOverlapTensorBytes(Profile profile, boolean overlap) {
         return overlap ? outputTensorBytesPerSlot(profile) : 0L;
+    }
+
+    static boolean shouldDeferOutputCopy(
+            boolean buildEnabled,
+            boolean postprocessOverlap,
+            boolean nativeOutputPacker,
+            boolean captureRequested,
+            boolean outputNhwc) {
+        return buildEnabled
+                && postprocessOverlap
+                && !nativeOutputPacker
+                && !captureRequested
+                && outputNhwc;
+    }
+
+    static boolean deferredOutputCopyEnabled(
+            boolean postprocessOverlap,
+            boolean nativeOutputPacker,
+            boolean captureRequested,
+            ModelVariant modelVariant) {
+        return shouldDeferOutputCopy(
+                BuildConfig.QUICKSR_DEFERRED_OUTPUT_COPY,
+                postprocessOverlap,
+                nativeOutputPacker,
+                captureRequested,
+                modelVariant.outputNhwc());
+    }
+
+    static int pinnedOrtOutputTensorSlotCount(boolean deferredOutputCopy) {
+        return deferredOutputCopy ? 2 : 1;
+    }
+
+    static long additionalPinnedOrtOutputBytes(Profile profile, boolean deferredOutputCopy) {
+        return deferredOutputCopy ? outputTensorBytesPerSlot(profile) : 0L;
+    }
+
+    static boolean usesDirectOutputTextureUpload(Profile profile) {
+        return profile.outputWidth() == profile.canvasWidth()
+                && profile.outputHeight() == profile.canvasHeight();
+    }
+
+    static String glUploadRoute(Profile profile) {
+        return usesDirectOutputTextureUpload(profile)
+                ? "DIRECT_MEDIA3_OUTPUT_TEXTURE"
+                : "INTERMEDIATE_NEURAL_TEXTURE_THEN_SCALE_BLIT";
+    }
+
+    static boolean pboUploadEnabled(boolean buildEnabled, Profile profile) {
+        return buildEnabled && usesDirectOutputTextureUpload(profile);
+    }
+
+    static int glUploadPboSlotCount(boolean pboUpload) {
+        return pboUpload ? GL_UPLOAD_PBO_SLOTS : 0;
+    }
+
+    static long additionalGlUploadPboBytes(Profile profile, boolean pboUpload) {
+        if (!pboUpload) {
+            return 0L;
+        }
+        long rgbaBytes = Math.multiplyExact(
+                Math.multiplyExact(
+                        (long) profile.outputWidth(),
+                        (long) profile.outputHeight()),
+                RGBA_BYTES_PER_PIXEL);
+        return Math.multiplyExact(rgbaBytes, GL_UPLOAD_PBO_SLOTS);
     }
 
     static boolean cadenceCacheMatches(
@@ -965,6 +1034,12 @@ final class QuickSrVideoEffect implements GlEffect {
         private final VideoEvidenceStore.CaptureSpec captureSpec;
         private final PostprocessMode postprocessMode;
         private final OutputPackerMode outputPackerMode;
+        private final ModelVariant sessionModelVariant;
+        private final boolean outputNhwc;
+        private final int packStripeCount;
+        private final boolean deferredOutputCopy;
+        private final boolean pboUpload;
+        private final int[] glUploadPboIds = new int[GL_UPLOAD_PBO_SLOTS];
         private final AnimeCadenceAnalyzer.Mode cadenceMode;
         private final StatsListener listener;
         private final LongSupplier monotonicClock;
@@ -972,6 +1047,7 @@ final class QuickSrVideoEffect implements GlEffect {
         private final int[] outputAlphaRowOffsets;
         private final ThreadPoolExecutor inferenceExecutor;
         private final ThreadPoolExecutor postprocessExecutor;
+        private final ExecutorService packStripeExecutor;
         private final Semaphore frameQueueSlots = new Semaphore(
                 VideoPipelineTelemetry.WORKER_QUEUE_CAPACITY,
                 true);
@@ -1041,6 +1117,7 @@ final class QuickSrVideoEffect implements GlEffect {
         private CachedSrOutput cachedSrOutput;
         private int neuralTextureId;
         private int neuralFboId;
+        private int nextGlUploadPboSlot;
 
         /** Cleanup marker that must run after every already-accepted frame task on the worker. */
         private final class WorkerCleanupTask extends FutureTask<Void> {
@@ -1253,6 +1330,32 @@ final class QuickSrVideoEffect implements GlEffect {
             this.outputPackerMode = nativeOutputPacker
                     ? OutputPackerMode.NATIVE_NEON
                     : OutputPackerMode.JAVA;
+            this.sessionModelVariant = sessionModelVariant(
+                    profile,
+                    nativeOutputPacker,
+                    captureSpec.isRequested());
+            this.outputNhwc = sessionModelVariant.outputNhwc();
+            this.packStripeCount = effectivePackStripeCount(sessionModelVariant);
+            this.deferredOutputCopy = deferredOutputCopyEnabled(
+                    postprocessOverlap,
+                    nativeOutputPacker,
+                    captureSpec.isRequested(),
+                    sessionModelVariant);
+            this.pboUpload = pboUploadEnabled(BuildConfig.QUICKSR_PBO_UPLOAD, profile);
+            if (packStripeCount > 1) {
+                AtomicInteger nextStripeThread = new AtomicInteger();
+                this.packStripeExecutor = Executors.newFixedThreadPool(
+                        packStripeCount,
+                        runnable -> {
+                            Thread thread = new Thread(
+                                    runnable,
+                                    "QuickSR-video-pack-" + nextStripeThread.getAndIncrement());
+                            thread.setPriority(Thread.NORM_PRIORITY);
+                            return thread;
+                        });
+            } else {
+                this.packStripeExecutor = null;
+            }
             this.cadenceMode = cadenceMode;
             this.listener = listener;
             this.monotonicClock = monotonicClock;
@@ -1522,6 +1625,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 FrameTimings timings,
                 SettableFuture<FrameResult> resultFuture) {
             float[] outputTensor = null;
+            QuickSrSession.DeferredOutput deferredOutput = null;
             boolean overlapTensorLeased = false;
             boolean handedToPostprocess = false;
             try {
@@ -1666,7 +1770,13 @@ final class QuickSrVideoEffect implements GlEffect {
                                     + timings.token.presentationTimeUs);
                 }
                 timings.inferenceStartedNs = nowNs();
-                activeSession.infer(inputTensorScratch, outputTensor, runTimings);
+                if (deferredOutputCopy
+                        && QuickSrSession.canDeferOutputCopy(
+                                activeSession.runCount(), activeSession.outputSlotCount())) {
+                    deferredOutput = activeSession.inferDeferred(inputTensorScratch, runTimings);
+                } else {
+                    activeSession.infer(inputTensorScratch, outputTensor, runTimings);
+                }
                 timings.inferenceFinishedNs = nowNs();
                 timings.tensorInputCopyNs = runTimings.inputCopyNs;
                 timings.ortRunNs = runTimings.ortRunNs;
@@ -1713,8 +1823,10 @@ final class QuickSrVideoEffect implements GlEffect {
                 }
                 if (postprocessMode == PostprocessMode.OVERLAP) {
                     float[] leasedOutputTensor = outputTensor;
+                    QuickSrSession.DeferredOutput leasedDeferredOutput = deferredOutput;
                     submitPostprocessTask(() -> completePostprocess(
                             leasedOutputTensor,
+                            leasedDeferredOutput,
                             rgba,
                             timings,
                             resultFuture,
@@ -1723,6 +1835,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 } else {
                     completePostprocess(
                             outputTensor,
+                            null,
                             rgba,
                             timings,
                             resultFuture,
@@ -1743,6 +1856,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 }
             } finally {
                 if (!handedToPostprocess) {
+                    if (deferredOutput != null) {
+                        deferredOutput.close();
+                    }
                     recycleInputBuffer(rgba);
                     if (overlapTensorLeased) {
                         recycleOverlapOutputTensor(outputTensor);
@@ -1838,6 +1954,7 @@ final class QuickSrVideoEffect implements GlEffect {
 
         private void completePostprocess(
                 float[] outputTensor,
+                QuickSrSession.DeferredOutput deferredOutput,
                 byte[] rgba,
                 FrameTimings timings,
                 SettableFuture<FrameResult> resultFuture,
@@ -1852,6 +1969,14 @@ final class QuickSrVideoEffect implements GlEffect {
                     resultFuture.cancel(false);
                     return;
                 }
+                if (deferredOutput != null) {
+                    try {
+                        timings.tensorOutputCopyNs = deferredOutput.copyTo(outputTensor);
+                    } finally {
+                        deferredOutput.close();
+                        deferredOutput = null;
+                    }
+                }
                 timings.outputPackStartedNs = nowNs();
                 if (outputPackerMode == OutputPackerMode.NATIVE_NEON) {
                     directRgba = acquireOutputBuffer();
@@ -1864,16 +1989,44 @@ final class QuickSrVideoEffect implements GlEffect {
                             profile.outputHeight(),
                             directRgba);
                 } else {
-                    packNchwToRgbaWithAlphaMaps(
-                            outputTensor,
-                            rgba,
-                            profile.inputWidth(),
-                            profile.inputHeight(),
-                            profile.outputWidth(),
-                            profile.outputHeight(),
-                            outputRgbaScratch,
-                            outputAlphaXOffsets,
-                            outputAlphaRowOffsets);
+                    if (outputNhwc) {
+                        if (packStripeCount > 1) {
+                            packNhwcToRgbaWithAlphaMapsParallel(
+                                    outputTensor,
+                                    rgba,
+                                    profile.inputWidth(),
+                                    profile.inputHeight(),
+                                    profile.outputWidth(),
+                                    profile.outputHeight(),
+                                    outputRgbaScratch,
+                                    outputAlphaXOffsets,
+                                    outputAlphaRowOffsets,
+                                    packStripeCount,
+                                    packStripeExecutor);
+                        } else {
+                            packNhwcToRgbaWithAlphaMaps(
+                                    outputTensor,
+                                    rgba,
+                                    profile.inputWidth(),
+                                    profile.inputHeight(),
+                                    profile.outputWidth(),
+                                    profile.outputHeight(),
+                                    outputRgbaScratch,
+                                    outputAlphaXOffsets,
+                                    outputAlphaRowOffsets);
+                        }
+                    } else {
+                        packNchwToRgbaWithAlphaMaps(
+                                outputTensor,
+                                rgba,
+                                profile.inputWidth(),
+                                profile.inputHeight(),
+                                profile.outputWidth(),
+                                profile.outputHeight(),
+                                outputRgbaScratch,
+                                outputAlphaXOffsets,
+                                outputAlphaRowOffsets);
+                    }
                 }
                 timings.outputPackFinishedNs = nowNs();
                 timings.outputHashStartedNs = timings.outputPackFinishedNs;
@@ -1930,6 +2083,9 @@ final class QuickSrVideoEffect implements GlEffect {
             } catch (Throwable failure) {
                 failFrame("video-postprocess", timings, resultFuture, failure);
             } finally {
+                if (deferredOutput != null) {
+                    deferredOutput.close();
+                }
                 recycleOutputBuffer(directRgba);
                 recycleInputBuffer(rgba);
                 if (recycleOutputTensor) {
@@ -2104,8 +2260,9 @@ final class QuickSrVideoEffect implements GlEffect {
                         context,
                         mode,
                         sessionRunId,
-                        profile.modelVariant(),
-                        tuning);
+                        sessionModelVariant,
+                        tuning,
+                        pinnedOrtOutputTensorSlotCount(deferredOutputCopy));
                 if (openedSession.inputWidth() != profile.inputWidth()
                         || openedSession.inputHeight() != profile.inputHeight()
                         || openedSession.outputWidth() != profile.outputWidth()
@@ -2126,6 +2283,16 @@ final class QuickSrVideoEffect implements GlEffect {
                         throw new IllegalStateException(
                                 "QNN video session did not establish strict HTP registration evidence");
                     }
+                    qnnStrict.put("modelVariant", openedSession.modelVariantId());
+                    qnnStrict.put("outputTensorLayout", outputNhwc ? "NHWC" : "NCHW");
+                    qnnStrict.put("outputPackStripeCount", packStripeCount);
+                    qnnStrict.put("glUploadRoute", glUploadRoute(profile));
+                    qnnStrict.put("pboUpload", pboUpload);
+                    qnnStrict.put("glUploadPboSlotCount", glUploadPboSlotCount(pboUpload));
+                    qnnStrict.put("deferredOutputCopy", deferredOutputCopy);
+                    qnnStrict.put(
+                            "pinnedOrtOutputTensorSlotCount",
+                            openedSession.outputSlotCount());
                     if (listener != null
                             && VideoEvidenceStore.isSafeRunId(benchmarkRunId)
                             && !qnnStrictEvidenceReported) {
@@ -2219,26 +2386,23 @@ final class QuickSrVideoEffect implements GlEffect {
                 if (result.timings != null) {
                     result.timings.glUploadStartedNs = nowNs();
                 }
-                ensureNeuralTexture();
+                boolean directOutputUpload = outputFrame.width == profile.outputWidth()
+                        && outputFrame.height == profile.outputHeight();
+                if (!directOutputUpload) {
+                    ensureNeuralTexture();
+                }
                 ByteBuffer pixels = result.rgba.duplicate();
                 pixels.position(0);
-                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, neuralTextureId);
-                GLES20.glTexSubImage2D(
-                        GLES20.GL_TEXTURE_2D,
-                        0,
-                        0,
-                        0,
-                        profile.outputWidth(),
-                        profile.outputHeight(),
-                        GLES20.GL_RGBA,
-                        GLES20.GL_UNSIGNED_BYTE,
+                uploadRgbaToTexture(
+                        directOutputUpload ? outputFrame.texId : neuralTextureId,
                         pixels);
-                GlUtil.checkGlError();
-                GlUtil.blitFrameBuffer(
-                        neuralFboId,
-                        new GlRect(profile.outputWidth(), profile.outputHeight()),
-                        outputFrame.fboId,
-                        new GlRect(outputFrame.width, outputFrame.height));
+                if (!directOutputUpload) {
+                    GlUtil.blitFrameBuffer(
+                            neuralFboId,
+                            new GlRect(profile.outputWidth(), profile.outputHeight()),
+                            outputFrame.fboId,
+                            new GlRect(outputFrame.width, outputFrame.height));
+                }
                 if (result.timings != null) {
                     result.timings.glUploadFinishedNs = nowNs();
                     // Returning from this callback is only a Media3 output-submit proxy. It does
@@ -2302,6 +2466,86 @@ final class QuickSrVideoEffect implements GlEffect {
             }
         }
 
+        private void ensureGlUploadPbos() throws GlUtil.GlException {
+            if (glUploadPboIds[0] != 0) {
+                return;
+            }
+            GLES30.glGenBuffers(GL_UPLOAD_PBO_SLOTS, glUploadPboIds, 0);
+            try {
+                GlUtil.checkGlError();
+            } catch (GlUtil.GlException failure) {
+                GLES30.glDeleteBuffers(GL_UPLOAD_PBO_SLOTS, glUploadPboIds, 0);
+                for (int index = 0; index < glUploadPboIds.length; index++) {
+                    glUploadPboIds[index] = 0;
+                }
+                throw failure;
+            }
+        }
+
+        private void uploadRgbaToTexture(int textureId, ByteBuffer pixels)
+                throws GlUtil.GlException {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
+            if (!pboUpload) {
+                GLES20.glTexSubImage2D(
+                        GLES20.GL_TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        profile.outputWidth(),
+                        profile.outputHeight(),
+                        GLES20.GL_RGBA,
+                        GLES20.GL_UNSIGNED_BYTE,
+                        pixels);
+                GlUtil.checkGlError();
+                return;
+            }
+
+            ensureGlUploadPbos();
+            int byteCount = Math.multiplyExact(
+                    Math.multiplyExact(profile.outputWidth(), profile.outputHeight()),
+                    RGBA_BYTES_PER_PIXEL);
+            int pboId = glUploadPboIds[nextGlUploadPboSlot];
+            nextGlUploadPboSlot = (nextGlUploadPboSlot + 1) % GL_UPLOAD_PBO_SLOTS;
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER, pboId);
+            try {
+                // Orphan the previous store so a still-pending upload never stalls this frame.
+                GLES30.glBufferData(
+                        GLES30.GL_PIXEL_UNPACK_BUFFER,
+                        byteCount,
+                        null,
+                        GLES30.GL_STREAM_DRAW);
+                java.nio.Buffer mapped = GLES30.glMapBufferRange(
+                        GLES30.GL_PIXEL_UNPACK_BUFFER,
+                        0,
+                        byteCount,
+                        GLES30.GL_MAP_WRITE_BIT | GLES30.GL_MAP_INVALIDATE_BUFFER_BIT);
+                if (!(mapped instanceof ByteBuffer)) {
+                    throw new GlUtil.GlException("Could not map QuickSR GL upload PBO");
+                }
+                ByteBuffer target = (ByteBuffer) mapped;
+                target.position(0);
+                target.limit(byteCount);
+                target.put(pixels);
+                if (!GLES30.glUnmapBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER)) {
+                    throw new GlUtil.GlException("QuickSR GL upload PBO became invalid");
+                }
+                // With a pixel-unpack buffer bound, a null client pointer is byte offset zero.
+                GLES20.glTexSubImage2D(
+                        GLES20.GL_TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        profile.outputWidth(),
+                        profile.outputHeight(),
+                        GLES20.GL_RGBA,
+                        GLES20.GL_UNSIGNED_BYTE,
+                        null);
+            } finally {
+                GLES30.glBindBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+            GlUtil.checkGlError();
+        }
+
         @Override
         public synchronized void release() throws VideoFrameProcessingException {
             long releaseStartedNs = System.nanoTime();
@@ -2340,11 +2584,23 @@ final class QuickSrVideoEffect implements GlEffect {
                 postprocessExecutor.shutdown();
             }
             Throwable failure = null;
+            if (glUploadPboIds[0] != 0) {
+                try {
+                    GLES30.glDeleteBuffers(GL_UPLOAD_PBO_SLOTS, glUploadPboIds, 0);
+                    GlUtil.checkGlError();
+                } catch (Throwable caught) {
+                    failure = caught;
+                } finally {
+                    for (int index = 0; index < glUploadPboIds.length; index++) {
+                        glUploadPboIds[index] = 0;
+                    }
+                }
+            }
             if (neuralFboId != 0) {
                 try {
                     GlUtil.deleteFbo(neuralFboId);
                 } catch (Throwable caught) {
-                    failure = caught;
+                    failure = append(failure, caught);
                 }
                 neuralFboId = 0;
             }
@@ -2418,8 +2674,35 @@ final class QuickSrVideoEffect implements GlEffect {
                     failure = append(failure, caught);
                 }
             }
-            if (postprocessTerminated) {
-                // An active postprocess task may already be inside packNchwToRgba when release
+            boolean packStripeTerminated = packStripeExecutor == null;
+            if (packStripeExecutor != null) {
+                if (postprocessTerminated) {
+                    packStripeExecutor.shutdown();
+                } else {
+                    packStripeExecutor.shutdownNow();
+                }
+                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - releaseStartedNs);
+                long remainingMs = Math.max(1L, releaseTimeoutMs - elapsedMs);
+                try {
+                    packStripeTerminated = packStripeExecutor.awaitTermination(
+                            remainingMs,
+                            TimeUnit.MILLISECONDS);
+                    if (!packStripeTerminated) {
+                        packStripeExecutor.shutdownNow();
+                        failure = append(
+                                failure,
+                                new TimeoutException(
+                                        "QuickSR pack-stripe executor did not terminate"));
+                    }
+                } catch (InterruptedException caught) {
+                    Thread.currentThread().interrupt();
+                    packStripeExecutor.shutdownNow();
+                    failure = append(failure, caught);
+                }
+            }
+            if (postprocessTerminated && packStripeTerminated) {
+                // An active postprocess task may already be inside an output packer when release
                 // flips released=true. Keep its shared scratch alive until the executor stops.
                 outputRgbaScratch = null;
             }
@@ -2661,6 +2944,158 @@ final class QuickSrVideoEffect implements GlEffect {
                 packedRgba[rgbaOffset++] = normalizedToByte(output[bluePlane + outputPixel]);
                 packedRgba[rgbaOffset++] = inputRgba[inputAlphaRow + alphaXOffsets[x]];
                 outputPixel++;
+            }
+        }
+    }
+
+    static void packNhwcToRgbaWithAlphaMaps(
+            float[] output,
+            byte[] inputRgba,
+            int inputWidth,
+            int inputHeight,
+            int outputWidth,
+            int outputHeight,
+            byte[] packedRgba,
+            int[] alphaXOffsets,
+            int[] alphaRowOffsets) {
+        int inputPixels = checkedPixels(inputWidth, inputHeight);
+        int outputPixels = checkedPixels(outputWidth, outputHeight);
+        if (output.length != 3 * outputPixels
+                || inputRgba.length != inputPixels * RGBA_BYTES_PER_PIXEL
+                || packedRgba.length != outputPixels * RGBA_BYTES_PER_PIXEL
+                || alphaXOffsets.length != outputWidth
+                || alphaRowOffsets.length != outputHeight) {
+            throw new IllegalArgumentException("QuickSR video output buffer length mismatch");
+        }
+        int tensorOffset = 0;
+        int rgbaOffset = 0;
+        for (int y = 0; y < outputHeight; y++) {
+            int inputAlphaRow = alphaRowOffsets[y];
+            for (int x = 0; x < outputWidth; x++) {
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = inputRgba[inputAlphaRow + alphaXOffsets[x]];
+            }
+        }
+    }
+
+    static ModelVariant sessionModelVariant(
+            Profile profile,
+            boolean nativeOutputPacker,
+            boolean tensorCaptureRequested) {
+        return BuildConfig.QUICKSR_FLOAT_NHWC_OUTPUT
+                        && profile == Profile.FULL_1080P_3X
+                        && !nativeOutputPacker
+                        && !tensorCaptureRequested
+                ? ModelVariant.FIXED640X360_3X_F32_NHWC
+                : profile.modelVariant();
+    }
+
+    static int effectivePackStripeCount(ModelVariant modelVariant) {
+        return modelVariant.outputNhwc() ? BuildConfig.QUICKSR_PACK_STRIPES : 1;
+    }
+
+    static void packNhwcToRgbaWithAlphaMapsParallel(
+            float[] output,
+            byte[] inputRgba,
+            int inputWidth,
+            int inputHeight,
+            int outputWidth,
+            int outputHeight,
+            byte[] packedRgba,
+            int[] alphaXOffsets,
+            int[] alphaRowOffsets,
+            int stripes,
+            ExecutorService executor) throws Exception {
+        if (stripes == 1) {
+            packNhwcToRgbaWithAlphaMaps(
+                    output,
+                    inputRgba,
+                    inputWidth,
+                    inputHeight,
+                    outputWidth,
+                    outputHeight,
+                    packedRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets);
+            return;
+        }
+        int inputPixels = checkedPixels(inputWidth, inputHeight);
+        int outputPixels = checkedPixels(outputWidth, outputHeight);
+        if ((stripes != 2 && stripes != 4)
+                || executor == null
+                || output.length != 3 * outputPixels
+                || inputRgba.length != inputPixels * RGBA_BYTES_PER_PIXEL
+                || packedRgba.length != outputPixels * RGBA_BYTES_PER_PIXEL
+                || alphaXOffsets.length != outputWidth
+                || alphaRowOffsets.length != outputHeight) {
+            throw new IllegalArgumentException("QuickSR parallel output pack configuration mismatch");
+        }
+        Future<?>[] futures = new Future<?>[stripes];
+        int submitted = 0;
+        try {
+            for (int stripe = 0; stripe < stripes; stripe++) {
+                int startY = stripe * outputHeight / stripes;
+                int endY = (stripe + 1) * outputHeight / stripes;
+                futures[stripe] = executor.submit(() -> packNhwcRows(
+                        output,
+                        inputRgba,
+                        outputWidth,
+                        packedRgba,
+                        alphaXOffsets,
+                        alphaRowOffsets,
+                        startY,
+                        endY));
+                submitted++;
+            }
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            for (int index = 0; index < submitted; index++) {
+                futures[index].cancel(true);
+            }
+            throw failure;
+        } catch (ExecutionException failure) {
+            for (int index = 0; index < submitted; index++) {
+                futures[index].cancel(true);
+            }
+            Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new RuntimeException(cause);
+        } catch (RuntimeException failure) {
+            for (int index = 0; index < submitted; index++) {
+                futures[index].cancel(true);
+            }
+            throw failure;
+        }
+    }
+
+    private static void packNhwcRows(
+            float[] output,
+            byte[] inputRgba,
+            int outputWidth,
+            byte[] packedRgba,
+            int[] alphaXOffsets,
+            int[] alphaRowOffsets,
+            int startY,
+            int endY) {
+        for (int y = startY; y < endY; y++) {
+            int inputAlphaRow = alphaRowOffsets[y];
+            int tensorOffset = y * outputWidth * 3;
+            int rgbaOffset = y * outputWidth * RGBA_BYTES_PER_PIXEL;
+            for (int x = 0; x < outputWidth; x++) {
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[tensorOffset++]);
+                packedRgba[rgbaOffset++] = inputRgba[inputAlphaRow + alphaXOffsets[x]];
             }
         }
     }

@@ -83,8 +83,43 @@ final class VideoBenchmarkTelemetry {
             QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
             VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap,
             boolean nativeOutputPacker, AnimeCadenceAnalyzer.Mode cadenceMode) {
+        boolean neuralProcessingEnabled = "QUICKSR_QNN".equals(mode)
+                || "QUICKSR_CPU".equals(mode);
         StringBuilder value = envelope("configuration", runId);
         stringField(value, "mode", mode);
+        booleanField(value, "neuralProcessingEnabled", neuralProcessingEnabled);
+        stringField(
+                value,
+                "benchmarkRoute",
+                neuralProcessingEnabled ? "MEDIA3_QUICKSR_EFFECT" : "MEDIA3_DISPLAY_BASELINE");
+        if (!neuralProcessingEnabled) {
+            stringField(value, "referenceProfile", profile.name());
+            numberField(value, "referenceCanvasWidth", profile.canvasWidth());
+            numberField(value, "referenceCanvasHeight", profile.canvasHeight());
+            stringField(value, "postprocessMode", "NOT_APPLICABLE");
+            stringField(value, "outputPacker", "NOT_APPLICABLE");
+            stringField(value, "cadenceMode", "NOT_APPLICABLE");
+            booleanField(value, "qnnRuntimeExpected", qnnRuntimeExpected);
+            booleanField(value, "qnnStrictRequired", false);
+            stringField(value, "sourceIdentitySha256", BuildConfig.APP_SOURCE_SHA256);
+            stringField(value, "prototypeBuildId", BuildConfig.PROTOTYPE_BUILD_ID);
+            stringField(value, "targetAbi", BuildConfig.TARGET_ABI);
+            stringField(value, "surfaceFlingerLatchMeasurement", "unmeasured");
+            stringField(value, "finalDisplayMeasurement", "unmeasured");
+            return finish(value);
+        }
+        ModelVariant modelVariant = QuickSrVideoEffect.sessionModelVariant(
+                profile,
+                nativeOutputPacker,
+                captureSpec != null && captureSpec.isRequested());
+        boolean deferredOutputCopy = QuickSrVideoEffect.deferredOutputCopyEnabled(
+                postprocessOverlap,
+                nativeOutputPacker,
+                captureSpec != null && captureSpec.isRequested(),
+                modelVariant);
+        boolean pboUpload = QuickSrVideoEffect.pboUploadEnabled(
+                BuildConfig.QUICKSR_PBO_UPLOAD,
+                profile);
         stringField(value, "tuning", tuning.name());
         stringField(value, "profile", profile.name());
         stringField(
@@ -148,6 +183,17 @@ final class VideoBenchmarkTelemetry {
                 value,
                 "additionalOverlapTensorBytes",
                 QuickSrVideoEffect.additionalOverlapTensorBytes(profile, postprocessOverlap));
+        booleanField(value, "deferredOutputCopy", deferredOutputCopy);
+        numberField(
+                value,
+                "pinnedOrtOutputTensorSlotCount",
+                QuickSrVideoEffect.pinnedOrtOutputTensorSlotCount(deferredOutputCopy));
+        numberField(
+                value,
+                "additionalPinnedOrtOutputBytes",
+                QuickSrVideoEffect.additionalPinnedOrtOutputBytes(
+                        profile,
+                        deferredOutputCopy));
         booleanField(value, "qnnRuntimeExpected", qnnRuntimeExpected);
         booleanField(value, "qnnStrictRequired", "QUICKSR_QNN".equals(mode));
         if (captureSpec != null && captureSpec.isRequested()) {
@@ -160,8 +206,24 @@ final class VideoBenchmarkTelemetry {
         numberField(value, "modelOutputHeight", profile.outputHeight());
         numberField(value, "canvasWidth", profile.canvasWidth());
         numberField(value, "canvasHeight", profile.canvasHeight());
-        stringField(value, "modelVariant", profile.modelVariant().id());
-        stringField(value, "modelSha256", profile.modelVariant().expectedSha256());
+        stringField(value, "modelVariant", modelVariant.id());
+        stringField(value, "modelSha256", modelVariant.expectedSha256());
+        stringField(value, "outputTensorLayout", modelVariant.outputNhwc() ? "NHWC" : "NCHW");
+        stringField(value, "glUploadRoute", QuickSrVideoEffect.glUploadRoute(profile));
+        booleanField(value, "pboUpload", pboUpload);
+        numberField(
+                value,
+                "glUploadPboSlotCount",
+                QuickSrVideoEffect.glUploadPboSlotCount(pboUpload));
+        numberField(
+                value,
+                "additionalGlUploadPboBytes",
+                QuickSrVideoEffect.additionalGlUploadPboBytes(profile, pboUpload));
+        numberField(
+                value,
+                "outputPackStripeCount",
+                QuickSrVideoEffect.effectivePackStripeCount(modelVariant));
+        stringField(value, "finiteValidationPolicy", "FIRST_OUTPUT_FULL_SCAN");
         stringField(value, "sourceIdentitySha256", BuildConfig.APP_SOURCE_SHA256);
         stringField(value, "prototypeBuildId", BuildConfig.PROTOTYPE_BUILD_ID);
         stringField(value, "targetAbi", BuildConfig.TARGET_ABI);
@@ -193,6 +255,12 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "outputTensorSlotWaitMeasurement", "measured_bounded_semaphore_wait");
         stringField(value, "outputTensorPrepareMeasurement", "measured_pool_or_allocation_time");
         stringField(value, "ortMeasurement", "measured_caller_wall_ns_not_npu_kernel");
+        stringField(
+                value,
+                "tensorOutputCopyMeasurement",
+                deferredOutputCopy
+                        ? "measured_postprocess_thread_bulk_copy"
+                        : "measured_inference_thread_bulk_copy");
         stringField(value, "outputPackMeasurement", "measured_cpu_elapsed_realtime_ns");
         stringField(
                 value,
@@ -200,7 +268,12 @@ final class VideoBenchmarkTelemetry {
                 "fixed_16x9_luma_edge_plus_dense_bottom_third_input_proxy");
         stringField(value, "cadenceQualityMeasurement", "proxy_not_final_display_or_quality");
         stringField(value, "directBufferCopyMeasurement", "measured_cpu_elapsed_realtime_ns");
-        stringField(value, "glUploadMeasurement", "proxy_cpu_gl_submission_not_gpu_completion");
+        stringField(
+                value,
+                "glUploadMeasurement",
+                pboUpload
+                        ? "measured_cpu_pbo_stage_and_gl_upload_submission_not_gpu_completion"
+                        : "measured_cpu_gl_upload_and_optional_scale_blit_submission_not_gpu_completion");
         stringField(value, "outputSubmitMeasurement", "proxy_finish_processing_callback");
         stringField(value, "seekMeasurement", "proxy_media3_flush");
         stringField(
@@ -370,6 +443,7 @@ final class VideoBenchmarkTelemetry {
                 runId,
                 profile,
                 qnnStrict.toString(),
+                qnnStrict.optString("modelVariant", profile.modelVariant().id()),
                 qnnStrict.optBoolean("providerAssignmentVerified", false),
                 qnnStrict.optBoolean("providerFallbackTraceCaptured", false),
                 qnnStrict.optString(
@@ -388,6 +462,7 @@ final class VideoBenchmarkTelemetry {
                 runId,
                 profile,
                 qnnStrictJson,
+                profile.modelVariant().id(),
                 false,
                 false,
                 QnnPluginRuntime.VIDEO_STRICT_EVIDENCE_SCOPE);
@@ -397,13 +472,14 @@ final class VideoBenchmarkTelemetry {
             String runId,
             QuickSrVideoEffect.Profile profile,
             String qnnStrictJson,
+            String modelVariant,
             boolean providerAssignmentVerified,
             boolean providerFallbackTraceCaptured,
             String evidenceScope) {
         StringBuilder value = envelope("qnn_strict", runId);
         stringField(value, "mode", QuickSrSession.Mode.QNN_HTP.name());
         stringField(value, "profile", profile.name());
-        stringField(value, "modelVariant", profile.modelVariant().id());
+        stringField(value, "modelVariant", modelVariant);
         booleanField(value, "providerAssignmentVerified", providerAssignmentVerified);
         booleanField(value, "providerFallbackTraceCaptured", providerFallbackTraceCaptured);
         stringField(value, "evidenceScope", evidenceScope);

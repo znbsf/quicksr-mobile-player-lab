@@ -94,7 +94,6 @@ MEASUREMENT_CONTRACT = {
     "ortMeasurement": "measured_caller_wall_ns_not_npu_kernel",
     "outputPackMeasurement": "measured_cpu_elapsed_realtime_ns",
     "directBufferCopyMeasurement": "measured_cpu_elapsed_realtime_ns",
-    "glUploadMeasurement": "proxy_cpu_gl_submission_not_gpu_completion",
     "outputSubmitMeasurement": "proxy_finish_processing_callback",
     "seekMeasurement": "proxy_media3_flush",
     "ptsWallClockDriftMeasurement": "proxy_generation_relative_to_first_accepted_frame",
@@ -102,7 +101,7 @@ MEASUREMENT_CONTRACT = {
     "finalDisplayMeasurement": "unmeasured",
 }
 
-VALIDATOR_VERSION = "android-qnn-resolution-validator-v6"
+VALIDATOR_VERSION = "android-qnn-resolution-validator-v9"
 
 # These values are emitted only by the post-session ``qnn_strict`` event.
 # Configuration and frame-mode labels are application intent, not evidence that
@@ -212,6 +211,45 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         output_tensor_bytes = (
             case["model_output"][0] * case["model_output"][1] * 3 * 4
         )
+        deferred_output_copy = configuration.get("deferredOutputCopy")
+        if not isinstance(deferred_output_copy, bool):
+            failures.append(
+                "configuration deferredOutputCopy: expected a boolean, "
+                f"got {deferred_output_copy!r}"
+            )
+            deferred_output_copy = False
+        if deferred_output_copy:
+            if not overlap_enabled:
+                failures.append("deferred output copy requires OVERLAP postprocess mode")
+            if output_packer != "JAVA":
+                failures.append("deferred output copy requires the JAVA output packer")
+            if configuration.get("outputTensorLayout") != "NHWC":
+                failures.append("deferred output copy requires NHWC output layout")
+            if "captureSelectorKind" in configuration:
+                failures.append("deferred output copy is incompatible with tensor capture")
+        expected_output_copy_measurement = (
+            "measured_postprocess_thread_bulk_copy"
+            if deferred_output_copy
+            else "measured_inference_thread_bulk_copy"
+        )
+        expected_gl_upload_route = (
+            "DIRECT_MEDIA3_OUTPUT_TEXTURE"
+            if case["model_output"] == case["canvas"]
+            else "INTERMEDIATE_NEURAL_TEXTURE_THEN_SCALE_BLIT"
+        )
+        pbo_upload = configuration.get("pboUpload")
+        if not isinstance(pbo_upload, bool):
+            failures.append(
+                f"configuration pboUpload: expected a boolean, got {pbo_upload!r}"
+            )
+            pbo_upload = False
+        if pbo_upload and expected_gl_upload_route != "DIRECT_MEDIA3_OUTPUT_TEXTURE":
+            failures.append("PBO upload is restricted to the direct output texture route")
+        expected_gl_upload_measurement = (
+            "measured_cpu_pbo_stage_and_gl_upload_submission_not_gpu_completion"
+            if pbo_upload
+            else "measured_cpu_gl_upload_and_optional_scale_blit_submission_not_gpu_completion"
+        )
         expected_configuration = {
             "schemaVersion": 2,
             "runId": run_id,
@@ -223,6 +261,21 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
             "outputTensorSlotCount": 2 if overlap_enabled else 1,
             "outputTensorBytesPerSlot": output_tensor_bytes,
             "additionalOverlapTensorBytes": output_tensor_bytes if overlap_enabled else 0,
+            "deferredOutputCopy": deferred_output_copy,
+            "pinnedOrtOutputTensorSlotCount": 2 if deferred_output_copy else 1,
+            "additionalPinnedOrtOutputBytes": (
+                output_tensor_bytes if deferred_output_copy else 0
+            ),
+            "tensorOutputCopyMeasurement": expected_output_copy_measurement,
+            "glUploadRoute": expected_gl_upload_route,
+            "pboUpload": pbo_upload,
+            "glUploadPboSlotCount": 2 if pbo_upload else 0,
+            "additionalGlUploadPboBytes": (
+                case["model_output"][0] * case["model_output"][1] * 4 * 2
+                if pbo_upload
+                else 0
+            ),
+            "glUploadMeasurement": expected_gl_upload_measurement,
             **expected_dimensions,
             **MEASUREMENT_CONTRACT,
         }
@@ -267,6 +320,10 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                 failures.append(
                     f"qnn strict {field}: expected {expected!r}, got {strict_event.get(field)!r}"
                 )
+        if configurations and strict_event.get("modelVariant") != configurations[0].get("modelVariant"):
+            failures.append(
+                "qnn strict modelVariant does not match the configured modelVariant"
+            )
         strict_evidence = strict_event.get("qnnStrict")
         if not isinstance(strict_evidence, dict):
             failures.append("qnn strict evidence is missing or not an object")
@@ -283,6 +340,31 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                     "qnn strict selectedNpuDeviceCount: expected a positive integer, "
                     f"got {selected_npu_count!r}"
                 )
+            if configurations:
+                configured_deferred_copy = configurations[0].get("deferredOutputCopy", False)
+                if strict_evidence.get("deferredOutputCopy") != configured_deferred_copy:
+                    failures.append(
+                        "qnn strict deferredOutputCopy does not match configuration"
+                    )
+                expected_pinned_slots = 2 if configured_deferred_copy else 1
+                if strict_evidence.get("pinnedOrtOutputTensorSlotCount") != expected_pinned_slots:
+                    failures.append(
+                        "qnn strict pinnedOrtOutputTensorSlotCount does not match configuration"
+                    )
+                if strict_evidence.get("glUploadRoute") != configurations[0].get(
+                    "glUploadRoute"
+                ):
+                    failures.append("qnn strict glUploadRoute does not match configuration")
+                if strict_evidence.get("pboUpload") != configurations[0].get(
+                    "pboUpload"
+                ):
+                    failures.append("qnn strict pboUpload does not match configuration")
+                if strict_evidence.get("glUploadPboSlotCount") != configurations[0].get(
+                    "glUploadPboSlotCount"
+                ):
+                    failures.append(
+                        "qnn strict glUploadPboSlotCount does not match configuration"
+                    )
 
     samples_by_frame: dict[int, dict[str, Any]] = {}
     ordered_samples: list[dict[str, Any]] = []
@@ -476,20 +558,97 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         if len(measured) > 1 and pts_delta > 0:
             metrics["sampled_pts_fps"] = (len(measured) - 1) * 1_000_000 / pts_delta
 
+        observed_pts_intervals = []
+        for previous, current in zip(measured, measured[1:]):
+            previous_epoch = previous.get("cadenceStreamEpoch")
+            current_epoch = current.get("cadenceStreamEpoch")
+            same_stream = (
+                previous_epoch == current_epoch
+                if is_int(previous_epoch) and is_int(current_epoch)
+                else previous.get("generation") == current.get("generation")
+            )
+            interval = current.get("ptsUs", 0) - previous.get("ptsUs", 0)
+            if same_stream and interval > 0:
+                observed_pts_intervals.append(float(interval))
+        expected_source_fps = plan.get("expected_source_fps")
+        if not isinstance(expected_source_fps, (int, float)) or isinstance(
+                expected_source_fps, bool) or not math.isfinite(expected_source_fps) \
+                or expected_source_fps <= 0:
+            failures.append("plan expected_source_fps must be a positive finite number")
+        elif observed_pts_intervals:
+            nominal_interval_us = 1_000_000 / float(expected_source_fps)
+            observed_median_interval_us = percentile(observed_pts_intervals, 0.50)
+            metrics["nominal_pts_interval_us"] = nominal_interval_us
+            metrics["nominal_pts_fps"] = float(expected_source_fps)
+            metrics["observed_median_pts_interval_us"] = observed_median_interval_us
+            metrics["source_pts_interval_ratio"] = (
+                observed_median_interval_us / nominal_interval_us
+            )
+            if "sampled_pts_fps" in metrics:
+                metrics["sampled_pts_coverage_ratio"] = (
+                    metrics["sampled_pts_fps"] / metrics["nominal_pts_fps"]
+                )
+            if "observed_fps" in metrics:
+                metrics["observed_source_cadence_ratio"] = (
+                    metrics["observed_fps"] / metrics["nominal_pts_fps"]
+                )
+
     performance_class = "unclassified"
+    source_cadence_class = "unclassified"
+    source_cadence_gate = "UNCLASSIFIED"
+    source_pts_interval_gate = "UNCLASSIFIED"
+    latency_class = "unclassified"
+    if ("nominal_pts_fps" in metrics
+            and "source_pts_interval_ratio" in metrics):
+        maximum_interval_error = float(
+            plan.get("maximum_source_pts_interval_error_ratio", 0.005)
+        )
+        source_pts_interval_gate = (
+            "PASS"
+            if abs(metrics["source_pts_interval_ratio"] - 1.0) <= maximum_interval_error
+            else "FAIL"
+        )
     if cadence_mode == "CONTENT_AWARE_V1":
         performance_class = "cadence_effect_proxy_unclassified"
-    elif "effectTotalToOutputSubmitProxyNs" in metrics and "observed_fps" in metrics:
+    elif ("effectTotalToOutputSubmitProxyNs" in metrics
+          and "observed_fps" in metrics
+          and "nominal_pts_fps" in metrics
+          and "sampled_pts_coverage_ratio" in metrics
+          and "observed_source_cadence_ratio" in metrics):
         total_p95 = metrics["effectTotalToOutputSubmitProxyNs"]["p95"] / 1_000_000
-        observed_fps = metrics["observed_fps"]
+        nominal_fps = metrics["nominal_pts_fps"]
+        minimum_ratio = float(plan.get("minimum_source_cadence_ratio", 0.995))
+        cadence_ratio = min(
+            metrics["sampled_pts_coverage_ratio"],
+            metrics["observed_source_cadence_ratio"],
+        )
+        cadence_matched = (
+            cadence_ratio >= minimum_ratio and source_pts_interval_gate == "PASS"
+        )
+        if source_pts_interval_gate == "FAIL":
+            source_cadence_class = "source_pts_interval_mismatch"
+        else:
+            source_cadence_class = (
+                "source_cadence_matched" if cadence_matched else "below_source_cadence"
+            )
+        source_cadence_gate = "PASS" if cadence_matched else "FAIL"
+        nominal_frame_ms = 1_000 / nominal_fps
+        metrics["effect_p95_frame_budget_ratio"] = total_p95 / nominal_frame_ms
+        latency_class = (
+            "within_nominal_frame_interval"
+            if total_p95 <= nominal_frame_ms
+            else "pipelined_over_nominal_frame_interval"
+        )
         realtime_30 = plan["performance_classes"]["realtime_30"]
         realtime_24 = plan["performance_classes"]["realtime_24"]
-        if total_p95 <= realtime_30["maximum_p95_total_ms"] and observed_fps >= realtime_30["minimum_observed_fps"]:
-            performance_class = "effect_proxy_realtime_30"
-        elif total_p95 <= realtime_24["maximum_p95_total_ms"] and observed_fps >= realtime_24["minimum_observed_fps"]:
-            performance_class = "effect_proxy_realtime_24"
+        if not cadence_matched:
+            performance_class = "effect_proxy_below_source_cadence"
+        elif nominal_fps >= realtime_30["minimum_observed_fps"]:
+            performance_class = "effect_proxy_realtime_30_throughput"
+        elif nominal_fps >= realtime_24["minimum_observed_fps"]:
+            performance_class = "effect_proxy_realtime_24_throughput"
         else:
-            performance_class = "offline"
+            performance_class = "effect_proxy_source_cadence_throughput"
 
     latest_counters: dict[str, int] = {}
     counter_sources = ordered + pipeline_snapshots
@@ -520,6 +679,13 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         if latest_counters.get("bypassedCount", 0) != 0:
             failures.append("resolution-matrix run contains bypassed frames")
 
+    functional_gate = "PASS" if not failures else "FAIL"
+    overall_gate = (
+        "PASS"
+        if functional_gate == "PASS"
+        and (cadence_mode != "OFF" or source_cadence_gate == "PASS")
+        else "FAIL"
+    )
     return {
         "schema_version": 3,
         "plan_id": plan["plan_id"],
@@ -527,13 +693,21 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "run_id": run_id,
         "postprocess_mode": configurations[0].get("postprocessMode") if configurations else None,
         "output_packer": configurations[0].get("outputPacker", "JAVA") if configurations else None,
+        "deferred_output_copy": (
+            configurations[0].get("deferredOutputCopy") if configurations else None
+        ),
         "cadence_mode": cadence_mode,
-        "functional_gate": "PASS" if not failures else "FAIL",
+        "overall_gate": overall_gate,
+        "functional_gate": functional_gate,
         "performance_class": performance_class,
+        "source_cadence_class": source_cadence_class,
+        "source_cadence_gate": source_cadence_gate,
+        "source_pts_interval_gate": source_pts_interval_gate,
+        "latency_class": latency_class,
         "performance_scope": (
             "mixed_inference_and_reuse_effect_output_submit_proxy_not_realtime_classified"
             if cadence_mode == "CONTENT_AWARE_V1"
-            else "effect_output_submit_proxy_not_gpu_completion_or_final_display"
+            else "effect_output_submit_throughput_proxy_not_gpu_completion_or_final_display"
         ),
         "final_display_status": "unmeasured",
         "metrics": metrics,
@@ -563,11 +737,13 @@ def main() -> int:
     report["raw_log_sha256"] = hashlib.sha256(raw_log_bytes).hexdigest()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"{report['functional_gate']} {case['id']}: {report['performance_class']} "
+    print(f"{report['overall_gate']} {case['id']}: {report['performance_class']} "
           f"({report['metrics']['measured_frame_count']} measured frames)")
     for failure in report["failures"]:
         print(f"  - {failure}")
-    return 0 if report["functional_gate"] == "PASS" else 1
+    if report["functional_gate"] == "PASS" and report["source_cadence_gate"] == "FAIL":
+        print("  - functional processing passed, but frozen source-cadence throughput failed")
+    return 0 if report["overall_gate"] == "PASS" else 1
 
 
 if __name__ == "__main__":

@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "experiment": "quicksr-1080p-throughput-and-display-cadence",
+  "date": "2026-09-05",
+  "scope": {
+    "device_class": "one_physical_android_16_sm8550_adreno_740_device",
+    "serial_recorded": false,
+    "input": "640x360-rgb",
+    "neural_output": "1920x1080-rgb",
+    "model_variant": "fixed640x360-3x-f32-nhwc",
+    "model_sha256": "9a9fd7cd9281555d7f5f54e0002a986c701ed124ffee02bc10740cfd711e6b90",
+    "qnn_runtime": "2.49.0",
+    "qnn_backend": "htp",
+    "cpu_ep_fallback_disabled": true,
+    "provider_assignment_verified": false,
+    "audio_present": false
+  },
+  "selected_default_architecture": {
+    "postprocess_overlap": true,
+    "output_tensor_layout": "NHWC",
+    "pinned_ort_output_slots": 2,
+    "deferred_output_copy": true,
+    "output_pack_stripes": 4,
+    "gl_upload_route": "DIRECT_MEDIA3_OUTPUT_TEXTURE",
+    "pbo_upload": false,
+    "finite_validation_policy": "FIRST_OUTPUT_FULL_SCAN",
+    "additional_pinned_ort_output_bytes": 24883200
+  },
+  "final_build": {
+    "prototype_build_id": "realtime-1080p-final-direct",
+    "apk_sha256": "deb5ef03ce97588625232d56e585b2abdd3810e903db2da38df495b6293260c8",
+    "host_java_and_python_tests": "pass",
+    "lint": "pass",
+    "debug_apk_and_android_test_apk": "pass",
+    "physical_instrumentation": {
+      "registered": 10,
+      "executed_pass": 8,
+      "assumption_skipped_optional_model_tests": 2
+    }
+  },
+  "throughput": {
+    "measurement_scope": "effect_output_submit_throughput_proxy_not_gpu_completion_or_final_display",
+    "source_fps": 30.0,
+    "status": "PASS",
+    "measured_frames": 828,
+    "observed_fps": 30.0045037478492,
+    "sampled_pts_coverage_ratio": 1.0000000241838,
+    "dropped_count": 0,
+    "bypassed_count": 0,
+    "max_queue_depth": 2,
+    "inference_caller_p50_ms": 27.883906,
+    "inference_caller_p95_ms": 30.73625,
+    "ort_run_p95_ms": 30.243802,
+    "output_pack_p95_ms": 15.503177,
+    "gl_upload_submit_proxy_p95_ms": 6.987239,
+    "effect_to_output_submit_proxy_p95_ms": 179.02375,
+    "interpretation": "The bounded pipeline sustains source cadence after filling, but its multi-frame latency is not a single-frame budget or input-to-photon measurement."
+  },
+  "deferred_output_copy_abba": {
+    "source_fps": 30.0,
+    "control_runs": 2,
+    "candidate_runs": 2,
+    "all_runs_sustained_source_rate": true,
+    "control_average_observed_fps": 30.0406,
+    "candidate_average_observed_fps": 29.9961,
+    "control_average_inference_caller_p95_ms": 34.733,
+    "candidate_average_inference_caller_p95_ms": 30.529,
+    "control_average_effect_to_output_submit_p95_ms": 195.203,
+    "candidate_average_effect_to_output_submit_p95_ms": 178.195,
+    "decision": "ENABLE_BY_DEFAULT_FOR_THE_1080P_NHWC_OVERLAP_PATH"
+  },
+  "surfaceflinger_abba": {
+    "measurement_scope": "surfaceflinger_layer_actual_present_proxy_not_photon_timing_or_audio_video_sync",
+    "source_fps": 30.0,
+    "original": [
+      {
+        "run": "A1",
+        "status": "PASS",
+        "actual_present_fps": 29.9792156881418,
+        "intervals_over_1_5_source_frames": 0,
+        "intervals_under_0_5_source_frames": 0
+      },
+      {
+        "run": "A2",
+        "status": "PASS",
+        "actual_present_fps": 29.9544457781014,
+        "intervals_over_1_5_source_frames": 0,
+        "intervals_under_0_5_source_frames": 0
+      }
+    ],
+    "quicksr_qnn": [
+      {
+        "run": "B1",
+        "status": "FAIL",
+        "actual_present_fps": 30.0340766275868,
+        "maximum_interval_ms": 58.153074,
+        "intervals_over_1_5_source_frames": 1,
+        "intervals_under_0_5_source_frames": 2
+      },
+      {
+        "run": "B2",
+        "status": "PASS",
+        "actual_present_fps": 30.0029898147367,
+        "maximum_interval_ms": 49.993646,
+        "intervals_over_1_5_source_frames": 0,
+        "intervals_under_0_5_source_frames": 0
+      }
+    ],
+    "decision": "AVERAGE_30_FPS_REACHED_BUT_REPEATABLE_ZERO_JITTER_NOT_PROVEN"
+  },
+  "rejected_or_nondefault_candidates": [
+    {
+      "candidate": "jni_direct_floatbuffer_to_native_packer",
+      "reason": "approximately_116_5_ms_and_slower_than_four_stripe_nhwc_java_pack"
+    },
+    {
+      "candidate": "two_pack_stripes",
+      "reason": "output_pack_p95_regressed_and_surfaceflinger_repeatability_did_not_improve"
+    },
+    {
+      "candidate": "two_gl_pixel_unpack_pbos",
+      "throughput_observed_fps": 30.0133,
+      "direct_upload_gl_p95_ms": 3.46,
+      "pbo_gl_p95_ms": 1.832,
+      "additional_bytes": 16588800,
+      "surfaceflinger_passes": 1,
+      "surfaceflinger_runs": 2,
+      "reason": "lowered_cpu_gl_submit_tail_but_did_not_improve_display_pass_repeatability"
+    }
+  ],
+  "device_isolation": {
+    "isolated_avd": "QuickSR_Isolated_API_35",
+    "isolated_avd_scope": "hardware_independent_testing_only",
+    "preexisting_emulator_used": false,
+    "other_connected_tv_used": false,
+    "emulator_results_counted_as_qnn_evidence": false
+  },
+  "open_gates": [
+    "repeatable_surfaceflinger_cadence_without_compensating_long_short_intervals",
+    "audio_video_sync_with_an_audio_bearing_clip",
+    "thermal_and_power_stability",
+    "representative_anime_quality_after_frame_rate_gate"
+  ]
+}

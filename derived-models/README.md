@@ -38,6 +38,10 @@ python .\derived-models\test_derived_model_fixed256.py
 python .\derived-models\derive_quicksrnet_fixed256x144.py
 python .\derived-models\derive_quicksrnet_fixed512x288.py
 python .\derived-models\derive_quicksrnet_fixed640x360.py
+python .\scripts\experiment_display_friendly_output.py `
+  --source .\derived-models\quicksrnet-small-3x-fixed640x360.onnx `
+  --output .\derived-models\quicksrnet-small-3x-fixed640x360-f32-nhwc.onnx `
+  --variant float32-nhwc
 ```
 
 派生脚本不下载模型、不接受路径覆盖；canonical ONNX 或 P2 plan 的 hash 不匹配时会失败关闭。成功后生成：
@@ -47,6 +51,7 @@ python .\derived-models\derive_quicksrnet_fixed640x360.py
 - `derivation-manifest.json`：记录 source/P2 plan/tool/output hash、图合同、变换和 PC ORT 等价结果。
 - `quicksrnet-small-2x-fixed256-dcr.onnx`：固定输入 `[1,3,256,256]`，输出 `[1,3,512,512]`；PC ORT 两组输入与 canonical 输出逐字节一致。
 - 三个 16:9 视频模型：`256×144→512×288`、`512×288→1024×576`、`640×360→1280×720`；均以两组输入完成 PC ORT 逐字节等价验证。
+- 1080p 实时输出包装：`640×360→1920×1080` 的卷积保持不变，只把公开输出从 NCHW 转为 NHWC；默认 Android 1080p 路径要求该本地产物，并按冻结 hash 失败关闭。
 - `derivation-manifest-fixed256.json`：fixed256 独立清单，并冻结 fixed64 两个模型及其历史清单的 hash。
 
 以 manifest 中的 hash 和验证状态为当前事实源，不手工复制旧 hash。

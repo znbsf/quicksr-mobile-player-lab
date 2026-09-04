@@ -882,9 +882,11 @@ public final class SuperResolutionActivity extends Activity {
                                 -1L));
             }
             if (selectedMode != VideoMode.QUICKSR_QNN
-                    && selectedMode != VideoMode.QUICKSR_CPU) {
+                    && selectedMode != VideoMode.QUICKSR_CPU
+                    && selectedMode != VideoMode.ORIGINAL
+                    && selectedMode != VideoMode.GPU_LANCZOS) {
                 return benchmarkConfigurationFailure(
-                        "Benchmark mode must be QUICKSR_QNN or QUICKSR_CPU");
+                        "Benchmark mode must be QUICKSR_QNN, QUICKSR_CPU, ORIGINAL or GPU_LANCZOS");
             }
             if (selectedMode == VideoMode.QUICKSR_QNN
                     && (!BuildConfig.QNN_RUNTIME_EXPECTED || !qnnEnvironmentReady)) {
@@ -899,6 +901,17 @@ public final class SuperResolutionActivity extends Activity {
                 return benchmarkConfigurationFailure(
                         "Tensor capture requires cadence mode OFF so the selected input is inferred");
             }
+            boolean neuralBenchmark = selectedMode == VideoMode.QUICKSR_QNN
+                    || selectedMode == VideoMode.QUICKSR_CPU;
+            if (!neuralBenchmark && selectedCadence != AnimeCadenceAnalyzer.Mode.OFF) {
+                return benchmarkConfigurationFailure(
+                        "Display baseline benchmarks require cadence mode OFF");
+            }
+            if (!neuralBenchmark
+                    && selectedOutputPacker != QuickSrVideoEffect.OutputPackerMode.JAVA) {
+                return benchmarkConfigurationFailure(
+                        "Display baseline benchmarks require output packer JAVA/not-applicable");
+            }
             if (selectedOutputPacker == QuickSrVideoEffect.OutputPackerMode.NATIVE_NEON) {
                 try {
                     NativeOutputPacker.verifyImplementation();
@@ -910,9 +923,26 @@ public final class SuperResolutionActivity extends Activity {
             videoMode = selectedMode;
             videoNeuralProfileSpinner.setSelection(selectedProfile.ordinal());
             videoQnnTuningSpinner.setSelection(selectedTuning.ordinal());
+            if (selectedMode == VideoMode.GPU_LANCZOS) {
+                int targetPosition = -1;
+                for (int index = 0; index < VIDEO_TARGETS.length; index++) {
+                    if (VIDEO_TARGETS[index][0] == selectedProfile.canvasWidth()
+                            && VIDEO_TARGETS[index][1] == selectedProfile.canvasHeight()) {
+                        targetPosition = index;
+                        break;
+                    }
+                }
+                if (targetPosition < 0) {
+                    return benchmarkConfigurationFailure(
+                            "GPU_LANCZOS benchmark profile has no matching display target");
+                }
+                videoTargetSpinner.setSelection(targetPosition);
+            }
             benchmarkMode = selectedMode == VideoMode.QUICKSR_QNN
                     ? QuickSrSession.Mode.QNN_HTP
-                    : QuickSrSession.Mode.CPU;
+                    : selectedMode == VideoMode.QUICKSR_CPU
+                            ? QuickSrSession.Mode.CPU
+                            : null;
             benchmarkTuning = selectedMode == VideoMode.QUICKSR_QNN
                     ? selectedTuning
                     : QuickSrSession.Tuning.BASELINE;

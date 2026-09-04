@@ -1,14 +1,14 @@
 # QuickSR Mobile Player 路线图
 
-> 文档更新：2026-09-04
+> 文档更新：2026-09-05
 >
 > 文档性质：阶段边界、技术合同与证据门禁；不是完成证明。
 >
-> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现。第一硬门是 1080p 最终显示持续保持原片帧率；当前 overlap 代理 17.960 fps 低于冻结片源 23.976 fps，明确不可用。720p 只作诊断。只有帧率通过后才做第二道画质门；native packer 已负结果收口，M4 AAR 未实现。
+> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现。1080p 平均处理吞吐已达到 30fps，但严格 SurfaceFlinger ABBA 只有 QNN 1/2 PASS；第一硬门仍因偶发长/短显示间隔保持开放。720p 只作诊断。只有显示帧率通过后才做第二道画质门；M4 AAR 未实现。
 
 ## 1. 先把当前事实说清楚
 
-本项目正在验证：QuickSRNetSmall ×2 能否在 Android 播放链路中，经 Qualcomm QNN HTP/NPU 对视频画面进行可复现、可评价、可持续的超分，并最终封装成可由其他 Media3 App 接入的 effect library。
+本项目正在验证：QuickSRNetSmall 能否在 Android 播放链路中，经 Qualcomm QNN HTP/NPU 对视频画面进行可复现、可评价、可持续的超分，并最终封装成可由其他 Media3 App 接入的 effect library。当前产品主档是 640x360 输入、3x 到 1920x1080 输出。
 
 当前实现和正式门禁必须分开：
 
@@ -18,10 +18,10 @@
 | M0 图片路径 | 已实现系统选图、完整图片 tile 2×、CPU/QNN、预览和 PNG 保存 | 本轮没有新的权利清晰质量报告 |
 | M1 | Media3 播放器、effect、PTS 传递、原始/GPU 模式已经运行 | 正式 seek/flush/EOS、截图 hash 和完整生命周期合同 |
 | M2 | 完整帧进入 CPU/QNN，静态 shape 与分阶段计时已经实现 | 冻结 correctness、颜色等价和同帧 reference |
-| M3 experimental | 720p 诊断档曾接近 23.976 fps；1080p overlap 代理为 17.960 fps | 第一门：逐源 PTS 最终显示、原片帧率、无 effect drop/bypass、无积压、A/V sync 和正式 thermal；第二门：1080p 画质 |
+| M3 experimental | 1080p 最终默认版处理代理 30.0045fps、drop/bypass 0；原画显示 2/2 PASS，QNN 1/2 PASS | 第一门剩余：消除偶发 58ms 长帧/补偿短帧，再补 A/V sync 和正式 thermal；第二门：1080p 画质 |
 | M4 | 未实现 | AAR、模块拆分、稳定 API、兼容矩阵和全新 checkout 交付验证 |
 
-因此可以声称“可运行的实验播放器和逐帧神经路径已实现”，但当前不能声称“1080p 画质值得使用”或“保持原片帧率”；按产品硬门，现状不可用。
+因此可以声称“可运行的实验播放器、逐帧神经路径和 30fps 平均处理吞吐已实现”，但当前不能声称“1080p 画质值得使用”或“保证最终显示保持原片帧率”；按产品硬门仍未完成。
 
 ## 2. 产品边界
 
@@ -244,7 +244,7 @@ M2 门禁：
 
 范围：
 
-- 冻结版权安全的 reference clip、目标 1080p 输出及原片帧率；首个有界合同为 23.976 fps；
+- 冻结版权安全的 reference clip、目标 1080p 输出及原片帧率；23.976/24fps 为基础档，30fps 为当前压力档；
 - 先关闭 1080p 原片帧率硬门；通过后才固定同源同帧的 Lanczos、Anime4K 与 QuickSR 输出并裁决画质；
 - 720p workload 只用于定位瓶颈和回归，不作为产品完成声明；
 - 固定 tile size、overlap、padding、crop 与 stitch 规则；
@@ -328,12 +328,12 @@ M4 门禁：
 
 ## 12. 下一次实际执行入口
 
-1. 把 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，重跑 1080p @ 原片 23.976 fps：逐源 PTS 输出、effect-induced drop/bypass=0、无持续积压，并补 GPU completion、SurfaceFlinger 或等价最终显示、A/V sync、seek/flush/pause/resume；720p 只作诊断对照；
-2. 1080p 原片帧率是第一硬门：当前 Java QNN caller p50 约 44.7 ms、output-pack p50 约 36.6 ms，native packer 已回归，不再重复该方向；
-3. 根据分段 profiler 一次只选择 W8A8/uint8 或显示友好布局、QNN shared allocator/native I/O、texture-resident/低缓冲路径中的一个做 ABBA，不靠扩大队列；
-4. 通过 10～30 分钟的温度、频率、功耗、PSS 和掉帧观察；固定窗口均保持原片 cadence 才关闭第一门；
-5. 只有帧率通过后，才绑定真实 Android/offscreen GL 输出到画质合同，冻结 Lanczos、Anime4K、QuickSR 的同源同帧 1080p 输出和 trace/receipt 并做身份隐藏盲审；
-6. 帧率或画质任一硬门失败，QuickSR 实时路线均标记 `STOPPED`，转向 Anime4K；
-7. SESR-M5、VFI 与可复用 AAR 全部后移到两道硬门之后。
+1. 不再重复平均吞吐测试；当前最终版已经在 1080p@30fps 得到 30.0045fps、drop/bypass 0；
+2. 捕获一次带 frameId/PTS 关联的 Perfetto/FrameTimeline 失败窗口，同时观察 worker、GL fence、BufferQueue、SurfaceFlinger 和 sched/freq，把 58ms 长帧归因到具体域；
+3. 只根据 trace 选择一个实现：deadline/线程调度、AHardwareBuffer/EGLImage texture-resident 输出，或隔离的 Media3 queue 本地 fork；不再扩大队列或重试已失败的 native/PBO 组合；
+4. 实现后只做一次 Original A1 -> QNN B1 -> QNN B2 -> Original A2；QNN 两轮均无长/短补偿间隔才补有音轨 A/V sync 与 10～30 分钟 thermal；
+5. 只有帧率通过后，才冻结 Lanczos、Anime4K、QuickSR 的同源同帧 1080p 输出并做身份隐藏盲审；
+6. 帧率或画质任一硬门失败，QuickSR 实时路线均标记 `STOPPED`，转向 Anime4K/更轻模型；
+7. cadence、SESR-M5、VFI 与可复用 AAR 全部后移到两道硬门之后。
 
 若 GL readback/upload 主导总延迟，应保留负结果，并据此决定继续优化 Media3 effect 还是另立 native pipeline 实验；不得在没有测量前用“未来 zero-copy”跳过当前证据。

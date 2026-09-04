@@ -17,6 +17,9 @@
     "qnn_runtime_expected": true
   },
   "warmup_frames": 15,
+  "expected_source_fps": 24.0,
+  "maximum_source_pts_interval_error_ratio": 0.005,
+  "minimum_source_cadence_ratio": 0.995,
   "performance_classes": {
     "realtime_30": {"maximum_p95_total_ms": 33.33, "minimum_observed_fps": 28.5},
     "realtime_24": {"maximum_p95_total_ms": 41.67, "minimum_observed_fps": 22.8}

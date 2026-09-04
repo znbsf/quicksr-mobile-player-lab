@@ -1,339 +1,146 @@
 # 动漫视频增强：实现计划与进展
 
-状态日期：2026-09-04
+状态日期：2026-09-05
 
-实现与设备证据基线：`main` 的 `22774fd`；其后的架构探针尚待物理机 QNN 裁决
-
-文档角色：当前实现、证据等级、先后依赖和下一步的唯一总览。早期研究理由仍保留在
-[动漫视频实时超分与插帧执行拆分](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，各项原始测量以链接的专项报告为准。
+文档角色：当前唯一总计划。研究背景见
+[动漫视频实时超分与插帧执行拆分](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，本轮架构细节见
+[1080p 实时架构优化审计](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)。
 
 ## 1. 当前结论
 
-播放器主链已经能用：Media3/MediaCodec 解码、本地视频播放，以及原画、GPU Lanczos、
-GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接入 App。
-这不等于所有增强模式都达到产品级实时和画质门槛。
+第一硬门始终是帧率，不是画质。当前状态已经从“1080p 最高不到 20fps”推进到：
 
-当前第一硬门是 **QuickSR 的目标 1080p 输出必须持续保持原片帧率**。首个有界声明使用现有
-冻结的 23.976 fps 片源：最终显示必须按每个源 PTS 交付、无计算导致的 drop/bypass、无持续
-积压并保持 A/V sync；动漫 held frame 可以复用已经增强的像素，但仍须按每个原始 PTS 输出
-一帧。当前最好 1080p overlap 代理只有 17.960 fps，低于 23.976 fps，因此按这个产品定义
-明确不可用。720p 旧 smoke 只保留为性能归因和回归诊断档，不再充当产品完成目标。
+- 30fps effect output-submit 吞吐：`PASS`，最终默认版 `30.0045 fps`；
+- 处理链 effect drop/bypass：`0/0`；
+- SurfaceFlinger actual-present 严格 ABBA：原画 `2/2 PASS`，QuickSR QNN `1/2 PASS`；
+- 因此“平均处理速率达到原片帧率”已完成，但“最终屏幕无长短帧、可保证原片帧率”未完成。
 
-只有先通过原片帧率硬门，才进入第二道画质停止门：用完全相同的源帧和输出尺寸比较
-原画/Lanczos、Anime4K x2 Small 与 QuickSR。如果 QuickSR 在代表性动漫上没有稳定、明显且
-可盲审复核的优势，同样停止 QuickSR 播放器路线。两道门都必须通过，但当前所有工作优先服务
-于第一道帧率门。
+现在的主要矛盾不是 QNN 平均算力，而是偶发最终显示尾延迟：失败轮平均仍为
+`30.0341 fps`，但出现 `58.153 ms` 长间隔和补偿短间隔。后续只做能定位这一事件的工作，
+不再无目标增加模型、线程、队列和测试轮数。
 
-当前主要路线的裁决如下：
-
-1. **Anime4K 已进入可选择播放器路径。** 单台 Android 16 / Adreno 740 已完成
-   720p、1080p、1440p 的有界 model-active 功能运行；固定同帧参考、GPU timing、
-   代表性动漫线条/字幕画质和长时热稳仍未关闭。
-2. **动漫 cadence 复用已接入 QuickSR 热路径，但只允许 benchmark Intent 开启，默认和交互模式均为 `OFF`。**
-   单台真机 720p A/B 中，680 帧有 257 帧复用，实测减少 37.79% 推理；它不插帧、不改 PTS，
-   也不是固定“每三帧一次”。低对比字幕和代表性动漫人工画质仍是开放门禁。
-3. **QNN inference/postprocess 重叠已实现为默认关闭的构建实验。** 720p 已受源帧率限制，
-   平均代理吞吐仅提高约 0.6%；1080p 从 11.435 提高到 17.960 fps，但仍属 `offline`，
-   p95 尾部变差且增加 23.73 MiB 输出张量，因此不能改成默认路径。
-4. **JNI/NEON direct output packer 已完成 ABBA 并被否决为默认。** 同 APK 的 1080p
-   SERIAL 比较中，平均吞吐从 Java 的 11.855 降至 6.765 fps，output-pack p50 从 36.566
-   增至 102.353 ms；Java 保持默认，native 只保留显式实验路径。
-5. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
-   native CLI/离线评测。IFRNet-S 与 v4.25-lite 已分别完成真机探针并停止；后者虽然在
-   观察设备上兼容，但只在 256x144 更快，另两档慢 56.0-77.2%，没有一致替换收益。
-6. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
-   case/74 帧已由 canonical generator、manifest 和 hash 约束；结果只允许写成
-   `declared_oracle_conformance`，真实 Anime4K/cadence 运行、代表性动漫和人工审核仍待补。
-7. **1080p 架构候选已完成主机/模拟器第一轮淘汰。** 同权重 `uint8 NHWC RGB` 图输出逐值
-   零失配并将边界输出缩小 75%，`GL_RGB8` 上传合同通过；temporal batch=2 仅有 4.2%～16.9%
-   的主机方向收益，空间 batch 基本无收益，Java direct FloatBuffer/IntBuffer 路线明显更慢。
-   预计算 alpha 索引保持任意 alpha 逐字节一致，新独立 AVD 三次专项 ABBA 的单线程方向收益
-   为 11.87%、24.57%、19.50%，已接入现有 Java pack 且未新增线程；这些都不是 HTP 性能证据，当前唯一主候选
-   仍是显示友好图输出加 RGB8 纹理。
-
-2026-09-03 的 P0 真机裁决已经完成。三档均 `PASS`，每档两次进程的 14 个输出全部 hash
-一致，进程退出干净；这证明限定设备兼容，不改变 `OFFLINE_ONLY` 或播放器未接线的边界。
-
-## 2. 证据标签
-
-| 标签 | 含义 |
-| --- | --- |
-| `IMPLEMENTED` | 源码已接线并有主机测试；不自动包含真机、画质或实时证明 |
-| `DEVICE_BOUNDED` | 在明确的一台设备、片源、时长和代理指标下观察到；不可外推到其他设备或长时运行 |
-| `OFFLINE_ONLY` | 独立工具或 CLI 已运行，但不在 Media3 播放器、A/V sync 或最终显示链内 |
-| `PENDING` | 依赖、脚本或候选已准备，但缺少规定的下一份证据 |
-| `STOPPED` | 当前证据不支持继续集成；只有新的模型、运行时或目标变化才重开 |
-
-## 3. 实际接线图
+## 2. 当前默认实现
 
 ```text
-本地 SDR 视频
-  -> Media3 / MediaCodec
-  -> 用户选择
-       |-- 原画
-       |-- GPU Lanczos
-       |-- Anime4K x2 Small（GL texture 内五段；已接播放器）
-       `-- QuickSR CPU / QNN HTP
-             -> 有界输入队列、generation/PTS/CRC 遥测
-             -> cadence analyzer（仅 benchmark 可启用，默认 OFF）
-             -> inference
-             -> serial postprocess（默认）
-                或 bounded overlap（构建开关，默认 OFF）
-             -> Java output pack（默认；alpha 映射按 profile 预计算）
-                或 JNI/arm64 NEON direct pack（显式实验，默认 OFF）
-             -> Media3 output-submit 代理
-
-RIFE / IFRNet / ANVIL
-  -> vfi-benchmark 独立研究路径
-  -> 当前没有 Player Effect、UI 开关、A/V sync 或显示接线
+Media3 / MediaCodec
+  -> 640x360 RGBA readback
+  -> float32 NCHW input
+  -> QNN HTP
+       pinned input
+       two pinned float32 NHWC output slots
+  -> postprocess lane deferred bulk copy
+  -> four fixed row stripes: NHWC -> RGBA8
+  -> direct upload into same-size Media3 output texture
+  -> SurfaceFlinger
 ```
 
-主要实现入口：
+默认值：
 
-- `app/src/main/java/dev/aisystems/quicksrplayerlab/SuperResolutionActivity.java`：播放器模式、
-  Anime4K effect、QuickSR effect 和 benchmark-only cadence 配置；
-- `app/src/main/java/dev/aisystems/quicksrplayerlab/QuickSrVideoEffect.java`：有界队列、
-  generation/stream epoch、cadence 缓存所有权、QNN 推理和可选 postprocess overlap；
-- `app/src/main/java/dev/aisystems/quicksrplayerlab/AnimeCadenceAnalyzer.java`：
-  内容变化、字幕高对比 guard、最大连续复用 2 帧；
-- `app/src/main/java/dev/aisystems/quicksrplayerlab/Anime4kSmallEffect.java`：
-  GLES 五段图、RGBA16F 中间纹理、能力检查和两级回退；
-- `app/build.gradle.kts`：`quickSrPostprocessOverlap` 和 `quickSrNativeOutputPacker` 默认 `false`；
-- `vfi-benchmark/`：prefilter、host/device CLI 构建、常驻矩阵和候选证据；没有 App 接线。
+| 配置 | 默认 | 理由 |
+| --- | --- | --- |
+| `quickSrPostprocessOverlap` | `true` | QNN 与上一帧后处理并行 |
+| `quickSrFloatNhwcOutput` | `true` | 连续 RGB 读取，适合条带 pack |
+| `quickSrPackStripes` | `4` | 真机快于 2 条带 |
+| `quickSrDeferredOutputCopy` | `true` | ABBA 降低 inference 与总提交尾延迟 |
+| direct Media3 output upload | 同尺寸档启用 | 删除一张中间纹理和一次 scale blit |
+| `quickSrPboUpload` | `false` | GL 代理更快但最终显示通过率无改善 |
+| cadence reuse | `OFF` | 不能用内容复用掩盖逐帧硬门 |
+| JNI/NEON packer | `false` | 真机显著回归 |
 
-## 4. 实现与证据进展
+默认改动增加一个 pinned ORT output，约 23.73MiB。队列保持固定上界 2，不能通过无限积压
+制造表面帧率。
 
-| 工作项 | 源码状态 | 当前最高证据 | 决策 |
+## 3. 进展总表
+
+| 工作项 | 状态 | 当前证据 | 下一依赖 |
 | --- | --- | --- | --- |
-| Media3 播放器与 QuickSR CPU/QNN | `IMPLEMENTED` | 单设备 720p/1080p/1440p/4K-display 功能矩阵 | 保留；实时、最终显示和长时热稳分开判断 |
-| 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
-| QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；native direct packer 已执行并失败，下一变量必须由分段测量重新选择 |
-| JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期和 3 项 instrumentation 通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
-| Java 预计算 alpha 映射 | `IMPLEMENTED`，现有 Java pack 路径 | `HOST_ONLY`：JVM/模拟器逐字节等价；新独立 AVD 三次专项 ABBA +11.87%/+24.57%/+19.50% | 保留实现；物理机重跑后才能计入 1080p 吞吐收益 |
-| 显示友好输出/RGB8/聚合探针 | 实验脚本与 instrumentation 已实现，未接播放器默认路径 | `HOST_ONLY`：u8 NHWC RGB 零失配、边界 -75%；RGB8 GL 合同 PASS；batch/分块/直接 buffer 已得正负结果 | u8 RGB 图输出升为下一物理机单变量；batch 与 Java direct 路线降级/停止 |
-| Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
-| cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
-| Anime4K/cadence 画质合同 | `IMPLEMENTED`，主机工具已进入 `main` | `HOST_ONLY`：6 个空间 case、14 个时序 case/74 帧；只验证 declared-oracle conformance，runtime evidence=`NOT_BOUND` | 下一步接真实 offscreen GL/mpv/Android trace/receipt 和人工盲审；不能用 oracle-filled PASS 关闭画质门禁 |
-| 动漫 SISR 候选筛选 | 工具与清单完成 | Anime4K 已进入设备门禁；SESR-M5 仅有来源/接口方案 | SESR 先做导出与 CPU/QNN 一致性，不直接接播放器 |
-| RIFE v4.6 | 独立 CLI | `OFFLINE_ONLY`：五档单设备 resident 矩阵 | 作为冻结基线，不宣称播放器实时 |
-| IFRNet-S | 独立 CLI | `OFFLINE_ONLY`：PSS 低约一半但三档更慢 | `STOPPED` |
-| RIFE v4.25-lite | 独立 CLI | `OFFLINE_ONLY`：三档单设备 resident 矩阵；一档更快、两档明显更慢，PSS 均略高 | `STOPPED` |
-| ANVIL | 来源和架构筛选完成 | 论文/源码表明需 H.264 motion vector + Vulkan + QNN | 暂不实现；若继续须另建 SM8550/V73 系统任务 |
-| 播放器内 VFI | 未实现 | 无 | 在 kernel、动漫画质、许可、A/V sync 和热预算过门前不创建 |
+| Media3 播放器、原画、Lanczos、Anime4K、QuickSR CPU/QNN | `IMPLEMENTED` | 播放器路径已接入 | 不扩播放器功能，先关显示节奏门 |
+| 1080p QNN 平均吞吐 | `DEVICE_BOUNDED PASS` | 最终版 828 帧、30.0045fps、drop/bypass 0 | 保持回归，不重复长测 |
+| 1080p 最终显示节奏 | `ACTIVE / FAIL` | 原画 2/2；QNN 1/2 | 捕获失败窗口 Perfetto/FrameTimeline |
+| NHWC + 四条带 pack | `DEFAULT` | pack p50/p95 11.321/15.503ms | 仅作回归基线 |
+| deferred ORT output copy | `DEFAULT` | 2×2 ABBA 均保持 30fps，inference p95 平均降约 4.2ms | 监控内存/thermal，不继续加槽 |
+| direct output texture upload | `DEFAULT` | GL p95 曾从 6.435 降到 3.460ms；显示由 0/2 改为 1/2 | 保留；仍需定位剩余尾抖动 |
+| 双 PBO upload | `NONDEFAULT / STOPPED` | GL p95 1.832ms，但显示仍 1/2，另增约 15.82MiB | 不再调 PBO 数量 |
+| 首帧完整 finite scan | `DEFAULT` | 删除稳态周期性 330～353ms 扫描停顿 | 首帧仍严格校验 |
+| JNI/NEON direct packer | `STOPPED` | 旧 ABBA pack p50 36.566→102.353ms；新 direct FloatBuffer 约 116.5ms | 不重开 |
+| cadence 一拍二/三复用 | `IMPLEMENTED / OFF` | 既有 720p 冻结映射减少 37.79% 推理 | 显示硬门后做代表性动漫误复用审核 |
+| Anime4K x2 Small | `IMPLEMENTED` | 单设备功能路径已运行 | QuickSR 帧率门后做同帧画质/GPU timing |
+| SESR-M5 等轻模型 | `RESEARCH READY` | 候选审计已完成，尚未接播放器 | 只有 QuickSR 停止或质量失败才启动 |
+| RIFE / IFRNet / ANVIL 插帧 | `OFFLINE ONLY` | CLI/真机候选探针有正负结果 | SR 帧率与画质之后再建播放器分支 |
+| AAR | `NOT STARTED` | 无稳定公共 API | 产品路径两硬门后再拆 |
 
-专项证据：
+## 4. 这轮测试各自回答什么
 
-- [QNN 后处理重叠 A/B](ANDROID_QNN_POSTPROCESS_OVERLAP_AB.md)
-- [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)
-- [1080p 实时架构优化审计](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)
-- [动漫 cadence 复用](ANIME_CADENCE_REUSE.md)
-- [Anime4K Android GPU 集成](ANIME4K_ANDROID_GPU_INTEGRATION.md)
-- [动漫 VFI 离线基线](ANIME_VFI_OFFLINE_EVALUATION.md)
-- [移动 VFI 候选裁决](ANIME_VFI_MOBILE_CANDIDATE_PROBE.md)
-- [RIFE v4.25-lite 新版运行时探针](ANIME_VFI_RIFE_V425_LITE_PROBE.md)
+| 测试 | 唯一问题 | 已得到答案 | 是否继续重复 |
+| --- | --- | --- | --- |
+| 30fps throughput | 管线服务率是否达到源 fps | 是，30.0045fps | 否，改动回归时才跑 |
+| deferred A/B/B/A | 移动 ORT output copy 是否增加余量 | 是，尾延迟下降 | 否，已默认化 |
+| direct texture A/B | 删除中间 blit 是否有益 | 是，GL 尾延迟下降 | 否，已默认化 |
+| PBO A/B | 更快 GL 提交能否修掉显示抖动 | 否 | 停止 |
+| SurfaceFlinger A/B/B/A | 平均 30fps 是否等于稳定显示 | 否；QNN 仍偶发长短帧 | 只在有定位性实现后复测 |
+| 24fps 120 秒 | 常见 24fps 是否可持续 | 既有最终前一版已通过 24.001fps | 本轮重复计划已中止 |
 
-## 5. 下一步执行顺序
+后续不再用“多跑几遍也许通过”处理 1/2 的结果。下一份测试必须带能把失败帧映射到线程、
+fence、BufferQueue 或 SurfaceFlinger 的时间线。
 
-```text
-P0 已完成
-  -> RIFE v4.25-lite 三档 resident matrix
-  -> 裁决：兼容，但无一致替换收益，STOPPED
+## 5. 下一步顺序
 
-P1A 已完成
-  -> QuickSR SERIAL Java/native packer ABBA
-  -> 裁决：功能通过但性能显著回归，native 默认化被否决
+### P1：关联一次失败长帧
 
-当前唯一 P1B 原片帧率硬门（1080p 输出）
-  -> 23.976 fps 冻结片源逐 PTS 输出；effect-induced drop/bypass=0，队列不持续增长
-  -> 补 GPU completion/最终显示、A/V sync、生命周期和 10～30 分钟热稳
-  -> 未来声称 24/25/30 fps 时分别重跑，不从 23.976 fps 外推
+目标：解释 `58.153 ms` 长间隔为何发生，而不是再确认它存在。
 
-条件性 P1C 画质停止门（P1B 通过后）
-  -> 真实 Android/offscreen GL 输出：Lanczos / Anime4K / QuickSR 同源、同帧、同 1080p 尺寸
-  -> 线条、压缩退化、字幕、渐变和跨帧闪烁盲审 + trace/receipt
-  -> QuickSR 无稳定明显优势：STOPPED；Anime4K 转为实时主线
+需要同时采集：
 
-M3A 诊断检查点（360p→720p，不是产品完成声明）
-  -> 只用于定位 readback、QNN、pack、GL upload、队列和 thermal 的占比
+1. app inference/postprocess/GL 三条 lane 的 frameId/PTS 时间戳；
+2. Perfetto sched/freq、RenderThread、GPU fence；
+3. BufferQueue 和 SurfaceFlinger FrameTimeline；
+4. 失败帧前后约 1～2 秒的小窗口。
 
-条件性 P1D（为关闭 1080p 原片帧率硬门）
-  -> D1：同权重 uint8 NHWC RGB 图输出 + RGB8 texture，先验 QNN 全图 placement/parity
-  -> 固定片源、tuning、队列和 cadence 做 ABBA；两次 B 均过 23.976 fps 才保留
-  -> D2：D1 仍失败时只测 native ORT/QNN shared allocator，不与其他变量混测
-  -> D3：QNN caller 仍跨预算时，比较同权重 ncnn/Vulkan GPU-resident 路线
-  -> temporal batch、空间 batch 和 Java direct buffer 不进入当前主线
+输出必须把同一 frameId 分到以下一类：result-ready 晚、GL-submit/fence 晚、latch 错过、
+或系统调度/降频。只要不能关联，就保持 `INCONCLUSIVE`，不写根因。
 
-条件性后续
-  |-- SESR-M5：只在权利边界允许时做导出、CPU ORT、QNN parity
-  `-- ANVIL：只在仍明确需要手机 VFI 时建立 H.264 MV + SM8550/V73 专项
-```
+### P2：只实现 P1 指向的一条路径
 
-### 当前主要矛盾与优化判据
+- result-ready 晚：检查线程优先级/deadline 与最后一次 CPU pack；若必须跨域，做最小
+  AHardwareBuffer/shared-memory proof。
+- GL/fence 晚：尝试 EGLImage/AHardwareBuffer texture-resident 输出，目标是消掉 RGBA8 回传上传。
+- Media3 内部队列晚：在隔离 worktree 中做 queue capacity 单变量本地 fork。
+- OS 抢占/降频：固定性能与 thermal 证据；若仍不稳定，停止这台设备上的 QuickSR 实时路线。
 
-**项目级主要矛盾是 QuickSR 的 1080p 路径不能保证原片帧率。** 当前最好 overlap 代理
-17.960 fps 对 23.976 fps 片源已经失败，而且这还不是最终屏幕显示证据。只要这一门失败，
-QuickSR 无论单帧看起来多好都不能作为实时播放器方案；720p、SESR、VFI、AAR 和广泛画质
-研究全部后移。造成当前失败的主要工程嫌疑之一，是全帧 float32 NCHW 在 GL、CPU、ORT/QNN
-和 RGBA 显示域之间往返。其含义不是一条抽象的模型术语，而是每帧至少经历以下数据域变化：
+### P3：重跑唯一验收
 
-```text
-GL texture（GPU 上的 RGBA 图像）
-  -> readback 到 CPU 的 RGBA8
-  -> CPU 拆成 float32 NCHW：[1, 3, H, W]
-  -> ORT/QNN 交给 HTP 执行
-  -> CPU 取得 float32 NCHW 输出
-  -> CPU clamp/交错打包回 RGBA8
-  -> upload 回 GL texture 显示
-```
+实现后只跑：原画 A1 → QNN B1 → QNN B2 → 原画 A2。QNN 两轮均满足平均 cadence、无
+`>1.5` 或 `<0.5` 源帧间隔、drop/bypass 0，才进入有音轨 A/V sync 与 10～30 分钟 thermal。
 
-`float32` 表示每个 R/G/B 数值占 4 bytes；`NCHW` 表示批次、通道、高、宽，RGB 不再是
-逐像素交错，而是三个连续平面。以当前 `640×360 → 1920×1080` 为例，输入 RGBA8 约
-0.88 MiB，输入 NCHW 约 2.64 MiB，输出 NCHW 约 23.73 MiB，输出 RGBA8 约 7.91 MiB。
-四种显式表示即使每帧只各读写一次，24 fps 也已对应约 844 MiB/s 的数据流量，尚未计入
-驱动、QNN 内部复制、CRC/finite 扫描、同步等待和 GL upload 的额外流量。shared allocator
-可能减少其中一部分交接，但在 trace 证明前不能称为 GL→QNN→GL 零拷贝。
+### P4：画质，再决定模型路线
 
-- 24 fps 单帧预算为 41.67 ms；既有 Java 基线的 QNN caller p50 约 44.7 ms，单项已接近或
-  超过预算；
-- Java output-pack p50 约 36.6 ms，约占一帧预算的 88%；SERIAL 把两项串联后只有
-  11.855 fps；
-- overlap 把 1080p 提高到 17.960 fps，却增加 23.73 MiB 输出张量并把 total p95 从
-  536.44 ms 推高到 625.37 ms；
-- native/NEON packer 已从数据上否决，不能再次作为默认化候选；Media3 固定 effect 缓冲、
-  GPU completion 和最终 latch 仍未被分离测量。
-- 新增主机/模拟器探针表明：图边界直接输出 RGB8 可把 23.73 MiB float 输出降到 5.93 MiB
-  且逐值一致；RGB8 GLES 合同通过。temporal batch 的方向收益只有 4.2%～16.9%，空间 batch
-  约为 -2.3%～+0.7%，均不足以单独关闭 33.5% 吞吐缺口；Java 逐元素 direct buffer 路线停止。
+帧率门通过后，用同源同帧 1080p 比较 Lanczos、Anime4K 与 QuickSR。QuickSR 若没有稳定
+明显优势，停止当前模型，转向 Anime4K 或 SESR-M5/轻量动漫模型。之后才评估 cadence 与 VFI。
 
-这里还有一个指标矛盾：当前 validator 用单个 `performance_class` 同时要求 observed FPS 达标
-和 `effectTotalToOutputSubmitProxyNs` p95 小于一帧，再把其余情况统一写成 `offline`。但项目使用
-的 [Media3 1.11.0 `ByteBufferGlEffect`](https://github.com/androidx/media/blob/1.11.0/libraries/effect/src/main/java/androidx/media3/effect/ByteBufferGlEffect.java)
-固定 `queueSize=6`、pending pixel-buffer queue 为 1，公开构造器只接收 `Processor`。所以
-“流式吞吐跟得上”与“单帧排队/显示延迟小于 41.67 ms”是两条不同的轴；不能放宽现有严格
-门禁，但应新增 `throughput_class`、`effect_latency_class` 和 `final_display_status`，保留旧
-`performance_class` 只做兼容。否则优化可能只是降低队列积压，却被错误归因到 kernel，或
-吞吐接近 24 fps 仍被一个含混的 `offline` 标签遮蔽。
+## 6. 会话与 worktree 安排
 
-下一轮直接补只读性能测量/验收：以 1080p 为产品裁决档、720p 为诊断对照档，分离
-readback-ready proxy、preprocess、QNN caller、tensor copy、pack、GL submit、GPU completion
-与最终显示，并绑定真实输出。只有结果明确后才从以下方向选择一个：
+当前不需要再开多个实现会话：根因还没被 trace 分开，多会话只会同时猜参数和争用真机。
 
-1. 若 float 输出和布局转换主导，先验证 W8A8/uint8 或直接显示友好布局，避免再优化同一
-   float NCHW→RGBA 循环；
-2. 若跨 ORT/QNN 边界的复制/同步主导，再单独评估 shared allocator 或 native I/O；
-3. 若 Media3 effect 缓冲或 GL 往返主导，再建立 texture-resident/更低缓冲路径的独立实验；
-4. 若 QNN caller 本身仍越过预算，则降低 workload 或比较 SESR-M5，而不是靠并行队列掩盖。
+下一阶段按以下规则拆：
 
-候选必须沿用现有 fail-closed ABBA：两个 B 回合都达到预先冻结的吞吐目标；单帧 effect
-延迟和最终显示另列，不能恶化对应 A 的尾延迟；CRC/PTS/generation/lifecycle 必须无回归，
-并报告额外 PSS。任何一项失败都保留为负结果，不与 overlap、cadence 或新模型混测。
+1. 当前主线先完成只读 trace 归因；真机一次只允许一个设备 owner。
+2. 若 trace 指向 Media3 queue 或 AHardwareBuffer，才创建一个隔离 worktree 做对应实现；另一会话
+   只读审查 trace/论文，不运行设备。
+3. 模拟器硬件无关测试固定使用独立 `QuickSR_Isolated_API_35`；不使用其他任务的 emulator。
+4. QNN/SurfaceFlinger 结论只来自显式序列号绑定的物理机；模拟器结果不能混入。
+5. 子任务完成只回报证据与 patch，不自动等于合入、默认启用或发布。
+6. 不 push；发布仍需单独授权。
 
-立即执行包按以下三步：
+## 7. 已完成验证与证据边界
 
-1. 物理 Qualcomm 设备出现后先复现 OVERLAP 基线，再让同权重 `uint8 NHWC RGB` 图通过
-   QNN 编译、placement、CPU/QNN parity，并接 `GL_RGB8` texture 做固定片源 ABBA；
-2. 若仍低于原片 cadence，依次且一次只测 shared allocator/native I/O、同权重 GPU-resident
-   runtime、profile 支持下的双 QNN graph；合理候选均失败则将 QuickSR 实时路线标记为
-   `STOPPED`；
-3. 同步补 `throughput_class`、`effect_latency_class`、`final_display_status`，但不以遥测字段
-   替代实际速度；只有 1080p 原片帧率门通过后，才接真实 Android/offscreen GL 同帧输出并执行
-   Lanczos/Anime4K/QuickSR 画质盲审。
+- Python：54 项 PASS；
+- Gradle unit、lint、debug APK、androidTest APK：PASS；
+- 最终默认 APK SHA-256：
+  `deb5ef03ce97588625232d56e585b2abdd3810e903db2da38df495b6293260c8`；
+- 物理机 instrumentation：10 项登记，其中 8 项执行 PASS，2 项因未提供可选实验模型按假设跳过；
+- QNN strict：HTP 配置与 CPU EP fallback 禁用已确认，per-node placement trace 未取得；
+- SurfaceFlinger 是 actual-present 代理，不是光子时序；测试片源无音轨，A/V sync 未测；
+- 证据只限一台物理机、当前 APK 与冻结片源，不外推到所有手机/动漫。
 
-### P0：RIFE v4.25-lite 真机裁决（已完成）
-
-唯一已授权的 arm64 物理设备确认为 Android 16 / SM8550 / Adreno 740。矩阵使用
-`160x90`、`256x144`、`320x180` 三档和真实 128 像素 padding，延迟进程与内存采样进程
-分离。输入、manifest、prefilter、设备侧 hash、完整 task timing 和两次输出一致性均通过。
-
-| 档位 | v4.25-lite median / max | 相对 v4.6 median | PSS 变化 | 合成质量方向 |
-| --- | ---: | ---: | ---: | --- |
-| 160x90 | 53.614 / 64.132 ms | +77.2% | +1.6% | 三项均退步 |
-| 256x144 | 36.933 / 47.775 ms | -18.7% | +1.0% | 三项均退步 |
-| 320x180 | 55.716 / 58.820 ms | +56.0% | +1.8% | 三项均改善 |
-
-裁决为 `STOPPED`：一档速度收益不足以抵消另两档大幅回归、全档 PSS 增长和混合质量结果；
-而且没有一档保有完整播放器余量。结果详见
-[RIFE v4.25-lite 新版运行时探针](ANIME_VFI_RIFE_V425_LITE_PROBE.md)。
-
-### P1A：QuickSR native direct packer（已完成）
-
-以默认 SERIAL 1080p 为基线，只替换 float NCHW 到可上传 RGBA direct buffer 的 pack/copy
-实现；模型、QNN tuning、队列、输入片源、cadence 和 profile 全部固定。先做 Java/native
-逐帧 hash 与边界尺寸测试，再做至少 ABBA 真机比较。重点看 output-pack p50/p95、总计、
-吞吐、PSS、drop/bypass、generation/seek 和释放行为。
-
-ABBA 已完成。244 次可对齐跨路径重复没有输出 CRC 冲突，覆盖 180 帧周期中的 70 个不同
-identity；B1/B2 的确定性 Java/native 启动自检均为 PASS。功能门禁、队列、drop/bypass 和
-生命周期通过；修正 runner 后的 3 项真机 instrumentation 也全部通过，范围仅为 packer
-数值一致性、边界映射与缓冲区 ownership。平均 FPS 仍下降 42.94%，pack p50 增长 179.91%，
-因此保留 Java 默认。
-结果见 [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)。
-
-### P1B：代表性画质与 cadence 安全性
-
-Anime4K 不再依赖 OEM 截图或 UI 位置。应从确定的 effect 输出或受控离屏 GL fixture 获取
-同帧，和固定 mpv/上游参考比较 clean、blur/JPEG、线稿、字幕边缘，再进行盲审。
-
-cadence 需要增加一拍一/二/三混合、慢速平移、嘴型、粒子、硬切、淡入淡出、高/低对比字幕
-夹具，检查错误复用率、漏复用率、PTS、reference identity 和人工节奏感。已通过的 BBB
-15→24 重复映射只证明当前片源上的 hold 判断，不能代替动漫语义质量。
-
-主机侧夹具和 fail-closed declared-oracle evaluator 已完成：两种既有退化下生成上述序列，
-从版本控制源码重建 canonical contract，并比较提交声明/文件中的同帧 hash、复用、PTS、
-reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这些字段来自 submission
-自报，不能当作真实 analyzer 错误/遗漏复用率；真实运行仍需可重放逐帧 trace、receipt 与执行
-身份联合绑定。本轮没有执行 mpv、Android/GL 或真机输出，也没有人工盲审，因此 P1B 视觉
-门禁仍未关闭；详见 [主机画质门禁](ANIME_VISUAL_QUALITY_GATES.md)。
-
-### P2：模型和 VFI 的条件性路线
-
-- **SESR-M5**：先在忽略目录完成固定 640x360->1280x720 导出，比较 source/CPU ORT/QNN
-  tensor；DIV2K 学术研究边界和 APK/模型分发仍由人工审核。未过 parity 前不改 App。
-- **Anime4K Medium**：只有 Small 的盲审显示明确不足且 GPU budget 有余量才比较；不能仅因
-  pass 更多就视为更好。
-- **ANVIL**：不能塞进现有 PNG pair runner。若启动，必须拥有真实 H.264 motion-vector
-  side data、SM8550/V73 QNN Stub/Skel/context、Vulkan/QNN 生命周期和播放器级 A/V 合同。
-- **播放器 VFI**：RIFE/IFRNet CLI 成功不是集成许可。至少需要代表性动漫时序质量、可分发
-  权重、真实播放器余量、seek/flush、A/V sync、最终显示和 10～30 分钟热稳，才允许创建。
-
-## 6. 会话与工作树安排
-
-当前 `main` 已包含这轮有价值的实现和报告；旧实验工作树仍存在，但不是继续开发的权威基线，
-也不在本计划中自动删除。新工作应从当时最新且干净的 `main` 创建，不从旧工作树叠加。
-
-1. **P0 已在主线完成，不继续 RIFE v4.25-lite 集成。** 既有离线 runner 和负结果保留，
-   避免后续会话重复探测同一候选。
-2. 两个互不重叠的工作树已经执行：`visual-quality-gates` 经审查修正三项 P1 后已合入
-   `main`；`native-output-packer` 已完成真机 ABBA、负性能裁决和设备测试。主线复核后保留
-   Java 默认，native 只作为显式、默认关闭的可审计实验路径。
-3. SESR 或 ANVIL 一次只启动一个。二者会引入新的 runtime、模型和许可证据，不与播放器
-   热路径实验混在同一分支。
-4. 各任务完成后先回报结果，再由主线审查 patch equivalence、测试、证据边界和 source-only
-   gate。工作树完成不自动等于合入、默认启用或发布。
-5. 不自动 push；远端仍落后于本地 `main`，发布需要单独授权。
-
-## 7. 本次盘点验证
-
-- `:app:testDebugUnitTest`：108/108 PASS；`lintDebug`、`assembleDebugAndroidTest` 和
-  `assembleDebug` PASS；
-- 新开的 `Medium_Phone_API_35` x86_64 独立 AVD 完整 instrumentation 为 7/7 PASS，覆盖既有
-  native packer 测试、新增 output-pack 候选、alpha-map 专项 ABBA 以及 GLES3 RGB8 texture
-  合同；所有最终命令显式绑定新 serial，没有继续占用此前正在工作的 AVD；
-- 0.15.0 x86_64 debug APK 在独立 AVD cold launch，并以生成的 640x360@23.976 H.264 实际走通
-  Media3→QuickSR CPU→GL 的 serial A1 / overlap B / serial A2：9.699 / 8.699 / 6.451 fps。
-  A2 未恢复 A1，且 ORT/pack 同步大幅漂移，因此模拟器流水线性能裁决为 **不确定**；它只证明
-  接线、队列上界和释放路径。A2 的 drop 在 accepted=209 后随循环片源 flush/generation 切换及
-  Activity 销毁出现，不能归因于稳定推理；
-- 三个 ONNX 主机探针均 PASS：显示友好 u8 输出逐值零失配，temporal batch=2 零误差，
-  4-pixel halo 空间分块拼接零误差；生成模型只保留在忽略的 `build/experiments/`；
-- 早一轮记录的五组 Python 116/116 仍是历史回归证据，本轮没有把它伪写成重跑；本轮新增
-  Python 脚本已执行且通过 `py_compile`，当前 source-only publication scan 211 项 PASS；
-- 当前 `adb devices -l` 只有 x86_64 AVD，没有物理 Qualcomm 设备。因此新增数据不能证明
-  QNN HTP 吞吐、功耗、热稳或最终显示；历史 RIFE/packer 真机证据仍保留但不外推；
-- 机器可读探针摘要已经去设备标识。原始模型产物、设备日志和本地路径不进入发布集合。
-
-## 8. 计划更新规则
-
-每完成一个阶段，只更新四件事：状态标签、实际证据、裁决和下一依赖。不得用“代码已写”、
-“shader 编译”或“CLI 能启动”替换真机执行、最终显示、画质、许可或长时热稳。负结果和停止
-路线保留在表中，避免后续会话重复走同一条路。
+机器可读摘要：
+[realtime-1080p-physical-20260905.json](evidence/realtime-1080p-physical-20260905.json)。

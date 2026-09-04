@@ -10,14 +10,19 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
 
 final class QuickSrSession implements AutoCloseable {
+    private static final int MAX_OUTPUT_SLOT_COUNT = 2;
+
     enum Mode {
         QNN_HTP("QNN HTP · QuickSRNet"),
         CPU("CPU · QuickSRNet");
@@ -81,6 +86,50 @@ final class QuickSrSession implements AutoCloseable {
         }
     }
 
+    private static final class OutputSlot {
+        final OnnxTensor tensor;
+        final FloatBuffer buffer;
+        final Map<String, OnnxTensor> outputMap;
+
+        OutputSlot(ModelVariant modelVariant, OnnxTensor tensor, FloatBuffer buffer) {
+            this.tensor = tensor;
+            this.buffer = buffer;
+            this.outputMap = Collections.singletonMap(modelVariant.outputName(), tensor);
+        }
+    }
+
+    /**
+     * Owns one pinned ORT output slot until the postprocess stage has copied it. The lease is
+     * deliberately package-private so the video pipeline can move only the bulk copy, never ORT
+     * execution, onto its second worker.
+     */
+    final class DeferredOutput implements AutoCloseable {
+        private OutputSlot slot;
+
+        private DeferredOutput(OutputSlot slot) {
+            this.slot = slot;
+        }
+
+        synchronized long copyTo(float[] output) {
+            if (slot == null) {
+                throw new IllegalStateException("QuickSR deferred output slot is already closed");
+            }
+            return copyOutput(slot, output);
+        }
+
+        @Override
+        public void close() {
+            OutputSlot owned;
+            synchronized (this) {
+                owned = slot;
+                slot = null;
+            }
+            if (owned != null) {
+                releaseOutputSlot(owned);
+            }
+        }
+    }
+
     private static final String INPUT_NAME = "image";
 
     private final Mode mode;
@@ -90,9 +139,8 @@ final class QuickSrSession implements AutoCloseable {
     private final OnnxTensor inputTensor;
     private final FloatBuffer inputBuffer;
     private final Map<String, OnnxTensor> inputMap;
-    private final OnnxTensor outputTensor;
-    private final FloatBuffer outputBuffer;
-    private final Map<String, OnnxTensor> outputMap;
+    private final OutputSlot[] outputSlots;
+    private final ArrayBlockingQueue<OutputSlot> availableOutputSlots;
     private final OrtSession.RunOptions runOptions;
     private final Tuning tuning;
     private final QnnPluginRuntime.Registration qnnRegistration;
@@ -108,8 +156,7 @@ final class QuickSrSession implements AutoCloseable {
             OrtSession session,
             OnnxTensor inputTensor,
             FloatBuffer inputBuffer,
-            OnnxTensor outputTensor,
-            FloatBuffer outputBuffer,
+            List<OutputSlot> outputSlots,
             OrtSession.RunOptions runOptions,
             Tuning tuning,
             QnnPluginRuntime.Registration qnnRegistration) {
@@ -120,9 +167,9 @@ final class QuickSrSession implements AutoCloseable {
         this.inputTensor = inputTensor;
         this.inputBuffer = inputBuffer;
         this.inputMap = Collections.singletonMap(INPUT_NAME, inputTensor);
-        this.outputTensor = outputTensor;
-        this.outputBuffer = outputBuffer;
-        this.outputMap = Collections.singletonMap(modelVariant.outputName(), outputTensor);
+        this.outputSlots = outputSlots.toArray(new OutputSlot[0]);
+        this.availableOutputSlots = new ArrayBlockingQueue<>(this.outputSlots.length, true);
+        this.availableOutputSlots.addAll(outputSlots);
         this.runOptions = runOptions;
         this.tuning = tuning;
         this.qnnRegistration = qnnRegistration;
@@ -148,6 +195,21 @@ final class QuickSrSession implements AutoCloseable {
             String runId,
             ModelVariant modelVariant,
             Tuning tuning) throws Exception {
+        return open(context, mode, runId, modelVariant, tuning, 1);
+    }
+
+    static QuickSrSession open(
+            Context context,
+            Mode mode,
+            String runId,
+            ModelVariant modelVariant,
+            Tuning tuning,
+            int outputSlotCount) throws Exception {
+        if (outputSlotCount < 1 || outputSlotCount > MAX_OUTPUT_SLOT_COUNT) {
+            throw new IllegalArgumentException(
+                    "QuickSR output slot count must be between 1 and "
+                            + MAX_OUTPUT_SLOT_COUNT);
+        }
         Context appContext = context.getApplicationContext();
         if (modelVariant.requiresCrdPixelShuffle()) {
             throw new IllegalArgumentException(
@@ -156,10 +218,17 @@ final class QuickSrSession implements AutoCloseable {
         }
         long[] inputShape = modelVariant.sessionInputShape();
         long[] outputShape = modelVariant.sessionOutputShape();
-        if (inputShape[0] != 1 || inputShape[1] != 3
-                || outputShape[0] != 1 || outputShape[1] != 3) {
+        boolean outputIsRgb = outputShape.length == 4
+                && outputShape[0] == 1
+                && (modelVariant.outputNhwc()
+                        ? outputShape[3] == 3
+                        : outputShape[1] == 3);
+        if (inputShape.length != 4
+                || inputShape[0] != 1
+                || inputShape[1] != 3
+                || !outputIsRgb) {
             throw new IllegalArgumentException(
-                    "QuickSrSession requires NCHW RGB input and output tensors");
+                    "QuickSrSession requires NCHW RGB input and NCHW/NHWC RGB output tensors");
         }
         JSONObject qnnEvidence = new JSONObject();
         if (mode == Mode.QNN_HTP) {
@@ -180,7 +249,7 @@ final class QuickSrSession implements AutoCloseable {
         QnnPluginRuntime.Registration registration = null;
         OrtSession session = null;
         OnnxTensor inputTensor = null;
-        OnnxTensor outputTensor = null;
+        List<OutputSlot> outputSlots = new ArrayList<>(outputSlotCount);
         OrtSession.RunOptions runOptions = null;
         try {
             options = new OrtSession.SessionOptions();
@@ -208,14 +277,17 @@ final class QuickSrSession implements AutoCloseable {
                     environment,
                     inputBuffer,
                     inputShape);
-            FloatBuffer outputBuffer = ByteBuffer.allocateDirect(
-                            modelVariant.outputValueCount() * Float.BYTES)
-                    .order(ByteOrder.nativeOrder())
-                    .asFloatBuffer();
-            outputTensor = OnnxTensor.createTensor(
-                    environment,
-                    outputBuffer,
-                    outputShape);
+            for (int slotIndex = 0; slotIndex < outputSlotCount; slotIndex++) {
+                FloatBuffer outputBuffer = ByteBuffer.allocateDirect(
+                                modelVariant.outputValueCount() * Float.BYTES)
+                        .order(ByteOrder.nativeOrder())
+                        .asFloatBuffer();
+                OnnxTensor outputTensor = OnnxTensor.createTensor(
+                        environment,
+                        outputBuffer,
+                        outputShape);
+                outputSlots.add(new OutputSlot(modelVariant, outputTensor, outputBuffer));
+            }
             if (mode == Mode.QNN_HTP && tuning.usesRunOptions()) {
                 runOptions = new OrtSession.RunOptions();
                 tuning.configure(runOptions);
@@ -227,17 +299,16 @@ final class QuickSrSession implements AutoCloseable {
                     session,
                     inputTensor,
                     inputBuffer,
-                    outputTensor,
-                    outputBuffer,
+                    outputSlots,
                     runOptions,
                     tuning,
                     registration);
         } catch (Throwable failure) {
-            Throwable combined = closeAll(
+            Throwable combined = closeSessionResources(
                     failure,
                     session,
                     inputTensor,
-                    outputTensor,
+                    outputSlots,
                     runOptions,
                     options,
                     registration);
@@ -250,16 +321,113 @@ final class QuickSrSession implements AutoCloseable {
     }
 
     void infer(float[] input, float[] output, RunTimings timings) throws Exception {
+        validateBuffers(input, output);
+        OutputSlot slot = acquireOutputSlot();
+        try {
+            runIntoSlot(input, slot, timings);
+            long outputCopyNs = copyOutput(slot, output);
+            if (timings != null) {
+                timings.outputCopyNs = outputCopyNs;
+            }
+            long outputCopiedNs = System.nanoTime();
+
+            // A full 1080p tensor contains more than six million floats. Scanning it on the
+            // inference thread every 120 frames introduced a reproducible 330-350 ms stall roughly
+            // every five seconds at 24 fps. The first successful output still gets a complete
+            // fail-closed validation, which catches model/runtime/layout failures before the
+            // session is considered usable, without putting a diagnostic sweep in steady state.
+            boolean validateFinite = shouldValidateFiniteOutput(runCount);
+            if (validateFinite) {
+                for (float value : output) {
+                    if (!Float.isFinite(value)) {
+                        throw new IllegalStateException(
+                                "QuickSR output contains a non-finite value");
+                    }
+                }
+                if (timings != null) {
+                    timings.finiteScanExecuted = true;
+                    timings.finiteScanNs = System.nanoTime() - outputCopiedNs;
+                }
+            }
+            runCount++;
+        } finally {
+            releaseOutputSlot(slot);
+        }
+    }
+
+    DeferredOutput inferDeferred(float[] input, RunTimings timings) throws Exception {
+        if (!canDeferOutputCopy(runCount, outputSlots.length)) {
+            throw new IllegalStateException(
+                    "QuickSR deferred output requires a validated first run and two output slots");
+        }
+        validateInput(input);
+        OutputSlot slot = acquireOutputSlot();
+        boolean ownershipTransferred = false;
+        try {
+            runIntoSlot(input, slot, timings);
+            runCount++;
+            DeferredOutput output = new DeferredOutput(slot);
+            ownershipTransferred = true;
+            return output;
+        } finally {
+            if (!ownershipTransferred) {
+                releaseOutputSlot(slot);
+            }
+        }
+    }
+
+    static boolean shouldValidateFiniteOutput(int completedRunCount) {
+        if (completedRunCount < 0) {
+            throw new IllegalArgumentException("completed run count must not be negative");
+        }
+        return completedRunCount == 0;
+    }
+
+    static boolean canDeferOutputCopy(int completedRunCount, int outputSlotCount) {
+        if (completedRunCount < 0) {
+            throw new IllegalArgumentException("completed run count must not be negative");
+        }
+        if (outputSlotCount < 1 || outputSlotCount > MAX_OUTPUT_SLOT_COUNT) {
+            throw new IllegalArgumentException("output slot count is out of range");
+        }
+        return completedRunCount > 0 && outputSlotCount >= 2;
+    }
+
+    int outputSlotCount() {
+        return outputSlots.length;
+    }
+
+    private void validateInput(float[] input) {
         if (closed) {
             throw new IllegalStateException("QuickSR session is closed");
         }
-        if (input.length != inputValues || output.length != outputValues) {
+        if (input.length != inputValues) {
             throw new IllegalArgumentException(
-                    "QuickSR buffer length mismatch for " + modelVariant.id()
-                            + ": expected " + inputValues + " input and " + outputValues
-                            + " output values, observed " + input.length + " and "
-                            + output.length);
+                    "QuickSR input length mismatch for " + modelVariant.id()
+                            + ": expected " + inputValues + ", observed " + input.length);
         }
+    }
+
+    private void validateBuffers(float[] input, float[] output) {
+        validateInput(input);
+        if (output.length != outputValues) {
+            throw new IllegalArgumentException(
+                    "QuickSR output length mismatch for " + modelVariant.id()
+                            + ": expected " + outputValues + ", observed " + output.length);
+        }
+    }
+
+    private OutputSlot acquireOutputSlot() throws InterruptedException {
+        return availableOutputSlots.take();
+    }
+
+    private void releaseOutputSlot(OutputSlot slot) {
+        if (!availableOutputSlots.offer(slot)) {
+            throw new IllegalStateException("QuickSR output slot was returned more than once");
+        }
+    }
+
+    private void runIntoSlot(float[] input, OutputSlot slot, RunTimings timings) throws Exception {
         if (timings != null) {
             timings.reset();
         }
@@ -272,48 +440,39 @@ final class QuickSrSession implements AutoCloseable {
             timings.inputCopyNs = inputCopiedNs - startedNs;
         }
 
-        outputBuffer.clear();
+        slot.buffer.clear();
         if (runOptions == null) {
-            try (OrtSession.Result ignored = session.run(inputMap, outputMap)) {
+            try (OrtSession.Result ignored = session.run(inputMap, slot.outputMap)) {
                 // The result does not own the pinned output tensor.
             }
         } else {
             try (OrtSession.Result ignored = session.run(
                     inputMap,
                     Collections.emptySet(),
-                    outputMap,
+                    slot.outputMap,
                     runOptions)) {
                 // The result does not own the pinned output tensor.
             }
         }
-        long runFinishedNs = System.nanoTime();
         if (timings != null) {
-            timings.ortRunNs = runFinishedNs - inputCopiedNs;
+            timings.ortRunNs = System.nanoTime() - inputCopiedNs;
         }
-        FloatBuffer copy = outputBuffer.duplicate();
+    }
+
+    private long copyOutput(OutputSlot slot, float[] output) {
+        if (output.length != outputValues) {
+            throw new IllegalArgumentException(
+                    "QuickSR output length mismatch for " + modelVariant.id()
+                            + ": expected " + outputValues + ", observed " + output.length);
+        }
+        long startedNs = System.nanoTime();
+        FloatBuffer copy = slot.buffer.duplicate();
         copy.rewind();
         if (copy.remaining() != outputValues) {
             throw new IllegalStateException("QuickSR pinned output element count changed");
         }
         copy.get(output);
-        long outputCopiedNs = System.nanoTime();
-        if (timings != null) {
-            timings.outputCopyNs = outputCopiedNs - runFinishedNs;
-        }
-
-        boolean validateFinite = runCount == 0 || runCount % 120 == 0;
-        if (validateFinite) {
-            for (float value : output) {
-                if (!Float.isFinite(value)) {
-                    throw new IllegalStateException("QuickSR output contains a non-finite value");
-                }
-            }
-            if (timings != null) {
-                timings.finiteScanExecuted = true;
-                timings.finiteScanNs = System.nanoTime() - outputCopiedNs;
-            }
-        }
-        runCount++;
+        return System.nanoTime() - startedNs;
     }
 
     int runCount() {
@@ -365,11 +524,28 @@ final class QuickSrSession implements AutoCloseable {
             return;
         }
         closed = true;
-        Throwable failure = closeAll(
-                null,
+        boolean interrupted = false;
+        for (int slotIndex = 0; slotIndex < outputSlots.length; slotIndex++) {
+            while (true) {
+                try {
+                    availableOutputSlots.take();
+                    break;
+                } catch (InterruptedException failure) {
+                    interrupted = true;
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        Throwable failure = closeSessionResources(
+                interrupted
+                        ? new InterruptedException(
+                                "Interrupted while waiting for QuickSR output leases")
+                        : null,
                 session,
                 inputTensor,
-                outputTensor,
+                java.util.Arrays.asList(outputSlots),
                 runOptions,
                 options,
                 qnnRegistration);
@@ -391,6 +567,21 @@ final class QuickSrSession implements AutoCloseable {
             }
         }
         return combined;
+    }
+
+    private static Throwable closeSessionResources(
+            Throwable primary,
+            OrtSession session,
+            OnnxTensor inputTensor,
+            List<OutputSlot> outputSlots,
+            OrtSession.RunOptions runOptions,
+            OrtSession.SessionOptions options,
+            QnnPluginRuntime.Registration registration) {
+        Throwable combined = closeAll(primary, session, inputTensor);
+        for (OutputSlot slot : outputSlots) {
+            combined = closeAll(combined, slot.tensor);
+        }
+        return closeAll(combined, runOptions, options, registration);
     }
 
     private static Throwable append(Throwable current, Throwable next) {

@@ -3,6 +3,7 @@ package dev.aisystems.quicksrplayerlab;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 
+import android.os.Build;
 import android.util.Log;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -23,10 +24,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 /**
- * Correctness plus directional emulator timings for output-packing architecture candidates.
+ * Correctness plus directional device timings for output-packing architecture candidates.
  *
- * <p>The timings deliberately have no pass/fail threshold: an x86 emulator cannot predict the
- * target arm64 device's memory hierarchy or scheduling. Byte-for-byte equality is the test gate.
+ * <p>The timings deliberately have no pass/fail threshold: they are microbenchmarks, not
+ * end-to-end playback throughput. Byte-for-byte equality is the test gate.
  */
 @RunWith(AndroidJUnit4.class)
 public final class OutputPackingCandidateInstrumentedTest {
@@ -43,6 +44,7 @@ public final class OutputPackingCandidateInstrumentedTest {
     public void candidatesMatchCurrentJavaPathAt1080p() throws Exception {
         int outputPixels = OUTPUT_WIDTH * OUTPUT_HEIGHT;
         float[] tensor = deterministicTensor(outputPixels);
+        float[] nhwcTensor = toNhwc(tensor, outputPixels);
         FloatBuffer directTensor = ByteBuffer.allocateDirect(tensor.length * Float.BYTES)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer();
@@ -94,6 +96,36 @@ public final class OutputPackingCandidateInstrumentedTest {
                     alphaXOffsets,
                     alphaRowOffsets,
                     1,
+                    workers);
+            assertArrayEquals(expected, bytes(directRgba));
+            packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    1,
+                    workers);
+            assertArrayEquals(expected, bytes(directRgba));
+            packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    2,
+                    workers);
+            assertArrayEquals(expected, bytes(directRgba));
+            packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    4,
                     workers);
             assertArrayEquals(expected, bytes(directRgba));
             packMappedAlphaParallel(
@@ -153,6 +185,33 @@ public final class OutputPackingCandidateInstrumentedTest {
                     alphaRowOffsets,
                     4,
                     workers));
+            long nhwcMappedAlpha1Ns = benchmark(() -> packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    1,
+                    workers));
+            long nhwcMappedAlpha2Ns = benchmark(() -> packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    2,
+                    workers));
+            long nhwcMappedAlpha4Ns = benchmark(() -> packNhwcMappedAlpha(
+                    nhwcTensor,
+                    inputRgba,
+                    heapRgba,
+                    directRgba,
+                    alphaXOffsets,
+                    alphaRowOffsets,
+                    4,
+                    workers));
             long opaqueRgba1Ns = benchmark(() -> packOpaqueRgbaParallel(
                     tensor, heapRgba, directRgba, 1, workers));
             long opaqueRgba4Ns = benchmark(() -> packOpaqueRgbaParallel(
@@ -169,7 +228,7 @@ public final class OutputPackingCandidateInstrumentedTest {
                     workers);
             String outputCrc = QuickSrVideoEffect.crc32Hex(directRgba);
             assertEquals(QuickSrVideoEffect.crc32Hex(expected), outputCrc);
-            Log.i(TAG, "{\"scope\":\"x86_64_emulator_directional_not_arm64\""
+            Log.i(TAG, "{\"scope\":\"" + probeScope() + "\""
                     + ",\"output\":\"1920x1080\""
                     + ",\"iterations\":" + ITERATIONS
                     + ",\"currentHeapThenDirectP50Ms\":" + millis(currentNs)
@@ -187,6 +246,9 @@ public final class OutputPackingCandidateInstrumentedTest {
                     + ",\"directTensorHeap4P50Ms\":" + millis(directTensor4Ns)
                     + ",\"mappedAlphaHeap1P50Ms\":" + millis(mappedAlpha1Ns)
                     + ",\"mappedAlphaHeap4P50Ms\":" + millis(mappedAlpha4Ns)
+                    + ",\"nhwcMappedAlphaHeap1P50Ms\":" + millis(nhwcMappedAlpha1Ns)
+                    + ",\"nhwcMappedAlphaHeap2P50Ms\":" + millis(nhwcMappedAlpha2Ns)
+                    + ",\"nhwcMappedAlphaHeap4P50Ms\":" + millis(nhwcMappedAlpha4Ns)
                     + ",\"opaqueRgbaHeap1P50Ms\":" + millis(opaqueRgba1Ns)
                     + ",\"opaqueRgbaHeap4P50Ms\":" + millis(opaqueRgba4Ns)
                     + ",\"crc32\":\"" + outputCrc + "\"}");
@@ -245,7 +307,7 @@ public final class OutputPackingCandidateInstrumentedTest {
             benchmarkSink = nonFinite;
         });
 
-        Log.i(TAG, "{\"scope\":\"x86_64_emulator_directional_not_arm64\""
+        Log.i(TAG, "{\"scope\":\"" + probeScope() + "\""
                 + ",\"probe\":\"full_frame_scan_costs\""
                 + ",\"preprocessP50Ms\":" + millis(preprocessNs)
                 + ",\"outputPackOnlyP50Ms\":" + millis(outputPackNs)
@@ -319,7 +381,7 @@ public final class OutputPackingCandidateInstrumentedTest {
             double mappedMeanNs = (mappedB1Ns + mappedB2Ns) / 2.0;
             double gainPercent = (legacyMeanNs / mappedMeanNs - 1.0) * 100.0;
 
-            Log.i(TAG, "{\"scope\":\"x86_64_emulator_directional_not_arm64\""
+            Log.i(TAG, "{\"scope\":\"" + probeScope() + "\""
                     + ",\"probe\":\"mapped_alpha_abba\""
                     + ",\"legacyA1P50Ms\":" + millis(legacyA1Ns)
                     + ",\"mappedB1P50Ms\":" + millis(mappedB1Ns)
@@ -331,6 +393,25 @@ public final class OutputPackingCandidateInstrumentedTest {
         } finally {
             unusedForSingleStripe.shutdownNow();
         }
+    }
+
+    private static String probeScope() {
+        String fingerprint = Build.FINGERPRINT == null ? "" : Build.FINGERPRINT;
+        String hardware = Build.HARDWARE == null ? "" : Build.HARDWARE;
+        String model = Build.MODEL == null ? "" : Build.MODEL;
+        boolean emulator = fingerprint.startsWith("generic")
+                || fingerprint.contains("emulator")
+                || hardware.contains("goldfish")
+                || hardware.contains("ranchu")
+                || model.contains("Emulator");
+        if (emulator) {
+            return "emulator_directional_microbenchmark";
+        }
+        boolean arm64 = Build.SUPPORTED_ABIS.length > 0
+                && "arm64-v8a".equals(Build.SUPPORTED_ABIS[0]);
+        return arm64
+                ? "physical_arm64_directional_microbenchmark"
+                : "physical_device_directional_microbenchmark";
     }
 
     private static float[] deterministicTensor(int outputPixels) {
@@ -354,6 +435,16 @@ public final class OutputPackingCandidateInstrumentedTest {
             System.arraycopy(boundaries, 0, output, plane * outputPixels, boundaries.length);
         }
         return output;
+    }
+
+    private static float[] toNhwc(float[] nchw, int outputPixels) {
+        float[] nhwc = new float[nchw.length];
+        for (int pixel = 0; pixel < outputPixels; pixel++) {
+            nhwc[pixel * 3] = nchw[pixel];
+            nhwc[pixel * 3 + 1] = nchw[outputPixels + pixel];
+            nhwc[pixel * 3 + 2] = nchw[outputPixels * 2 + pixel];
+        }
+        return nhwc;
     }
 
     private static byte[] deterministicInputRgba() {
@@ -481,6 +572,32 @@ public final class OutputPackingCandidateInstrumentedTest {
                     startY,
                     endY));
         }
+        directRgba.clear();
+        directRgba.put(heapRgba);
+        directRgba.flip();
+    }
+
+    private static void packNhwcMappedAlpha(
+            float[] tensor,
+            byte[] inputRgba,
+            byte[] heapRgba,
+            ByteBuffer directRgba,
+            int[] alphaXOffsets,
+            int[] alphaRowOffsets,
+            int stripes,
+            ExecutorService workers) throws Exception {
+        QuickSrVideoEffect.packNhwcToRgbaWithAlphaMapsParallel(
+                tensor,
+                inputRgba,
+                INPUT_WIDTH,
+                INPUT_HEIGHT,
+                OUTPUT_WIDTH,
+                OUTPUT_HEIGHT,
+                heapRgba,
+                alphaXOffsets,
+                alphaRowOffsets,
+                stripes,
+                workers);
         directRgba.clear();
         directRgba.put(heapRgba);
         directRgba.flip();

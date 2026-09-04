@@ -15,6 +15,9 @@ class ValidatorTests(unittest.TestCase):
         self.plan = {
             "plan_id": "test-plan",
             "warmup_frames": 1,
+            "expected_source_fps": 24.0,
+            "maximum_source_pts_interval_error_ratio": 0.005,
+            "minimum_source_cadence_ratio": 0.995,
             "performance_classes": {
                 "realtime_30": {"maximum_p95_total_ms": 33.33, "minimum_observed_fps": 28.5},
                 "realtime_24": {"maximum_p95_total_ms": 41.67, "minimum_observed_fps": 22.8},
@@ -33,6 +36,15 @@ class ValidatorTests(unittest.TestCase):
             "postprocessMode": "SERIAL", "postprocessQueueCapacity": 0,
             "outputTensorSlotCount": 1, "outputTensorBytesPerSlot": 24_883_200,
             "additionalOverlapTensorBytes": 0,
+            "deferredOutputCopy": False, "pinnedOrtOutputTensorSlotCount": 1,
+            "additionalPinnedOrtOutputBytes": 0,
+            "tensorOutputCopyMeasurement": "measured_inference_thread_bulk_copy",
+            "glUploadRoute": "DIRECT_MEDIA3_OUTPUT_TEXTURE",
+            "pboUpload": False, "glUploadPboSlotCount": 0,
+            "additionalGlUploadPboBytes": 0,
+            "glUploadMeasurement": (
+                "measured_cpu_gl_upload_and_optional_scale_blit_submission_not_gpu_completion"
+            ),
             "qnnRuntimeExpected": True, "modelInputWidth": 640, "modelInputHeight": 360,
             "modelOutputWidth": 1920, "modelOutputHeight": 1080,
             "canvasWidth": 1920, "canvasHeight": 1080,
@@ -52,6 +64,9 @@ class ValidatorTests(unittest.TestCase):
                 "selectedNpuDeviceCount": 1, "strictReady": True,
                 "providerAssignmentVerified": False, "providerFallbackTraceCaptured": False,
                 "evidenceScope": "SESSION_CONFIGURATION_NOT_PER_NODE_PLACEMENT_PROOF",
+                "deferredOutputCopy": False, "pinnedOrtOutputTensorSlotCount": 1,
+                "glUploadRoute": "DIRECT_MEDIA3_OUTPUT_TEXTURE",
+                "pboUpload": False, "glUploadPboSlotCount": 0,
             },
         }
         samples = []
@@ -110,10 +125,98 @@ class ValidatorTests(unittest.TestCase):
 
     def test_valid_qnn_run_passes_and_classifies_24fps(self):
         result = self.validate(self.events())
+        self.assertEqual("PASS", result["overall_gate"])
         self.assertEqual("PASS", result["functional_gate"])
-        self.assertEqual("effect_proxy_realtime_24", result["performance_class"])
+        self.assertEqual("effect_proxy_realtime_24_throughput", result["performance_class"])
+        self.assertEqual("PASS", result["source_cadence_gate"])
+        self.assertEqual("source_cadence_matched", result["source_cadence_class"])
+        self.assertEqual("PASS", result["source_pts_interval_gate"])
+        self.assertEqual("within_nominal_frame_interval", result["latency_class"])
         self.assertEqual("unmeasured", result["final_display_status"])
         self.assertIn("p99", result["metrics"]["outputPackNs"])
+
+    def test_valid_deferred_output_copy_contract_passes(self):
+        events = self.events()
+        config = events[0]
+        config.update({
+            "postprocessMode": "OVERLAP",
+            "postprocessQueueCapacity": 1,
+            "outputTensorSlotCount": 2,
+            "additionalOverlapTensorBytes": 24_883_200,
+            "outputTensorLayout": "NHWC",
+            "deferredOutputCopy": True,
+            "pinnedOrtOutputTensorSlotCount": 2,
+            "additionalPinnedOrtOutputBytes": 24_883_200,
+            "tensorOutputCopyMeasurement": "measured_postprocess_thread_bulk_copy",
+            "pboUpload": True,
+            "glUploadPboSlotCount": 2,
+            "additionalGlUploadPboBytes": 16_588_800,
+            "glUploadMeasurement": (
+                "measured_cpu_pbo_stage_and_gl_upload_submission_not_gpu_completion"
+            ),
+        })
+        events[1]["qnnStrict"].update({
+            "deferredOutputCopy": True,
+            "pinnedOrtOutputTensorSlotCount": 2,
+            "pboUpload": True,
+            "glUploadPboSlotCount": 2,
+        })
+        events[2]["postprocessMode"] = "OVERLAP"
+
+        result = self.validate(events)
+
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertTrue(result["deferred_output_copy"])
+
+    def test_deferred_output_copy_fails_without_nhwc_overlap(self):
+        events = self.events()
+        events[0].update({
+            "deferredOutputCopy": True,
+            "pinnedOrtOutputTensorSlotCount": 2,
+            "additionalPinnedOrtOutputBytes": 24_883_200,
+            "tensorOutputCopyMeasurement": "measured_postprocess_thread_bulk_copy",
+        })
+        events[1]["qnnStrict"].update({
+            "deferredOutputCopy": True,
+            "pinnedOrtOutputTensorSlotCount": 2,
+        })
+
+        result = self.validate(events)
+
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertIn(
+            "deferred output copy requires OVERLAP postprocess mode",
+            result["failures"],
+        )
+
+    def test_pipeline_latency_does_not_downgrade_matched_throughput(self):
+        events = self.events()
+        for sample in events[2]["samples"]:
+            sample["glUploadStartedNs"] += 200_000_000
+            sample["glUploadFinishedNs"] += 200_000_000
+            sample["outputSubmittedProxyNs"] += 200_000_000
+            sample["observedNs"] += 200_000_000
+
+        result = self.validate(events)
+
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertEqual("effect_proxy_realtime_24_throughput", result["performance_class"])
+        self.assertEqual("PASS", result["source_cadence_gate"])
+        self.assertEqual("pipelined_over_nominal_frame_interval", result["latency_class"])
+
+    def test_systematic_source_frame_skips_fail_the_frozen_source_cadence(self):
+        events = self.events()
+        for index, sample in enumerate(events[2]["samples"]):
+            sample["ptsUs"] = index * 83334
+
+        result = self.validate(events)
+
+        self.assertEqual("FAIL", result["overall_gate"])
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertEqual("FAIL", result["source_cadence_gate"])
+        self.assertEqual("source_pts_interval_mismatch", result["source_cadence_class"])
+        self.assertEqual("FAIL", result["source_pts_interval_gate"])
+        self.assertEqual("effect_proxy_below_source_cadence", result["performance_class"])
 
     def test_cadence_run_is_validated_but_never_uses_full_inference_realtime_class(self):
         events = self.events()

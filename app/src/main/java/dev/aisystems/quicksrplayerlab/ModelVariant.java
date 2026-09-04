@@ -57,6 +57,14 @@ enum ModelVariant {
             new long[]{1, 3, 360, 640},
             new long[]{1, 3, 1080, 1920},
             false),
+    FIXED640X360_3X_F32_NHWC(
+            "fixed640x360-3x-f32-nhwc",
+            BuildConfig.QUICKSR_DISPLAY_F32_NHWC_MODEL_FILE,
+            "upscaled_image__display_f32_nhwc",
+            new long[]{1, 3, 360, 640},
+            new long[]{1, 1080, 1920, 3},
+            false,
+            true),
     FIXED640X360_4X_FULL(
             "fixed640x360-4x-full",
             "quicksrnet-small-4x-fixed640x360.onnx",
@@ -78,6 +86,7 @@ enum ModelVariant {
     private final long[] sessionInputShape;
     private final long[] sessionOutputShape;
     private final boolean crdPixelShuffleRequired;
+    private final boolean outputNhwc;
 
     ModelVariant(
             String id,
@@ -86,12 +95,31 @@ enum ModelVariant {
             long[] sessionInputShape,
             long[] sessionOutputShape,
             boolean crdPixelShuffleRequired) {
+        this(
+                id,
+                asset,
+                outputName,
+                sessionInputShape,
+                sessionOutputShape,
+                crdPixelShuffleRequired,
+                false);
+    }
+
+    ModelVariant(
+            String id,
+            String asset,
+            String outputName,
+            long[] sessionInputShape,
+            long[] sessionOutputShape,
+            boolean crdPixelShuffleRequired,
+            boolean outputNhwc) {
         this.id = id;
         this.asset = asset;
         this.outputName = outputName;
         this.sessionInputShape = sessionInputShape.clone();
         this.sessionOutputShape = sessionOutputShape.clone();
         this.crdPixelShuffleRequired = crdPixelShuffleRequired;
+        this.outputNhwc = outputNhwc;
     }
 
     String id() {
@@ -131,11 +159,11 @@ enum ModelVariant {
     }
 
     int outputWidth() {
-        return spatialDimension(sessionOutputShape, 3, "output width");
+        return spatialDimension(sessionOutputShape, outputNhwc ? 2 : 3, "output width");
     }
 
     int outputHeight() {
-        return spatialDimension(sessionOutputShape, 2, "output height");
+        return spatialDimension(sessionOutputShape, outputNhwc ? 1 : 2, "output height");
     }
 
     int inputValueCount() {
@@ -148,6 +176,10 @@ enum ModelVariant {
 
     boolean requiresCrdPixelShuffle() {
         return crdPixelShuffleRequired;
+    }
+
+    boolean outputNhwc() {
+        return outputNhwc;
     }
 
     private static int squareSpatialSide(long[] shape, String tensorKind) {
@@ -196,6 +228,8 @@ enum ModelVariant {
                 return BuildConfig.DCR640X360_MODEL_BYTES;
             case FIXED640X360_3X_FULL:
                 return BuildConfig.FIXED640X360_3X_MODEL_BYTES;
+            case FIXED640X360_3X_F32_NHWC:
+                return BuildConfig.QUICKSR_DISPLAY_F32_NHWC_MODEL_BYTES;
             case FIXED640X360_4X_FULL:
                 return BuildConfig.FIXED640X360_4X_MODEL_BYTES;
             case FIXED512_DCR_FULL:
@@ -223,6 +257,8 @@ enum ModelVariant {
                 return BuildConfig.DCR640X360_MODEL_SHA256;
             case FIXED640X360_3X_FULL:
                 return BuildConfig.FIXED640X360_3X_MODEL_SHA256;
+            case FIXED640X360_3X_F32_NHWC:
+                return BuildConfig.QUICKSR_DISPLAY_F32_NHWC_MODEL_SHA256;
             case FIXED640X360_4X_FULL:
                 return BuildConfig.FIXED640X360_4X_MODEL_SHA256;
             case FIXED512_DCR_FULL:

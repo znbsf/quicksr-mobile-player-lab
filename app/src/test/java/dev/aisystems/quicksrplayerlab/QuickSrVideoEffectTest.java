@@ -181,7 +181,7 @@ public final class QuickSrVideoEffectTest {
     }
 
     @Test
-    public void mappedAlphaPackerMatchesLegacyForRectangularNonIntegerScale() {
+    public void mappedAlphaPackerMatchesLegacyForRectangularNonIntegerScale() throws Exception {
         int inputWidth = 4;
         int inputHeight = 3;
         int outputWidth = 7;
@@ -197,6 +197,14 @@ public final class QuickSrVideoEffectTest {
         }
         byte[] legacy = new byte[outputPixels * 4];
         byte[] mapped = new byte[outputPixels * 4];
+        byte[] mappedNhwc = new byte[outputPixels * 4];
+        byte[] mappedNhwcParallel = new byte[outputPixels * 4];
+        float[] nhwcOutput = new float[output.length];
+        for (int pixel = 0; pixel < outputPixels; pixel++) {
+            nhwcOutput[pixel * 3] = output[pixel];
+            nhwcOutput[pixel * 3 + 1] = output[outputPixels + pixel];
+            nhwcOutput[pixel * 3 + 2] = output[outputPixels * 2 + pixel];
+        }
 
         QuickSrVideoEffect.packNchwToRgba(
                 output,
@@ -217,8 +225,39 @@ public final class QuickSrVideoEffectTest {
                 QuickSrVideoEffect.createAlphaXOffsets(inputWidth, outputWidth),
                 QuickSrVideoEffect.createAlphaRowOffsets(
                         inputWidth, inputHeight, outputHeight));
+        QuickSrVideoEffect.packNhwcToRgbaWithAlphaMaps(
+                nhwcOutput,
+                inputRgba,
+                inputWidth,
+                inputHeight,
+                outputWidth,
+                outputHeight,
+                mappedNhwc,
+                QuickSrVideoEffect.createAlphaXOffsets(inputWidth, outputWidth),
+                QuickSrVideoEffect.createAlphaRowOffsets(
+                        inputWidth, inputHeight, outputHeight));
+        ExecutorService packWorkers = Executors.newFixedThreadPool(4);
+        try {
+            QuickSrVideoEffect.packNhwcToRgbaWithAlphaMapsParallel(
+                    nhwcOutput,
+                    inputRgba,
+                    inputWidth,
+                    inputHeight,
+                    outputWidth,
+                    outputHeight,
+                    mappedNhwcParallel,
+                    QuickSrVideoEffect.createAlphaXOffsets(inputWidth, outputWidth),
+                    QuickSrVideoEffect.createAlphaRowOffsets(
+                            inputWidth, inputHeight, outputHeight),
+                    4,
+                    packWorkers);
+        } finally {
+            packWorkers.shutdownNow();
+        }
 
         assertArrayEquals(legacy, mapped);
+        assertArrayEquals(legacy, mappedNhwc);
+        assertArrayEquals(legacy, mappedNhwcParallel);
     }
 
     @Test
@@ -702,6 +741,51 @@ public final class QuickSrVideoEffectTest {
         assertEquals(
                 24_883_200L,
                 QuickSrVideoEffect.additionalOverlapTensorBytes(
+                        QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                        true));
+        assertEquals(1, QuickSrVideoEffect.pinnedOrtOutputTensorSlotCount(false));
+        assertEquals(2, QuickSrVideoEffect.pinnedOrtOutputTensorSlotCount(true));
+        assertEquals(
+                24_883_200L,
+                QuickSrVideoEffect.additionalPinnedOrtOutputBytes(
+                        QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                        true));
+    }
+
+    @Test
+    public void deferredCopyIsRestrictedToSafeNhwcOverlapPath() {
+        assertTrue(QuickSrVideoEffect.shouldDeferOutputCopy(true, true, false, false, true));
+        assertFalse(QuickSrVideoEffect.shouldDeferOutputCopy(false, true, false, false, true));
+        assertFalse(QuickSrVideoEffect.shouldDeferOutputCopy(true, false, false, false, true));
+        assertFalse(QuickSrVideoEffect.shouldDeferOutputCopy(true, true, true, false, true));
+        assertFalse(QuickSrVideoEffect.shouldDeferOutputCopy(true, true, false, true, true));
+        assertFalse(QuickSrVideoEffect.shouldDeferOutputCopy(true, true, false, false, false));
+    }
+
+    @Test
+    public void sameSizeNeuralCanvasUploadsDirectlyToMedia3OutputTexture() {
+        assertTrue(QuickSrVideoEffect.usesDirectOutputTextureUpload(
+                QuickSrVideoEffect.Profile.FULL_1080P_3X));
+        assertEquals(
+                "DIRECT_MEDIA3_OUTPUT_TEXTURE",
+                QuickSrVideoEffect.glUploadRoute(
+                        QuickSrVideoEffect.Profile.FULL_1080P_3X));
+        assertFalse(QuickSrVideoEffect.usesDirectOutputTextureUpload(
+                QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X));
+        assertEquals(
+                "INTERMEDIATE_NEURAL_TEXTURE_THEN_SCALE_BLIT",
+                QuickSrVideoEffect.glUploadRoute(
+                        QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X));
+        assertTrue(QuickSrVideoEffect.pboUploadEnabled(
+                true,
+                QuickSrVideoEffect.Profile.FULL_1080P_3X));
+        assertFalse(QuickSrVideoEffect.pboUploadEnabled(
+                true,
+                QuickSrVideoEffect.Profile.DISPLAY_4K_FROM_1080P_3X));
+        assertEquals(2, QuickSrVideoEffect.glUploadPboSlotCount(true));
+        assertEquals(
+                16_588_800L,
+                QuickSrVideoEffect.additionalGlUploadPboBytes(
                         QuickSrVideoEffect.Profile.FULL_1080P_3X,
                         true));
     }

@@ -929,8 +929,8 @@ foreach ($case in $cases) {
                 throw "Validator reported success but did not create $report"
             }
             $validatedReport = Set-ReportMediaRegistration -ReportPath $report -MediaRegistration $mediaRegistration
-            if ([string]$validatedReport.functional_gate -ne 'PASS') {
-                throw "Validator report for $($case.id) is not a functional PASS."
+            if ([string]$validatedReport.overall_gate -ne 'PASS') {
+                throw "Validator report for $($case.id) did not pass all enforced gates."
             }
             $completedReports[$case.id] = $report
             $caseSucceeded = $true
@@ -970,5 +970,5 @@ if ($failed.Count -gt 0) {
     if ($CaptureOnly) {
         throw "Capture-only evidence collection failed for: $($failed -join ', '). The raw log and capture-only pointer were preserved; no performance claim was generated."
     }
-    throw "Functional gate failed for: $($failed -join ', '). Execution stopped before later cases. Performance class is reported separately."
+    throw "An enforced benchmark gate failed for: $($failed -join ', '). Execution stopped before later cases. Functional and cadence gates are reported separately."
 }
