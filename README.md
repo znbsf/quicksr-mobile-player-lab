@@ -68,7 +68,9 @@ The pipeline overlaps inference for frame N+1, post-processing for frame N, and 
 
 The image path performs full-image 2× upscaling with CPU or QNN and can tile work to stay within memory limits. It has a different performance contract from the fixed-shape video path.
 
-## Engineering learning report
+## Learn on-device deployment
+
+[Read the learning guide: from one frame to real-time playback (Chinese)](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md). Follow a `640×360 → 1080p / 30 FPS` example through data formats, model integration, pipeline optimization, and display cadence, with exercises that start without model files or a phone.
 
 The project progressed from proving that QNN could execute, through a sub-20 FPS implementation, to a 30 FPS average processing pipeline. The figures below are bounded to the recorded device, APK, model, clip, and measurement definition.
 
@@ -152,7 +154,7 @@ In the app, select an output profile and backend, then choose a local non-DRM SD
 
 ## Evidence and documentation
 
-- [Edge model deployment learning report (Chinese, with PlantUML diagrams)](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
+- [Learning guide: from one frame to real-time playback (Chinese)](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
 - [Current project status](docs/STATUS.md)
 - [Implementation plan and progress](docs/IMPLEMENTATION_PLAN_AND_PROGRESS.md)
 - [Real-time architecture optimization audit](docs/REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)

@@ -1,34 +1,26 @@
 @startuml
-title QuickSR 3×：一帧的数据形状与体积
-
-skinparam defaultFontName Noto Sans SC
+skinparam defaultFontName Microsoft YaHei UI
+skinparam defaultFontSize 15
+skinparam defaultFontColor #243247
 skinparam backgroundColor white
 skinparam shadowing false
-skinparam roundcorner 12
-skinparam ArrowColor #475569
+skinparam roundcorner 8
+skinparam ranksep 24
+skinparam ArrowColor #64748B
 skinparam rectangle {
-  BackgroundColor #F8FAFC
-  BorderColor #64748B
-  FontColor #0F172A
+  BackgroundColor #F5F7FA
+  BorderColor #94A3B8
 }
-
 top to bottom direction
 
-rectangle "Media3 输入纹理\n640×360 + PTS" as TEX #E0F2FE
-rectangle "CPU RGBA8\n640×360 · 0.879 MiB" as RGBA_IN #F8FAFC
-rectangle "FP32 NCHW 输入\n[1,3,360,640] · 2.637 MiB" as TENSOR_IN #FEF3C7
-rectangle "QuickSR 3× 推理\nQNN HTP" as QNN #DCFCE7
-rectangle "FP32 NHWC 输出\n[1,1080,1920,3] · 23.730 MiB / 槽" as TENSOR_OUT #FEF3C7
-rectangle "RGBA8 输出纹理\n1920×1080 · 7.910 MiB · 原 PTS" as RGBA_OUT #EDE9FE
+rectangle "输入纹理\n640×360 · RGBA8" as INPUT #E8F1FB
+rectangle "模型输入缓冲\nfloat32 · NCHW" as CPU_IN
+rectangle "QuickSR 3×\nQNN HTP" as QNN #E7F3EB
+rectangle "模型输出缓冲\nfloat32 · NHWC" as CPU_OUT
+rectangle "显示纹理\n1920×1080 · RGBA8" as OUTPUT #E8F1FB
 
-TEX --> RGBA_IN : GL 读回
-RGBA_IN --> TENSOR_IN : 归一化 + 换布局
-TENSOR_IN --> QNN : inference
-QNN --> TENSOR_OUT
-TENSOR_OUT --> RGBA_OUT : NEON pack + GL 上传
-
-note right of RGBA_IN
-  Alpha 走旁路，
-  输出打包时合并。
-end note
+INPUT --> CPU_IN : GL 读回、归一化
+CPU_IN --> QNN : 提交输入
+QNN --> CPU_OUT : 写入预分配输出
+CPU_OUT --> OUTPUT : CPU 打包、GL 上传
 @enduml

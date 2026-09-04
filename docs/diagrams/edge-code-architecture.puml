@@ -1,33 +1,27 @@
 @startuml
-title QuickSR Android：播放主线与责任边界
-
-skinparam defaultFontName Noto Sans SC
+skinparam defaultFontName Microsoft YaHei UI
+skinparam defaultFontSize 15
+skinparam defaultFontColor #243247
 skinparam backgroundColor white
 skinparam shadowing false
-skinparam roundcorner 12
-skinparam ArrowColor #475569
+skinparam roundcorner 8
+skinparam ranksep 26
+skinparam nodesep 30
+skinparam ArrowColor #64748B
 skinparam rectangle {
-  BackgroundColor #F8FAFC
-  BorderColor #64748B
-  FontColor #0F172A
+  BackgroundColor #F5F7FA
+  BorderColor #94A3B8
 }
-
 top to bottom direction
 
-rectangle "界面与模式选择\nSuperResolutionActivity" as UI #E0F2FE
-rectangle "解码与帧调度\nMedia3 / MediaCodec" as MEDIA_IN #E0F2FE
-rectangle "输入阶段\nQuickSrVideoEffect\n纹理读回 → NCHW，并绑定 frameId / PTS" as INPUT #FEF3C7
-rectangle "推理阶段\nQuickSrSession\nONNX Runtime → QNN EP → HTP" as INFER #DCFCE7
-rectangle "输出阶段\nQuickSrVideoEffect\n输出租约 → RGBA → GL 纹理" as OUTPUT #FEF3C7
-rectangle "按原 PTS 显示\nMedia3 output texture → SurfaceFlinger" as DISPLAY #EDE9FE
+rectangle "播放器接入\nSuperResolutionActivity / Media3" as PLAYER #E8F1FB
+rectangle "帧处理编排\nQuickSrVideoEffect" as EFFECT #E8F1FB
+rectangle "推理与输出槽\nQuickSrSession" as SESSION
+rectangle "帧身份与阶段计时\nVideoPipelineTelemetry" as TELEMETRY
+rectangle "QNN 后端准备\nQnnPluginRuntime" as RUNTIME #E7F3EB
 
-UI --> MEDIA_IN : 选择路径
-MEDIA_IN --> INPUT : 输入纹理
-INPUT --> INFER : FP32 NCHW
-INFER --> OUTPUT : FP32 NHWC
-OUTPUT --> DISPLAY : RGBA8 + 原 PTS
-
-legend bottom
-  Original、Lanczos、Anime4K 是对照路径，具体差异见正文表格。
-endlegend
+PLAYER --> EFFECT : 配置与帧回调
+EFFECT --> SESSION : 调用推理
+EFFECT --> TELEMETRY : 记录事件
+SESSION --> RUNTIME : 建立会话时配置
 @enduml

@@ -68,7 +68,9 @@ Media3 / MediaCodec SDR texture（保留源 PTS）
 
 图片路径执行完整图片 2×，支持 CPU/QNN 和按内存上限分块；它与视频固定 shape 热路径不是同一个性能合同。
 
-## 阶段学习报告
+## 从这个项目学习端侧部署
+
+[阅读学习报告：从一帧画面到实时播放](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)。以 `640×360 → 1080p / 30fps` 为例，依次理解数据格式、模型接入、流水线优化和显示节奏；附带可从无模型环境开始的练习。
 
 项目从“证明 QNN 能执行”开始，经历了低于 20 FPS 的实现，推进到目前 30 FPS 的平均处理吞吐。以下数字都只对应已记录的设备、APK、模型、片源和统计口径。
 
@@ -166,7 +168,7 @@ App 中先选择输出档位和后端，再选择本地非 DRM SDR 视频。720p
 
 ## 证据与文档导航
 
-- [端侧模型部署学习报告（含 PlantUML 架构图）](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
+- [学习报告：从一帧画面到实时播放](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
 - [当前项目状态](docs/STATUS.md)
 - [实现计划与进展](docs/IMPLEMENTATION_PLAN_AND_PROGRESS.md)
 - [实时架构优化审计](docs/REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)

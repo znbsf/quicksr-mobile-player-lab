@@ -1,449 +1,426 @@
-# 端侧模型部署学习报告：从 ONNX 到 Android QNN 实时视频
+# 从一帧画面到实时播放
 
-[返回中文首页](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/README.zh-CN.md) | [English README](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/README.md)
+端侧模型部署学习报告 · QuickSR / Android / QNN
 
-这是一份围绕本仓库真实实现编写的入门导读。目标不是只教会“调用一次 ONNX”，而是沿着一个端侧视频模型的完整生命线，理解模型资产、图变换、Tensor、运行时、硬件后端、数据搬运、流水线、播放器时序、性能证据和发布边界如何连在一起。
+[中文首页](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/README.zh-CN.md) · [English overview](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/README.md) · [项目状态](STATUS.md)
 
-> 当前项目已经证明一台指定 Qualcomm 设备上的 1080p QuickSR 路径可以达到 30.0045 FPS 平均处理吞吐，但最终显示只有 1/2 严格通过。这份报告会刻意保留这个差异：端侧部署的终点不是 `Session.run()` 返回，而是用户真正看到稳定、正确、同步的画面。
+这个项目要解决一个具体问题：把视频画面送进手机上的超分模型，得到更高分辨率的画面，同时跟上原片帧率。围绕这件事，我们需要学会准备模型、组织数据、调用加速器，以及把结果准时交还给播放器。
 
-## 1. 先建立端侧部署的全局地图
+本文以 **`640×360 → 1920×1080，30fps`** 为贯穿案例。阅读前只需要理解数组、函数调用和线程的基本概念；遇到 ONNX、Tensor、QNN 等名词时，正文会在第一次使用处解释。
 
-一个模型进入手机，至少经过六层：
+截至 **2026-09-05** 的已记录实验，项目在一台 Android 16 / SM8550 设备上达到约 30fps 平均处理吞吐，最终显示仍偶发长帧。接下来既要理解这些优化怎样做到，也要理解为什么它们还没有完成“保证原片帧率”的目标。本文数据引用已有实验，最新进展以[状态页](STATUS.md)为准。
 
-| 层次 | 要回答的问题 | 本项目中的落点 |
-| --- | --- | --- |
-| 模型资产 | 模型从哪里来，能否使用和分发，文件是否被替换？ | checkpoint/ONNX 来源、bytes、SHA-256、source-only 边界 |
-| 图与 Tensor 合同 | 输入输出叫什么、shape/layout/dtype 是什么，算子能否被后端支持？ | fixed shape、NCHW 输入、NCHW/NHWC 输出、DCR DepthToSpace |
-| Runtime 与后端 | 谁加载模型，图到底跑在 CPU、GPU 还是 NPU？ | ONNX Runtime、QNN EP、QNN HTP/CDSP、禁止 CPU EP 静默回退 |
-| 数据工程 | 一帧在不同内存域之间搬了多少次、占多少内存？ | `GL → CPU → QNN → CPU → GL`、float/RGBA 转换、pinned buffers |
-| 实时系统 | 多阶段怎样并行，如何背压，seek/flush 后旧帧会不会串线？ | inference/postprocess/GL 三段流水、容量 2、frameId/PTS/generation |
-| 产品证据 | “能跑”“够快”“显示稳定”“音画同步”“画质更好”分别如何证明？ | PC golden、真机 HTP、effect throughput、SurfaceFlinger、A/V、盲审 |
+## 阅读路线
 
-推荐按以下顺序学习：先看代码架构，再看模型生命周期，然后算清数据量，最后理解流水线与证据门禁。不要从“换成 C++”或“再加线程”开始，因为那两件事都无法替代问题归因。
+1. [明确目标：输入、输出与帧率](#case)——先知道我们在部署什么。
+2. [跟着一帧走：纹理、Tensor 与内存](#frame)——看懂数据为什么要来回搬运。
+3. [把模型接进 App：文件、运行时与代码](#deployment)——把一次推理接到真实播放器。
+4. [让它跟上视频：四个优化案例](#optimization)——理解复用、布局、流水线和工作量削减。
+5. [解释实验结果：为什么 30fps 还会卡](#results)——区分吞吐、延迟和显示节奏。
+6. [动手学习：从无模型练习到真机验证](#practice)——每一步都有明确产出。
 
-## 2. 代码架构：先知道每层由谁负责
+第一次顺读正文即可；具体模型矩阵、历史试验和图的维护方法收在[附录](#reference)，需要复现时再查。
 
-[![QuickSR Android 代码架构](diagrams/edge-code-architecture.svg)](diagrams/edge-code-architecture.svg)
+<a id="case"></a>
 
-[查看 PlantUML 源码](diagrams/edge-code-architecture.puml)
+## 1. 明确目标：输入、输出与帧率
 
-这张图最重要的不是类名数量，而是职责边界：
+### 1.1 这里的“1080p 超分”指什么
 
-- `SuperResolutionActivity` 选择模式、档位、素材和 QNN tuning；它不实现 Tensor 算法。
-- Media3/ExoPlayer 保留 MediaCodec 解码、源 PTS、seek、Surface 和 GL effect 生命周期。
-- `QuickSrVideoEffect` 是实时路径中最复杂的编排层，负责 readback、背压、线程、buffer 所有权、generation、PTS 和最终 GL 交付。
-- `QuickSrSession` 只管理模型合同、持久化 ORT session/input/output、推理和 output-slot lease。
-- `QnnPluginRuntime` 在 session 建立前准备 QNN 进程环境、注册 EP、选择 HTP 并关闭不允许的 fallback。
-- 数据转换与遥测是独立模块；这让“模型时间”“pack 时间”“排队时间”和“显示时间”不会混成一个数字。
-- Anime4K 是 GPU-resident 替代路径，并不经过 QuickSR 的 QNN Tensor 往返。
+超分辨率（Super-Resolution，SR）用低分辨率图像估计更高分辨率图像。这个案例调用 QuickSRNetSmall 3×：宽、高各扩大 3 倍，所以输出像素数是输入的 **9 倍**。
 
-### 建议的代码阅读顺序
+| 项目 | 本文使用的具体值 |
+| --- | --- |
+| 进入模型的画面 | `640×360`，RGB 三个颜色通道 |
+| 模型产生的画面 | `1920×1080`，RGB 三个颜色通道 |
+| 最终交给播放器 | `1920×1080` RGBA8 纹理，携带原帧的呈现时间 |
+| 实时目标 | 对冻结的 30fps 片源，每个源帧都得到正确、及时的输出 |
 
-| 顺序 | 文件 | 重点问题 |
-| ---: | --- | --- |
-| 1 | [`app/build.gradle.kts`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/build.gradle.kts) | 模型名、bytes、hash、版本和实验开关如何在构建期冻结？ |
-| 2 | [`ModelVariant.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/ModelVariant.java) | 一个模型变体如何声明 asset、I/O shape、layout 和元素数量？ |
-| 3 | [`QuickSrSession.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QuickSrSession.java) | 如何持久化 ORT session、input tensor 和两个 output slot？ |
-| 4 | [`QnnPluginRuntime.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QnnPluginRuntime.java) | QNN EP/HTP 如何注册，失败时如何关闭而不是回退？ |
-| 5 | [`QuickSrVideoEffect.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QuickSrVideoEffect.java) | 一帧怎样经历 readback、inference、postprocess、upload 和 release？ |
-| 6 | [`VideoPipelineTelemetry.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/VideoPipelineTelemetry.java) | frameId、PTS、generation、队列和完成状态怎样记录？ |
-| 7 | [`SuperResolutionActivity.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/SuperResolutionActivity.java) | UI 如何把后端、档位、模式和 Media3 effect 接起来？ |
-| 8 | [`realtime-1080p-physical-20260905.json`](evidence/realtime-1080p-physical-20260905.json) | 最终结论如何被压缩成可审计、去标识的机器可读证据？ |
+`640×360` 是这个档位的**神经输入尺寸**。源文件可以更大，由前处理缩放到该尺寸；因此这里的“1080p”指神经输出，不能读成“拿原生 1080p 做神经 4K”。当前 4K 显示档另有一次 `1080p → 4K` 的 GPU 缩放。
 
-读代码时可以始终问三个问题：这个对象拥有什么资源、谁负责释放、seek/flush/release 与任务并发时会发生什么。端侧崩溃和错误画面经常来自所有权，而不是模型数学本身。
+这个模型每次只看一帧，没有前后帧输入。把它接到视频播放循环中，也不会自动变成利用时间信息的视频超分模型。
 
-## 3. 模型资产如何真正进入手机
+### 1.2 帧率是时间要求
 
-### 3.1 模型不是一个孤立的 `.onnx` 文件
+30fps 意味着每隔约 `1000 / 30 = 33.33ms` 就有一张新画面需要呈现。播放器用 PTS（Presentation Timestamp，呈现时间戳）表示画面在视频时间轴上的位置；模型输出要继续对应原来的 PTS。
 
-一个可部署模型至少需要以下身份字段：
+可以先用两个问题检查一个实现：它能持续产出每秒 30 张增强画面吗？这些画面是否按正确时间间隔显示？前一个问题对应**吞吐**，后一个对应**显示节奏**。后文的实验会说明两者为什么可能得出不同答案。
 
-```text
-source revision / checkpoint
-file name + byte length + SHA-256
-input name + dtype + shape + layout
-output name + dtype + shape + layout
-operator inventory
-graph transformation tool + tool hash
-correctness tolerance and test corpus
-runtime / execution provider / accelerator version
-```
+在当前项目顺序中，先完成逐帧播放的帧率要求，再评估代表性动漫画质、其他模型和插帧。插帧会生成新的时间点，是另一类任务。
 
-缺少其中任何一项，都可能出现“文件名没变，但内容已经不是同一个模型”的情况。本项目在构建期和运行时重复检查 bytes/SHA；这不是多余，而是防止旧 APK、错模型和未知派生物污染性能结论。
+<a id="frame"></a>
 
-### 3.2 当前视频模型矩阵
+## 2. 跟着一帧走：纹理、Tensor 与内存
 
-下表来自当前构建合同；SHA 只显示前缀，完整值以 [`app/build.gradle.kts`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/build.gradle.kts) 为准。模型文件本身只在本地存在。
+### 2.1 同一幅画面有不同的数据表示
 
-| 变体 | Tensor 合同 | 文件大小 | SHA-256 前缀 | 用途 |
-| --- | --- | ---: | --- | --- |
-| canonical QuickSR 2× | dynamic NCHW → NCHW | 93,994 B | `3db92151…` | 上游基线与派生源 |
-| fixed 2× | `[1,3,360,640] → [1,3,720,1280]` | 93,955 B | `ad7634d8…` | 720p 诊断档 |
-| fixed 3× NCHW | `[1,3,360,640] → [1,3,1080,1920]` | 111,296 B | `c03d551e…` | 1080p 布局基线 |
-| fixed 3× float NHWC | `[1,3,360,640] → [1,1080,1920,3]` | 111,420 B | `9a9fd7cd…` | 当前 1080p 默认路径 |
-| fixed 4× | `[1,3,360,640] → [1,3,1440,2560]` | 135,573 B | `ca3afce1…` | 1440p 实验档 |
+播放器和模型对数据的要求不同。Media3 的视频效果接口处理 OpenGL 纹理；模型接收的是 Tensor，也就是带有形状和数据类型的多维数组。
 
-模型只有约 0.1 MiB，并不代表运行时内存也只有 0.1 MiB。权重很小，但 1080p float output 一份就有 23.73 MiB；端侧内存往往由 activation、I/O Tensor、图缓存、纹理和队列主导。
+当前模型输入是 float32（每个数 4 字节），将 RGB 字节值除以 255，归一化到 `[0,1]`。纹理和显示前缓冲采用 RGBA8：每个像素的红、绿、蓝、透明度各占 1 字节。模型只预测 RGB，alpha 从输入旁路保存，在后处理时按位置合并。
 
-### 3.3 为什么要固定 shape
-
-动态模型适合通用推理，但实时播放器更关心可预测性：
-
-- QNN 可以针对确定的 batch/height/width 完成 graph finalization；
-- input/output buffer 大小可以在播放前计算并复用；
-- 不需要在每一帧重新决定输出尺寸和分配策略；
-- 性能 A/B 的模型、shape 和内存合同更容易固定；
-- 代价是每个档位需要单独的模型产物与验证。
-
-固定 shape 不会自动使模型更快，也不等于量化。它主要减少运行时变化，并给后端优化提供稳定前提。
-
-### 3.4 为什么默认输出从 NCHW 改为 NHWC
-
-QuickSR 原始 RGB 输出按平面排列：
+NCHW、NHWC 描述同一组数字怎样排列。N 是批大小，C 是通道，H、W 是高和宽。以两个像素为例：
 
 ```text
-NCHW: R R R R ... | G G G G ... | B B B B ...
-NHWC: R G B | R G B | R G B | R G B ...
-RGBA: R G B A | R G B A | R G B A ...
+NCHW  R0 R1 | G0 G1 | B0 B1       同一通道放在一起
+NHWC  R0 G0 B0 | R1 G1 B1         同一像素放在一起
+RGBA8 R0 G0 B0 A0 | R1 G1 B1 A1   每通道变成一个字节
 ```
 
-最终消费者是交错 RGBA8。NCHW pack 每处理一个像素都要在三个相距约 207 万元素的平面间读取；NHWC 的 RGB 连续，更适合顺序访问和按行分片。当前 wrapper 保持卷积权重不变，只改变公开输出布局；正确性仍必须单独对比，不能因为它“只是 Transpose”就跳过验证。
+换布局会改变索引方式，不会减少元素数量。输出打包时，把 RGB float 限制到 `[0,1]`、乘以 255 并舍入，转换成字节，再加上 alpha；这一步才涉及数值范围和数据类型变化。
 
-### 3.5 从本地模型到 APK
+### 2.2 数据实际经过哪些边界
 
-仓库是 source-only，新 checkout 没有权重并且不能直接 assemble，这是预期行为。典型学习流程：
+![一帧从输入纹理，经 CPU 输入张量、QNN、CPU 输出张量，回到显示纹理](diagrams/edge-frame-dataflow.svg)
 
-```powershell
-# 1. 检查合法取得的 canonical 2x 模型
-Get-Item .\models\quicksrnet-small-2x-opset17.onnx | Select-Object Length
-Get-FileHash .\models\quicksrnet-small-2x-opset17.onnx -Algorithm SHA256
+*图 1：只看数据表示。框中的输入、输出分别属于 CPU 可访问缓冲或 GL 纹理；箭头概括转换步骤。[PlantUML 源码](diagrams/edge-frame-dataflow.puml)*
 
-# 2. 派生并验证 fixed-shape 2x 路线
-python .\derived-models\derive_quicksrnet_fixed640x360.py
-python .\derived-models\test_derived_models.py
+沿图读一遍实际实现：
 
-# 3. 导出本地 1.5x / 2x / 3x / 4x 候选
-& .\build\fixed512-python-env\Scripts\python.exe `
-  .\pc-benchmark\export_quicksrnet_variants.py
+1. Media3 准备 `640×360` 的 RGBA 画面，读回 CPU 可访问缓冲。
+2. CPU 把 RGBA 拆成归一化的 RGB float32 NCHW 数组，再复制进会话复用的 direct input buffer。
+3. ONNX Runtime 调用 QNN HTP，结果写入预先创建的 float32 NHWC output tensor。
+4. 后处理线程把 output tensor 批量复制到应用数组，用**四条带 Java 打包**转换为 RGBA8，再写入可上传的 direct buffer。
+5. GL 线程上传到 Media3 的输出纹理，沿用原 PTS 进入显示流程。
 
-# 4. 给 1080p 3x 模型增加 float NHWC 输出包装
-& .\build\fixed512-python-env\Scripts\python.exe `
-  .\scripts\experiment_display_friendly_output.py `
-  --source .\derived-models\quicksrnet-small-3x-fixed640x360.onnx `
-  --output .\derived-models\quicksrnet-small-3x-fixed640x360-f32-nhwc.onnx `
-  --variant float32-nhwc
+这就是 `GL → CPU → QNN → CPU → GL`。这里的 QNN 是软件运行时边界；图没有展开驱动内部的传输，也不代表 CPU 与 HTP 已共享物理内存。当前路径仍包含复制和同步。
 
-# 5. 构建脚本重新校验并把本地模型暂存到 generated assets
-.\build-local.ps1
-```
-
-这里的学习重点不是记住命令，而是看懂每一步的输入、输出、hash 和验证责任。完整模型准备说明见 [`models/README.md`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/models/README.md) 与 [`derived-models/README.md`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/derived-models/README.md)。
-
-## 4. 一帧数据到底有多大、搬了几次
-
-[![1080p 单帧数据与内存流](diagrams/edge-frame-dataflow.svg)](diagrams/edge-frame-dataflow.svg)
-
-[查看 PlantUML 源码](diagrams/edge-frame-dataflow.puml)
-
-### 4.1 先会算 Tensor 内存
-
-基本公式：
+### 2.3 手算一次内存，就能看懂很多优化
 
 ```text
-bytes = batch × channels × height × width × bytes_per_element
-MiB = bytes / 1,048,576
+Tensor 字节数 = 各维度相乘 × 每个元素的字节数
+MiB = 字节数 / 1,048,576
+
+1080p RGB float32 输出：
+1 × 1080 × 1920 × 3 × 4 = 24,883,200 B ≈ 23.73 MiB
 ```
 
-当前 1080p 主档的显式缓冲量级：
+| 一个缓冲的用途 | 格式或形状 | 大小 |
+| --- | --- | ---: |
+| 输入读回 | RGBA8，`640×360` | 0.879 MiB |
+| 模型输入 | float32，`[1,3,360,640]` | 2.637 MiB |
+| 模型输出 | float32，`[1,1080,1920,3]` | 23.730 MiB |
+| 显示前输出 | RGBA8，`1920×1080` | 7.910 MiB |
 
-| 数据 | shape / 格式 | 元素数 | 字节 | MiB |
-| --- | --- | ---: | ---: | ---: |
-| 输入 readback | RGBA8 `640×360×4` | 921,600 bytes | 921,600 | 0.879 |
-| 模型输入 | float32 NCHW `[1,3,360,640]` | 691,200 floats | 2,764,800 | 2.637 |
-| 单个模型输出 | float32 NHWC `[1,1080,1920,3]` | 6,220,800 floats | 24,883,200 | 23.730 |
-| 两个 pinned output slots | 上述输出 × 2 | 12,441,600 floats | 49,766,400 | 47.461 |
-| 显示前输出 | RGBA8 `1920×1080×4` | 8,294,400 bytes | 8,294,400 | 7.910 |
-| 双 PBO 实验 | RGBA8 输出 × 2 | 16,588,800 bytes | 16,588,800 | 15.820 |
+这解释了为什么约 0.1 MiB 的模型文件仍会产生明显内存压力：权重是计算规则，输出是每帧生成的数百万个值。当前两个预分配 output tensor 合计 **47.461 MiB**，另有应用侧数组、纹理、模型中间结果和播放器缓冲。
 
-这些数字不能直接相加当作 App PSS：不同缓冲的生命周期可能重叠或复用，ORT/QNN activation、graph cache、Java 对象、MediaCodec surface 和 GL texture 也没有包含在表中。正确做法是先算理论量级，再用设备 PSS、heap、GPU 和 runtime trace 分域核对。
+这些是单个显式缓冲的大小，不能相加就当作进程总内存。理解量级之后，再用真机内存记录检查实际峰值。
 
-### 4.2 `GL → CPU → QNN → CPU → GL` 是什么意思
+读到这里应能回答：NHWC 为什么可能更容易转成 RGBA？为什么 NHWC 输出仍然占 23.73 MiB？
 
-1. MediaCodec 解码结果先以 GPU/GL texture 形式进入 Media3 effect。
-2. 当前 QuickSR 路径把 `640×360` RGBA8 读回 CPU 内存。
-3. CPU 将交错 RGBA 转成归一化 float32 NCHW。
-4. `QuickSrSession` 再把 `float[]` 批量复制进 pinned direct input buffer，ORT/QNN 交给 HTP。
-5. HTP 结果写入 pinned float32 NHWC output；后处理线程把它 bulk copy 到应用侧数组。
-6. 四条带并行 clamp/量化为 RGBA8，并从源 RGBA 恢复 alpha。
-7. RGBA8 再由 CPU 上传到 Media3 output texture，进入 BufferQueue/SurfaceFlinger。
+<a id="deployment"></a>
 
-这条路径已经删除同尺寸档的一张中间纹理和一次 scale blit，但仍不是真正的零拷贝。未来若做 AHardwareBuffer/EGLImage/shared memory，必须先证明 QNN tensor、GL texture 和同步 fence 可以共享，而不能把“使用了 AHardwareBuffer API”直接写成端到端 zero-copy。
+## 3. 把模型接进 App：文件、运行时与代码
 
-### 4.3 端侧性能为什么常常不是模型 FLOPs 的问题
+### 3.1 模型文件进入手机前，要先确定接口
 
-模型权重很小、QNN run p95 约 30.244 ms，但一帧还包含 readback、格式转换、output copy、pack、upload、排队和显示 latch。端侧视频优化通常同时受三类上限约束：
+ONNX 保存模型计算图和权重。调用它之前，应用需要知道输入输出名字、形状、类型和排列方式；这些信息与文件身份一起组成部署约定。
 
-- **计算上限：**卷积、激活、DepthToSpace 等 graph execution；
-- **带宽上限：**23.73 MiB float output 的复制和读取、7.91 MiB RGBA 的写入与上传；
-- **同步上限：**线程调度、future、GL fence、BufferQueue、vsync/latch。
+本文主档的具体约定如下，取自 [`ModelVariant.java`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/ModelVariant.java) 与[构建配置](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/build.gradle.kts)：
 
-所以“把 Java 换成 C”“少一次 copy”“让 GL submit 更快”都只能叫候选假设，必须看最终消费者是否改善。
+| 字段 | 1080p 默认变体 |
+| --- | --- |
+| 模型 | `quicksrnet-small-3x-fixed640x360-f32-nhwc.onnx` |
+| 输入 | `image`，float32 NCHW `[1,3,360,640]` |
+| 输出 | `upscaled_image__display_f32_nhwc`，float32 NHWC `[1,1080,1920,3]` |
+| 文件身份 | 111,420 B；SHA-256 前缀 `9a9fd7cd…`，完整值由构建配置校验 |
 
-## 5. 从逐帧串行到三段有界流水线
+部署过程可以按四步理解：取得已核验来源的模型；导出或派生所需形状与布局；在电脑上比较变换前后的数值；通过构建检查后打包到 App。文件名可以相同而内容不同，因此构建和加载时都校验长度与哈希。
 
-[![三段有界流水线](diagrams/edge-pipeline-overlap.svg)](diagrams/edge-pipeline-overlap.svg)
+有两种变换需要分清：
 
-[查看 PlantUML 源码](diagrams/edge-pipeline-overlap.puml)
+- **固定 shape**：把动态高宽变成确定尺寸，让缓冲复用和后端准备更可预测。代价是每个档位需要单独准备和验证。
+- **NCHW → NHWC 输出包装**：保持该倍率的卷积权重不变，改变公开输出的排列。它仍然需要数值比较。
 
-### 5.1 串行与流水线的区别
+3× 模型来自对应倍率的权重导出，不能把 2× 输出尺寸改一改就得到。正确性比较也应比较“同一个模型变换前后”；它回答的是变换是否正确，画质评估还需要高分辨率参考画面。
 
-串行路径近似为：
+### 3.2 ONNX Runtime、QNN 和 HTP 各做什么
 
-```text
-frame N = preprocess + QNN + output copy + pack + GL delivery
-下一帧必须等待 frame N 全部结束
-```
+ONNX Runtime（ORT）负责加载图、管理会话并执行推理；Execution Provider（EP，执行后端）负责把图交给具体设备。本项目选 QNN EP，调用 Qualcomm 的运行时和 HTP 加速后端。
 
-流水线把不同帧放到不同阶段：
+因此，`OrtSession.run()` 的耗时包含运行时调用链，不能直接当作纯 NPU 运算时间。当前真机记录确认了 HTP 配置并禁用了 CPU EP 静默回退；逐节点究竟分配给哪个后端，还需要相应的执行跟踪。
 
-```text
-inference lane:   preprocess(N+1) + QNN(N+1)
-postprocess lane: deferred output copy(N) + pack(N)
-Media3 GL lane:   upload/output-submit(N-1)
-```
+项目使用的版本固定在构建配置中：Media3 `1.11.0`、ORT Android `1.26.0`、QNN plugin `2.5.0`、QNN Runtime `2.49.0`。`SUSTAINED` 是持续性能配置请求；长期频率、温度和功耗仍要另测。
 
-串行服务间隔接近各阶段之和；理想流水线的稳态服务间隔更接近最慢阶段，但真实系统还会受到依赖、队列等待、内存带宽争用和调度影响。项目的早期阶段观测由约 11.435 FPS 串行提升到约 17.960 FPS overlap，随后依靠 NHWC、deferred copy、首帧 finite scan 和 direct upload 才达到 30 FPS 平均处理吞吐。
+### 3.3 代码按什么职责分工
 
-不要把不同帧、不同轮次的 p95 简单相加或取最大值，得出“理论 FPS”。分位数不是同一帧的同步时间线；应同时保存逐帧时间戳和整体服务率。
+![播放器接入调用帧处理编排，编排使用推理会话和遥测，会话准备 QNN 后端](diagrams/edge-code-architecture.svg)
 
-### 5.2 为什么队列必须有界
+*图 2：只看代码依赖。箭头表示调用或使用；数据的返回和线程时序不在这张图展开。[PlantUML 源码](diagrams/edge-code-architecture.puml)*
 
-当前 frame admission 容量为 2，postprocess 也只有一个 active task 加一个 queued task。这样做是为了：
+建议按下面的顺序读，每次带着一个问题：
 
-- 给推理与后处理留出一帧重叠空间；
-- 限制 23.73 MiB output slot 和 7.91 MiB RGBA buffer 的并发数量；
-- 当下游变慢时施加 backpressure，而不是持续吃内存；
-- 让延迟、drop 和 release 行为保持可解释。
+| 读哪个文件 | 找到什么答案 |
+| --- | --- |
+| [`ModelVariant`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/ModelVariant.java) | 输入输出有多大、怎样解释？ |
+| [`QuickSrSession`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QuickSrSession.java) | 会话和缓冲什么时候创建、复用、释放？ |
+| [`QnnPluginRuntime`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QnnPluginRuntime.java) | 后端怎么注册，配置失败如何暴露？ |
+| [`QuickSrVideoEffect`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/QuickSrVideoEffect.java) | `processImage` 后如何推理、后处理、交还输出？ |
+| [`VideoPipelineTelemetry`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/VideoPipelineTelemetry.java) | 怎样把同一帧各阶段的时间对齐？ |
+| [`SuperResolutionActivity`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/main/java/dev/aisystems/quicksrplayerlab/SuperResolutionActivity.java) | 用户选择怎样连接播放器和 effect？ |
 
-把队列从 2 扩成 20，短时间内可能让“提交 FPS”更漂亮，但服务能力不变，最终只会积累延迟和内存。这是流媒体、相机和端侧 AI 共通的基本原则。
+先读会话，再读几千行的 effect，会更容易区分模型调用、资源管理和播放器适配。
 
-### 5.3 为什么需要 frameId、PTS 和 generation
+### 3.4 一次调用的最小心智模型
 
-- `frameId`：标识应用接受的具体帧，用于串联各阶段耗时。
-- `PTS`：播放器时间轴上的呈现时间，输出必须保留原始身份。
-- `generation`：seek/flush 后递增；旧 generation 的异步结果即使稍后完成也必须丢弃。
-- output-slot lease：明确哪个线程临时拥有 pinned Tensor；copy 完成后才可归还。
-
-如果只有“线程池 + Future”而没有这些身份，seek 后极易把旧视频帧显示到新位置，或者在 release 时关闭仍被另一个线程使用的 Tensor。
-
-## 6. 优化手段：哪些保留、哪些停止
-
-### 6.1 默认保留的优化
-
-| 优化 | 解决的问题 | 当前收益或作用 | 代价 / 边界 |
-| --- | --- | --- | --- |
-| 持久化 ORT session/tensor | 避免逐帧建图和分配 | 稳定模型与内存合同 | 必须正确 close；不能跨错误生命周期复用 |
-| 固定 shape + hash | 消除模型与尺寸漂移 | QNN finalization、复用、可审计 A/B | 每个档位需单独产物 |
-| 三段有界流水线 | 重叠不同帧的计算和搬运 | 最终平均吞吐达到 30.0045 FPS | p95 pipeline latency 仍约 179.024 ms |
-| float NHWC 输出 | 改善最终 RGB 交错访问 | 适合连续读取和条带 pack | 仍是 23.73 MiB float output |
-| 四条带 pack | 利用 CPU 并行 | 最终 p50/p95 约 11.321/15.503 ms | 与 QNN 同时争用带宽；不是越多越好 |
-| 双 pinned output + deferred copy | 把 output copy 移出 inference 关键路径 | inference caller p95 平均 34.733 → 30.529 ms | 比单 slot 多约 23.73 MiB |
-| 首帧完整 finite scan | 保留 fail-closed 数值检查 | 移除稳态 330～353 ms 周期停顿 | 后续帧不再完整扫描 |
-| alpha 映射预计算 | 删除逐像素重复乘除 | pack 热循环更简单 | 仍保留任意 alpha 合同 |
-| direct Media3 output upload | 删除同尺寸中间纹理/blit | 一次观测 GL p95 6.435 → 3.460 ms | 4K 回退仍需额外缩放 |
-| buffer pool + 显式所有权 | 降低分配/GC和竞态 | 支持稳定流水线和 release | 代码复杂度增加 |
-
-### 6.2 已停止或默认关闭的方向
-
-| 尝试 | 观测 | 为什么不继续 |
-| --- | --- | --- |
-| JNI/arm64 NEON packer | pack p50 36.566 → 102.353 ms；平均 FPS −42.94% | native 语言不能抵消 JNI、direct buffer 与访存布局成本 |
-| direct FloatBuffer → native pack | 约 116.5 ms | 少一次 copy 反而换来更差的逐元素访问 |
-| 两条带 pack | 真机慢于四条带 | 并行度必须实测，不按直觉选择 |
-| 扩大队列 | 未作为优化采用 | 只隐藏积压并放大延迟/内存 |
-| 同一 QNN session 多 inference workers | 否决 | graph 仍可能串行，tensor 所有权更危险 |
-| temporal batch=2 | 主机方向收益约 4.2%～16.9% | 增加一帧等待和大输出，不足以直接接播放器 |
-| spatial batch | 主机约 −2.3%～+0.7% | 没有稳定收益 |
-| 双 PBO upload | GL p95 3.460 → 1.832 ms | 最终显示仍 1/2 PASS，且多约 15.82 MiB |
-| cadence 复用 | 冻结 720p 映射减少 37.79% 推理 | 字幕、运动、切镜误复用未过；不能掩盖逐帧硬门 |
-
-这里最值得学习的是“停止条件”。一个局部指标变好，如果最终显示、内存或可重复性没有改善，就不应该默认化，更不应该继续穷举参数。
-
-## 7. 模型在代码里怎样被使用
-
-下面是从真实实现提炼的示意代码，不是替代播放器生命周期的复制粘贴示例：
+下面是当前 App 内部 API 的教学片段。`context`、`runId` 和已完成预处理的 `inputNchw` 由调用方提供；片段省略了纹理和播放器生命周期，不是独立可运行的 Android 示例。
 
 ```java
 ModelVariant variant = ModelVariant.FIXED640X360_3X_F32_NHWC;
-QuickSrSession.RunTimings timings = new QuickSrSession.RunTimings();
+float[] outputNhwc = new float[variant.outputValueCount()];
 
 try (QuickSrSession session = QuickSrSession.open(
-        context,
-        QuickSrSession.Mode.QNN_HTP,
-        runId,
-        variant,
-        QuickSrSession.Tuning.SUSTAINED,
-        2)) {
-
-    // 第一帧同步执行：复制 output，并完成一次完整 finite scan。
-    session.infer(firstInputNchw, firstOutputNhwc, timings);
-
-    // 后续帧可以把 pinned output slot 的 lease 交给 postprocess lane。
-    try (QuickSrSession.DeferredOutput lease =
-            session.inferDeferred(nextInputNchw, timings)) {
-        lease.copyTo(nextOutputNhwc);
-    }
+        context, QuickSrSession.Mode.QNN_HTP, runId,
+        variant, QuickSrSession.Tuning.SUSTAINED, 2)) {
+    session.infer(inputNchw, outputNhwc);
+    // outputNhwc 是 RGB float；仍需打包和上传才能显示。
 }
 ```
 
-这段代码背后有几个端侧部署关键点：
+连续播放时，会话和缓冲放在**帧循环外**创建，循环内更新输入并执行推理。流结束后先让使用资源的任务退出，再释放会话；如果每一帧都照着上面的片段重新 `open/close`，就会反复支付初始化成本。
 
-1. `ModelVariant` 在 session 创建前给出静态 shape/layout 和期望 hash。
-2. `QuickSrSession.open()` 读取 APK asset 后再次检查 bytes/SHA，不信任“构建已经检查过”。
-3. QNN 模式先由 `QnnPluginRuntime` 准备环境，再创建 `OrtEnvironment/OrtSession`。
-4. input/output `OnnxTensor` 只创建一次；每帧只更新已有 buffer。
-5. 两个 output slot 不是为了同时跑两个 QNN graph，而是允许上一帧复制时下一帧进入推理。
-6. lease 的 `close()` 是所有权协议的一部分，遗漏会让 output slot 永久耗尽。
-7. 真正的播放器路径还必须处理 Media3 buffer 生命周期、PTS、flush、错误和 GL thread 约束。
+读到这里应能回答：模型返回了数组，为什么播放工作还没完成？谁负责把它变回画面？
 
-### QNN tuning 当前做了什么
+<a id="optimization"></a>
 
-`Tuning.SUSTAINED` 会给 ORT run options 写入持续高性能模式和 RPC control latency；它是设备相关提示，不是“永不降频”的保证。QNN strict 证据当前能确认 HTP 配置与 CPU EP fallback 禁用，不能替代逐节点 provider placement trace。
+## 4. 让它跟上视频：四个优化案例
 
-## 8. 该看哪些数据，怎样避免错误结论
+项目早期先验证 QNN 能执行，再建立 720p 路径；提高到 1080p 后，输出搬运、后处理和串行等待变得突出。下面按解决问题的层次讲这段过程，历史数值来自各自实验，不能把各项收益相加。
 
-### 8.1 当前默认 1080p 数据
+### 案例一：把每帧重复准备的资源留在会话中
 
-| 指标 | 当前结果 | 能说明什么 | 不能说明什么 |
-| --- | ---: | --- | --- |
-| measured frames | 828 | warm-up 后样本量 | 不能代表长时 thermal |
-| effect output-submit throughput | 30.0045 FPS | 流水线稳态服务率达到源 30 FPS | 不是最终屏幕显示 |
-| source PTS coverage | 约 1.0000 | 没靠系统性跳源帧换速度 | 不是 A/V sync |
-| QNN caller p50/p95 | 27.884/30.736 ms | 调用方看到的推理阶段 wall time | 不是纯 NPU kernel 时间 |
-| ORT run p95 | 30.244 ms | ORT 调用阶段尾延迟 | 不包含全部一帧成本 |
-| pack p50/p95 | 11.321/15.503 ms | NHWC→RGBA 后处理分布 | 与 QNN 重叠，不能直接相加推导 FPS |
-| GL submit proxy p95 | 6.987 ms | CPU 侧 upload/submit 代理 | 不是 GPU completion |
-| accepted→output-submit p95 | 179.024 ms | 多帧流水线延迟 | 不是稳态服务间隔或光子延迟 |
-| effect drop/bypass | 0/0 | 本轮增强管线没有丢弃或旁路 | 不保证 SurfaceFlinger 无异常 |
+**问题。** 持续视频不断用相同形状调用相同模型，逐帧创建会话、Tensor 和大数组会增加初始化、分配和回收工作。
 
-### 8.2 证据必须逐层升级
+**实现。** 固定 16:9 shape，持久化 ORT session、direct input buffer 和 output tensor，复用应用缓冲。这里的 pinned output 指应用预先提供、让 ORT 写入的输出 Tensor；它本身不证明与 GPU 或 HTP 零拷贝共享。
 
-| 层级 | 测试对象 | 当前角色 |
-| ---: | --- | --- |
-| 1 | Python/Java 单测、图结构、shape/hash | 证明代码和模型合同 |
-| 2 | PC ORT golden | 证明派生模型数值等价或在容差内 |
-| 3 | x86_64 模拟器 | 证明 Android/Media3 CPU/GPU 功能路径；不算 QNN 性能 |
-| 4 | 物理机 QNN strict | 证明指定设备、APK、runtime 下的 HTP 会话合同 |
-| 5 | effect output-submit | 证明应用流水线处理吞吐 |
-| 6 | SurfaceFlinger actual-present | 证明 layer 呈现节奏代理 |
-| 7 | 有音轨 A/V + 10～30 分钟 thermal/power | 证明持续播放与同步 |
-| 8 | 同源同帧盲审 | 证明增强值得付出性能和功耗成本 |
+**结果与代价。** 早期 720p 已在指定 23.976fps 片源上跟住播放器代理帧率。那一轮还同时调整了 QNN tuning 等设置，没有把 pinned output 的独立收益分离出来。复用减少重复准备，但所有权和关闭顺序变得更重要。
 
-当前层级 5 已通过，层级 6 只有 QNN 1/2 PASS，层级 7/8 仍开放。不能用下层 PASS 代替上层结论。
+对应代码：`QuickSrSession.open()`、`runIntoSlot()`、`close()`；历史记录：[720p 优化经验](REALTIME_VIDEO_SR_LESSONS.md)。
 
-## 9. 用这个项目入门的实践路线
+### 案例二：按输出消费者需要的顺序访问数据
 
-每个练习都先写预测，再运行，再解释结果。这样得到的是部署能力，而不是命令记忆。
+**问题。** 1080p NCHW 输出有三个大颜色平面。打包一个像素时，要从三个区域分别取值，再写出交错 RGBA。
 
-### Lab 1：模型身份与图合同（不需要手机）
+**实现。** 输出改成 float32 NHWC；把输出图像按行分成四条带，每个 Java worker 写入不同的输出区域；alpha 对应的输入索引提前计算。布局优化改善访问方式，条带并行利用 CPU 处理不同的行。
 
-- 用 `Get-FileHash` 检查 canonical 模型；
-- 打开 manifest，手算一个 input/output 元素数；
-- 用 Netron 或 ONNX 脚本确认 input/output name、shape 和算子；
-- 解释为什么相同文件名不能代替 hash。
+**结果与代价。** 最终配置的 pack p50/p95 为 `11.321/15.503ms`，两条带的实测尾延迟更差。这里采用的是**四条带 Java 实现**；先前 JNI/NEON 候选没有进入默认路径。输出仍然是 23.73 MiB 的 float 数据，线程也会争用内存带宽。
 
-验收：能从空白写出“模型资产最小身份合同”。
+对应代码：`packNhwcToRgbaWithAlphaMapsParallel()`；最终记录：[架构优化审计](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)。
 
-### Lab 2：固定 shape 与数值等价（不需要手机）
+### 案例三：让不同帧处在不同处理阶段
 
-- 运行一个 fixed-shape 派生脚本；
-- 比较 canonical 与 derived 的两组确定性输入；
-- 检查 mismatch、nonfinite、max absolute error 和 output hash；
-- 区分“图变换正确”与“模型画质好”。
+**问题。** 串行执行时，QNN 算完 N 帧，还要等 N 帧复制、打包和交付结束，才能继续下一帧。
 
-验收：能说明固定 shape 的收益和代价。
+**实现。** 推理、CPU 后处理和 GL 交付分阶段调度。下面只表示同一个时间窗口内可以发生的跨帧重叠；横轴是示意时隙，**没有使用实测耗时**。
 
-### Lab 3：Tensor layout 与内存（不需要手机）
+![流水线三个阶段在相同时间窗口内分别处理相邻帧，随后各自推进到下一帧](diagrams/edge-pipeline-overlap.svg)
 
-- 手算 NCHW input、NCHW/NHWC output 和 RGBA8 的字节数；
-- 写一个小 benchmark 比较 NCHW 与 NHWC pack；
-- 分别记录顺序 heap、direct buffer、批量 copy 的行为；
-- 不把 PC/模拟器速度外推到真机 HTP。
+*图 3：只看时间重叠。后处理包括 output copy 和四条带 Java pack；GL 行表示上传和提交，最终屏幕呈现还有后续调度。[PlantUML 源码](diagrams/edge-pipeline-overlap.puml)*
 
-验收：能解释“0.1 MiB 模型为什么产生 23.73 MiB 输出”。
+用一组纯教学数字算一遍：如果推理 30ms、后处理 12ms、GL 交付 5ms，串行服务间隔约为 `30 + 12 + 5 = 47ms`；充分重叠后的理想稳态间隔接近最慢阶段的 30ms。单帧依然要经过所有阶段，真实系统还会增加等待和竞争。
 
-### Lab 4：Android CPU/模拟器功能路径
+在这个实现中，两个 pinned output slot 允许上一帧复制时，下一帧写入另一个 slot。`inferDeferred()` 返回临时租约（lease）；后处理用 `copyTo()` 取走数据，再 `close()` 归还槽位。它只把输出复制移到后处理线程，QNN 推理仍由同一条推理执行线串行调用。
 
-- 构建 x86_64 CPU APK；
-- 验证 720p/1080p output texture 实际尺寸；
-- 练习 seek/flush/release；
-- 将结果标为功能证据，不写成 QNN 性能。
+**结果与代价。** 单独的 deferred-copy A/B/B/A 中，推理调用 p95 的两轮均值由 `34.733 → 30.529ms`，接收至提交 p95 的两轮均值由 `195.203 → 178.195ms`。A、B 均已达到源速率，因此这组结果主要说明关键路径和延迟改善。额外 output slot 占 **23.73 MiB**。[实验摘要](evidence/realtime-1080p-physical-20260905.json)
 
-验收：能区分 host、emulator、physical-device 三种证据。
+流水线还需要三条约束：
 
-### Lab 5：物理机 QNN 会话
+- **有界等待。** 当前应用帧准入上限为 2，下游来不及就施加背压。这个 2 不等于系统所有缓冲总共只能放两帧；Media3、后处理、GL 各自还有生命周期。
+- **帧身份。** `frameId` 串起计时，PTS 保留播放位置，`generation` 在 seek/flush 时更新，旧任务完成后不能混入新时间轴。
+- **明确所有权。** 消费者复制完之前不能复用输出槽；复制后及时归还。释放会话前要确认仍在使用它的任务已退出。
 
-- 显式绑定授权手机，确认已安装 APK 的版本和 hash；
-- 使用权利清晰、已登记的本地素材；
-- 检查 QNN runtime/backend/tuning 与 CPU fallback policy；
-- 分开记录功能、数值和性能结论。
+加深队列只能扩大等待空间。如果模型持续只能处理 20fps，而输入是 30fps，每秒仍会多积压 10 帧，最终必须阻塞或丢帧。
 
-验收：能解释“QNN session 创建成功”为什么不等于逐节点全在 NPU。
+### 案例四：移走不该出现在稳定播放中的工作
 
-### Lab 6：流水线与背压
+**问题。** 即使平均计算够快，偶发大工作也会打断帧节奏。旧完整有限值扫描会周期遍历超过 600 万个 float，真机曾出现约 `330～353ms` 的停顿。
 
-- 给同一 frameId 记录 accepted、readback、inference、pack、upload 时间；
-- 观察 queue depth 与 output-slot lease；
-- 对比串行和 overlap，但保持模型、片源、tuning 与统计窗口不变；
-- 用服务率和延迟两个指标描述结果。
+**实现。** 当前会话第一帧完整检查 NaN/Infinity，后续帧保留尺寸和生命周期检查，但不再周期性全量扫描。同时，同尺寸输出直接上传 Media3 texture，省掉私有中间纹理和一次缩放 blit。
 
-验收：能说明为什么队列加深不等于吞吐提升。
+**结果与代价。** 移除了已观测的周期全扫停顿；direct upload 的一次对照中，GL 提交 p95 从 `6.435 → 3.460ms`。首帧检查不代表后续每帧都做了同等数值验证；4K 画布尺寸不同时仍需缩放。局部工作减少后，还要重新检查最终显示。[审计与边界](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)
 
-### Lab 7：产品门禁
+### 为什么有些“更底层”的优化没有采用
 
-- 用 A1 原画 → B1 QNN → B2 QNN → A2 原画控制漂移；
-- 比较 effect throughput 与 SurfaceFlinger actual-present；
-- 加入有音轨素材验证 A/V sync；
-- 最后才做代表性动漫同源同帧盲审和 thermal。
+| 尝试 | 实验告诉我们什么 | 从中学到什么 |
+| --- | --- | --- |
+| JNI/NEON packer | 旧串行 NCHW A/B/B/A 中，pack p50 两轮均值 `36.566 → 102.353ms`，平均吞吐下降 42.94% | 这一个实现回归；不能由此断言 NEON 本身更慢，JNI、访存等成本尚未分离 |
+| 双 PBO 上传 | 对照中 GL p95 `3.460 → 1.832ms`，最终显示仍只有 1/2 通过，额外占 15.82 MiB | CPU 提交变快不必然改善显示节奏 |
+| 固定“每三帧超分一次” | 当前没有作为实时默认策略；cadence analyzer 与受控复用另有实验 | 动漫会混合静止背景、运动、字幕和切镜，一拍三不能替代逐帧内容判断 |
 
-验收：只在每个独立门禁都有证据时升级结论。
+更多候选（直接 FloatBuffer 读取、时域 batch、空间分块）保留在[历史试验索引](#experiments)。读负结果时，首先确认它测试了哪个实现和哪个配置。
 
-## 10. 当前主要矛盾和下一步应该学什么
+<a id="results"></a>
 
-当前主要矛盾已经不是平均 QNN 算力：30 FPS effect throughput 已经达到。未关闭的是偶发最终显示尾延迟——失败轮平均仍为 30.0341 FPS，却出现一个 58.153 ms 长间隔和两个补偿短间隔。
+## 5. 解释实验结果：为什么 30fps 还会卡
 
-所以下一个真正有学习价值的任务不是继续枚举线程数，而是把同一个失败 frameId/PTS 对齐到：
+### 5.1 吞吐、延迟、显示间隔要分开读
 
-```text
-App inference/postprocess/GL timeline
-        + Perfetto sched/freq
-        + GL fence
-        + BufferQueue
-        + SurfaceFlinger FrameTimeline
+| 指标 | 它回答的问题 | 已记录的 1080p 结果 |
+| --- | --- | --- |
+| 处理吞吐 | 稳态每秒向 Media3 交付多少帧？ | 828 个稳态样本，`30.0045fps`，effect drop/bypass `0/0` |
+| 管线延迟 | 一帧从 effect 接收到输出提交，经过多久？ | p95 `179.024ms`，含处理和等待 |
+| 显示间隔 | 相邻画面实际呈现代理的时间差是否稳定？ | QNN 两轮只有 1 轮通过；失败轮最大间隔 `58.153ms` |
+
+流水线填满后，可以每约 33.33ms 交付一帧，同时每一帧在多个阶段和队列中停留更久。所以 `179ms` 管线延迟与 `30fps` 吞吐可以同时成立。
+
+p50 是中位数，p95 是 95% 样本不超过的值。不同阶段的 p95 可能来自不同帧，不能直接相加或取最大值来推算真实 FPS；应看逐帧时间线和实测服务率。
+
+### 5.2 看一次真正的显示对照
+
+A/B/B/A 表示“原画、QuickSR、QuickSR、原画”，用于观察时间和温度漂移。SurfaceFlinger 是 Android 合成显示链路的一部分，下面测量的是其 layer actual-present 代理，尚非屏幕光子时序或音画同步。
+
+| 轮次 | 路径 | 平均呈现 FPS | 长 / 短间隔异常 | 结果 |
+| --- | --- | ---: | ---: | --- |
+| A1 | 原画 | 29.9792 | 0 / 0 | 通过 |
+| B1 | QuickSR QNN | 30.0341 | 1 / 2 | 未通过 |
+| B2 | QuickSR QNN | 30.0030 | 0 / 0 | 通过 |
+| A2 | 原画 | 29.9544 | 0 / 0 | 通过 |
+
+这次规则把超过 `1.5 × 33.33ms` 的间隔记为长间隔，小于 `0.5 × 33.33ms` 的记为短间隔。它允许一定抖动；“通过”也不等于每帧都恰好 33.33ms。
+
+B1 的均值看起来很好，但一张画面停留了 58.153ms，随后又有补偿短间隔。均值会把这种局部不均匀隐藏掉。由此能确认的是“已达到平均服务率，显示重复性仍未稳定通过”，尚不能确定是哪一行代码导致。
+
+来源：[去标识的机器可读实验摘要](evidence/realtime-1080p-physical-20260905.json)。该片源没有音轨，当前默认架构的长期温度/功耗和代表性动漫画质也还未完成正式验证。
+
+### 5.3 当前最值得做的下一步
+
+把一次失败帧的 `frameId / PTS` 与应用计时、Perfetto 调度/频率、GL fence（GPU 工作完成的同步信号）、BufferQueue、SurfaceFlinger 时间线对齐，判断延误先出现在哪里：
+
+| 如果首先发现 | 对应研究方向 |
+| --- | --- |
+| 推理或后处理结果晚到 | 执行耗时、CPU 调度、带宽争用 |
+| 结果已好，但上传或 GPU 完成较晚 | GL 提交与同步，评估共享缓冲是否可行 |
+| 提交及时，但错过显示采纳时机 | 播放器队列与 SurfaceFlinger 呈现调度 |
+| 与抢占、频率变化同时出现 | 系统调度、温度与持续性能 |
+
+几种原因可能同时作用；先找有证据的最早延误，保留无法判断的部分，再做对应的单变量修改。采用 AHardwareBuffer 或 EGLImage 之前，也要验证模型缓冲、纹理、格式和同步能否衔接，不能把 API 名称等同于整条链零拷贝。
+
+详细执行顺序见[实现计划](IMPLEMENTATION_PLAN_AND_PROGRESS.md)。
+
+<a id="practice"></a>
+
+## 6. 动手学习：从无模型练习到真机验证
+
+每一步先写下预测，再执行，再用结果解释预测为什么成立或失效。前两步就可以开始学习数据与工程思维。
+
+### 练习一：不用模型，算清数据
+
+运行下列纯 Python 示例，确认两份数组只是排列不同。然后把 H/W 换成本文输入和输出尺寸，算出 Tensor 字节数。
+
+```python
+# 两个 RGB 像素：(10, 20, 30)、(40, 50, 60)
+nhwc = [10, 20, 30, 40, 50, 60]
+nchw = [10, 40, 20, 50, 30, 60]
+rebuilt = [nchw[c * 2 + p] for p in range(2) for c in range(3)]
+assert rebuilt == nhwc
+print(1 * 1080 * 1920 * 3 * 4)  # 24883200 bytes
 ```
 
-归因结果只能落在“result-ready 晚、GL/fence 晚、latch 错过、OS 调度/降频”中的一个或保持 `INCONCLUSIVE`。只有定位完成，才决定学习线程优先级、AHardwareBuffer/EGLImage、Media3 queue 或 thermal/frequency 中的哪一条。
+产出：写出 NCHW 与 NHWC 的索引公式，解释“布局变了但字节数没有变”。可以对照 [`QuickSrVideoEffectTest`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/test/java/dev/aisystems/quicksrplayerlab/QuickSrVideoEffectTest.java) 中的转换用例。
 
-## 11. 初学者术语表
+### 练习二：不用手机，读出一个实验结论
 
-| 术语 | 在本项目里的含义 |
+在仓库根目录执行以下 PowerShell，只读取已提交的摘要：
+
+```powershell
+$report = Get-Content .\docs\evidence\realtime-1080p-physical-20260905.json -Raw |
+    ConvertFrom-Json
+$report.throughput | Select-Object observed_fps, measured_frames, dropped_count
+$report.surfaceflinger_abba.quicksr_qnn |
+    Select-Object run, status, actual_present_fps, maximum_interval_ms
+```
+
+产出：用两句话分别描述平均吞吐和显示节奏，指出这些数据为什么不能证明音画同步。此时不需要模型、Android SDK 或设备。
+
+### 练习三：有本地模型后，验证一个图变换
+
+本仓库提交代码和验证记录，权重及带权重 APK 留在本地。先按[模型准备说明](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/models/README.md)取得并核验所需文件；Python 环境需要 `numpy`、`onnx`、`onnxruntime`，具体准备见 [PC benchmark](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/pc-benchmark/README.md)。
+
+可以先做 fixed-shape 2× 小练习；在 canonical 2× 与既有 fixed64 DCR 产物已按说明准备后，运行：
+
+```powershell
+python .\derived-models\derive_quicksrnet_fixed640x360.py
+```
+
+产出：检查它生成的 `derivation-manifest-fixed640x360.json`，找到来源哈希、输出 `[1,3,720,1280]` 和两组确定性输入的数值比较。这个练习是 720p 的 2× 图，和正文 1080p 主档要分清。
+
+进一步做 3× NHWC 包装时，先按 [PC 导出说明](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/pc-benchmark/README.md)准备对应的 3× 权重和导出环境；再运行：
+
+```powershell
+python .\pc-benchmark\export_quicksrnet_variants.py --scale 3
+python .\scripts\experiment_display_friendly_output.py `
+    --source .\derived-models\quicksrnet-small-3x-fixed640x360.onnx `
+    --output .\derived-models\quicksrnet-small-3x-fixed640x360-f32-nhwc.onnx `
+    --variant float32-nhwc
+```
+
+导出还需要 `pc-benchmark/requirements-export.txt` 中的依赖；脚本执行 CPU 数值比较。产出：确认 NHWC 输出等于 NCHW 输出的转置，记录 shape、dtype 和比较结果。电脑上的计时只描述这个 CPU 环境。
+
+### 练习四：在 Android 中追踪资源和帧身份
+
+按[构建说明](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/README.zh-CN.md#构建与运行)准备 SDK、JDK、模型集合与依赖。完整 App 需要多个变体，仅完成练习三的单个模型不足以组装 APK。
+
+阅读 `QuickSrSession.open/infer/close` 和 `QuickSrVideoEffect.processImage`，给一帧标出“输入缓冲、输出槽、应用数组、GL 纹理”分别由谁持有。再阅读 [`VideoPipelineTelemetryTest`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/src/test/java/dev/aisystems/quicksrplayerlab/VideoPipelineTelemetryTest.java)，理解 seek 后旧 generation 为什么必须被拒绝。
+
+产出：解释租约过早归还和永不归还各会造成什么问题。有隔离模拟器时，可以检查 CPU 功能路径和 seek/release 行为；模拟器结果不用于推断真机 QNN 速度。
+
+### 练习五：用真机回答一个性能问题
+
+模型、片源、APK、QNN 设置和统计窗口保持一致，只比较一个因素，例如 deferred copy 开关。使用指定设备，记录每帧身份、各阶段计时、队列深度及显示间隔；同时保存后端配置。
+
+产出：一份 A/B/B/A 记录，说明改动影响的是吞吐、管线延迟还是显示节奏。测试方法见[遥测说明](REALTIME_PIPELINE_TELEMETRY.md)、[最终实验摘要](evidence/realtime-1080p-physical-20260905.json)和[下一步计划](IMPLEMENTATION_PLAN_AND_PROGRESS.md)。后续再用有音轨、长时间、代表性动漫素材补齐其他问题。
+
+<a id="reference"></a>
+
+## 附录：需要时再查
+
+<details>
+<summary>模型档位、构建文件与来源</summary>
+
+| 视频档位 | 神经输入 → 输出 | 用途 |
+| --- | --- | --- |
+| 720p，QuickSR 2× | `640×360 → 1280×720` | 诊断与回归 |
+| 1080p，QuickSR 3× | `640×360 → 1920×1080` | 当前逐帧实时主目标；默认输出 NHWC |
+| 1440p，QuickSR 4× | `640×360 → 2560×1440` | 高分辨率实验 |
+| 4K 显示 | 3× 神经输出后，GPU 放大到 `3840×2160` | 非原生神经 4K |
+
+图片路径、动态模型和视频静态模型的接口与测试条件不同，不能混用各自的性能结论。
+
+完整 bytes/hash 以 [`app/build.gradle.kts`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/app/build.gradle.kts) 为准，来源和准备步骤见 [`models/README.md`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/models/README.md)、[`derived-models/README.md`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/derived-models/README.md)、[`pc-benchmark/model-sources.json`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/pc-benchmark/model-sources.json)。
+
+构建入口 [`build-local.ps1`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/build-local.ps1) 校验本地资源后构建；加载时 `QuickSrSession` 再校验 asset 身份。新 checkout 不含权重，完整准备后才可 assemble。上游版本与项目发布约定分别见 [`THIRD_PARTY_NOTICES.md`](https://github.com/znbsf/quicksr-mobile-player-lab/blob/main/THIRD_PARTY_NOTICES.md) 和[发布边界](PUBLICATION_BOUNDARY.md)。
+
+</details>
+
+<a id="experiments"></a>
+
+<details>
+<summary>优化历史与动漫相关扩展</summary>
+
+| 想继续理解的问题 | 阅读入口 |
 | --- | --- |
-| NCHW / NHWC | Tensor 内存布局；字母依次表示 batch、channel、height、width。 |
-| EP | ONNX Runtime Execution Provider；负责把图交给 CPU、QNN 等后端。 |
-| QNN HTP | Qualcomm 的端侧加速后端；本项目通过 QNN plugin/runtime 调用。 |
-| pinned output | 预先创建并由 ORT 写入的固定 output tensor/buffer。 |
-| lease | output slot 的临时所有权；必须显式归还。 |
-| backpressure | 下游处理不过来时阻止继续无限入队。 |
-| PTS | Presentation Timestamp，播放器时间轴上的呈现时间。 |
-| generation | seek/flush 后切换的逻辑世代，用于拒绝迟到旧帧。 |
-| p50 / p95 | 延迟分布中位数与尾部百分位；不能代替逐帧因果时间线。 |
-| output-submit proxy | App 把输出提交到 Media3 的时间代理，不是最终显示。 |
-| ABBA | 控制 A、候选 B、候选 B、控制 A，用于降低温度和时间漂移误判。 |
-| fail closed | 合同不满足时明确失败，不静默退化成另一个后端或模型。 |
+| 从最初验证到各阶段实现 | [开发记录](DEVELOPMENT_LOG.md) |
+| 720p 静态 shape、资源复用与调优 | [早期优化经验](REALTIME_VIDEO_SR_LESSONS.md) |
+| 早期串行与 overlap 的真机比较 | [后处理重叠实验](ANDROID_QNN_POSTPROCESS_OVERLAP_AB.md) |
+| 为什么 native packer 回归 | [JNI/NEON A/B/B/A](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md) |
+| NHWC、deferred copy、PBO 和停止的候选 | [1080p 架构审计](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md) |
+| 按内容判断一拍二、一拍三能否复用 | [动漫 cadence 复用](ANIME_CADENCE_REUSE.md) |
+| Anime4K 怎样留在 GPU 上处理纹理 | [Anime4K GPU 接入](ANIME4K_ANDROID_GPU_INTEGRATION.md) |
+| RIFE、IFRNet 等插帧候选的移动探针 | [VFI 候选报告](ANIME_VFI_MOBILE_CANDIDATE_PROBE.md) |
 
-## 12. 图的维护方式
+历史文档保留当时配置；例如早期每 120 帧有限值全扫，后来改为首帧全扫，应按日期和[当前状态](STATUS.md)理解。Anime4K 是独立 GPU 路径，VFI 仍是离线/CLI 探针；它们的结果不能替代本文 QuickSR 逐帧显示结果。
 
-三张图同时提交了可编辑的 `.puml` 与 GitHub 可直接显示的 `.svg`。当前 SVG 使用 [PlantUML 1.2026.6](https://github.com/plantuml/plantuml/releases/tag/v1.2026.6) 生成；本轮临时渲染器按官方 SHA-256 `89948f14c93756c7a3fb7b69078ff37e8489fd79dd430c582b931e2f65358690` 校验，JAR 不进入仓库。修改源码后可在仓库根目录重新生成：
+</details>
+
+<details>
+<summary>三个图的职责与修改方法</summary>
+
+- `edge-frame-dataflow`：一帧的数据表示与转换边界。
+- `edge-code-architecture`：实现模块的调用/依赖。
+- `edge-pipeline-overlap`：不同帧在阶段间重叠的示意。
+
+每张图同时保留 PlantUML `.puml` 和可直接显示的 `.svg`。图中不放性能结论、完整哈希或实验分支，避免与正文重复。
+
+使用本地 PlantUML 1.2026.6 重新生成；渲染器不进入仓库：
 
 ```powershell
 $plantUmlJar = '<path-to-plantuml-1.2026.6.jar>'
@@ -452,4 +429,4 @@ Get-ChildItem .\docs\diagrams\edge-*.puml | ForEach-Object {
 }
 ```
 
-相关总状态见 [`STATUS.md`](STATUS.md)，下一步顺序见 [`IMPLEMENTATION_PLAN_AND_PROGRESS.md`](IMPLEMENTATION_PLAN_AND_PROGRESS.md)，完整优化与负结果见 [`REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md`](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)。
+</details>

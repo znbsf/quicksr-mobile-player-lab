@@ -1,40 +1,37 @@
 @startuml
-title 三段有界流水线：跨帧并行
-
-skinparam defaultFontName Noto Sans SC
+skinparam defaultFontName Microsoft YaHei UI
+skinparam defaultFontSize 15
+skinparam defaultFontColor #243247
 skinparam backgroundColor white
 skinparam shadowing false
-hide footbox
-skinparam sequence {
-  ArrowColor #475569
-  LifeLineBorderColor #64748B
-  LifeLineBackgroundColor #F8FAFC
-  ParticipantBorderColor #64748B
-  ParticipantBackgroundColor #E0F2FE
-  ParticipantFontColor #0F172A
-  GroupBorderColor #94A3B8
-  GroupBackgroundColor #F8FAFC
+skinparam ArrowColor #64748B
+skinparam timing {
+  FontColor #243247
+  LineColor #64748B
 }
 
-participant "Media3\n解码" as MEDIA
-participant "推理\nQNN HTP" as INFER
-participant "后处理\nNEON" as POST
-participant "输出\nMedia3 / SF" as OUTPUT
+concise "推理 / QNN" as QNN
+concise "后处理 / Java" as CPU
+concise "上传提交 / GL" as GL
+scale 1 as 90 pixels
 
-MEDIA -> INFER : N：纹理 + frameId / PTS
-INFER -> POST : N：输出租约
+@0
+QNN is "N+1" #E7F3EB
+CPU is "N" #F1F3F6
+GL is "N−1" #E8F1FB
 
-par 推理 N+1
-  MEDIA -> INFER : N+1
-  INFER -> INFER : inference
-else 后处理 N
-  POST -> POST : copy + RGB→RGBA
-end
+@1
+QNN is "N+2" #E7F3EB
+CPU is "N+1" #F1F3F6
+GL is "N" #E8F1FB
 
-POST -> OUTPUT : N：RGBA + 原 PTS
-OUTPUT -> OUTPUT : present
+@2
+QNN is "N+3" #E7F3EB
+CPU is "N+2" #F1F3F6
+GL is "N+1" #E8F1FB
 
-note over INFER, POST
-  容量 = 2；过载时受控退化，不无限排队。
-end note
+@3
+QNN is "N+4" #E7F3EB
+CPU is "N+3" #F1F3F6
+GL is "N+2" #E8F1FB
 @enduml
