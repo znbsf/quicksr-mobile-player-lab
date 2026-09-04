@@ -18,7 +18,8 @@ v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN pos
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
 | QNN 运行时 | IMPLEMENTED | fixed-shape 模型 hash 校验、HTP tuning、graph finalization、持久 input/output tensor、资源释放和有限值抽查已实现 | 当前视频 smoke 没有附带发布级 placement/底层 HTP trace |
 | QuickSR native output packer | IMPLEMENTED / DEVICE ABBA（默认 OFF） | 同 APK 的 1080p SERIAL ABBA 已完成；AndroidJUnitRunner 真机执行 3/3 packer 边界、数值/alpha 与 ownership 测试通过；Java/native 对齐样本零 CRC 冲突 | native 平均 FPS -42.94%、pack p50 +179.91%，否决默认化；周期不同帧仅覆盖 70/180，短 PSS 不是长期无泄漏或增量内存证明 |
-| 720p 神经输出 smoke | HISTORICAL PASS / CURRENT GATE OPEN | 旧 smoke：`640×360 → 1280×720`，645 帧 / 26.860 秒 = 24.0134 fps，四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0；较新的 overlap A/B 中 SERIAL/OVERLAP 吞吐仍接近源 cadence | 最新 raw-ns 合同下 total p95 仍超过 41.67 ms，且不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论；当前代码需按同一合同重跑后才能关闭 M3 |
+| 720p 神经输出诊断档 | HISTORICAL PASS / NOT PRODUCT TARGET | 旧 smoke：`640×360 → 1280×720`，645 帧 / 26.860 秒 = 24.0134 fps，四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0；较新的 overlap A/B 中 SERIAL/OVERLAP 吞吐仍接近源 cadence | 只用于性能归因和回归，不再作为产品完成目标；最新 raw-ns total p95 超过 41.67 ms，且没有最终显示、全量 A/V sync 或长时保证 |
+| 1080p 产品硬门 | FAIL / QUALITY OPEN | 现有 overlap 把代理吞吐从 11.435 提高到 17.960 fps | 低于冻结片源 23.976 fps，且未证明逐源 PTS 最终显示、effect-induced drop/bypass=0、无积压、A/V sync、长时热稳；QuickSR 的真实同帧画质优势也未成立 |
 | 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
 | 数值正确性 | PASS（观察性张量范围） | 11 个权利清晰 clip 的 27 个合同选帧均用 Android 捕获的原始 NCHW 输入与 PC CPU ORT 对照；零失配、零非有限值，并生成 Lanczos 基线 | 不是 P4 real-image/SSIM、全帧/视频/显示画质或 per-node placement 证明 |
 | 视觉质量 | OPEN（已有 PC 观察与主机门禁源码） | SHA-256 核验的 CC BY 3.0 动画与 CC BY 4.0 原生 4K 漫画/插画已形成 72 案例；干净输入 QuickSR 胜 30/36、模糊/JPEG Q35 仅胜 7/36、方形漫画胜 16/18；线稿/高低对比字幕/复杂 cadence 的 source-original 夹具和 canonical declared-oracle evaluator 已完成主机测试 | 仍缺更大规模代表性动漫集、LPIPS/感知指标、真实 Anime4K/cadence 输出、可重放 runtime trace/receipt/执行身份、盲测与手机同帧输出；声明符合 PASS 不是运行或视觉质量 PASS |
@@ -88,16 +89,18 @@ local SDR video
 
 ## 仍然开放的门禁
 
-当前主要矛盾不是缺少更多候选，而是 1080p 性能实验已经前进，首个 720p 产品目标的真实
-画质、最终显示、A/V 和持续运行证据却仍未闭合。当前关键路径按以下顺序执行：
+当前主要矛盾是 **QuickSR 的 1080p 路径不能保证原片帧率**。当前最好 overlap 代理
+17.960 fps 对 23.976 fps 片源已经明确失败，而且尚未证明最终屏幕逐 PTS 显示。只要这一门
+失败，QuickSR 就不能用于实时播放；720p 只保留为诊断档，画质比较排在帧率通过之后。当前
+关键路径按以下顺序执行：
 
-1. Anime4K/QuickSR 获取确定 effect 输出的固定同帧参考，补 clean、退化、线稿、字幕边缘和人工盲审，不再依赖 OEM UI 截图；
-2. 将 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，再加入 GPU completion、SurfaceFlinger 或等价最终显示观测，并检查 A/V sync、seek、flush、pause/resume；按当前代码重跑 720p M3 合同；
-3. cadence 增加混合一拍一/二/三、慢平移、嘴型、粒子、切镜、淡入淡出和低对比字幕的真实 analyzer 错误复用/漏复用审核；
-4. 候选达到实时和质量门槛后，建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；
-5. native output packer 已完成负结果收口；新的 1080p 热路径变量必须由分段 profiler 选择，并在布局/量化 I/O、shared allocator 或显示域路径中一次只测一个，不能与 overlap/扩队列混合来掩盖回归；
-6. SESR-M5 先关闭导出和 CPU/QNN parity；若仍要 VFI，另立 ANVIL 系统任务，不再继续当前两个 ncnn 候选；
-7. M3 证据闭合后再拆分稳定 AAR API 和 demo app。
+1. 将 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，以 1080p 重跑原片帧率硬门：每个源 PTS 都有输出、effect-induced drop/bypass=0、队列不持续增长，并加入 GPU completion、SurfaceFlinger 或等价最终显示、A/V sync、seek、flush、pause/resume；720p 只作诊断对照；
+2. native output packer 已负结果收口；下一变量由分段 profiler 在布局/量化 I/O、shared allocator 或 texture-resident 显示路径中一次只选一个，不能与 overlap/扩队列混测；
+3. 建立环境温度、设备频率、功耗、内存和至少 10～30 分钟持续运行门限；固定窗口均保持原片 cadence 才算通过；
+4. 只有帧率硬门通过后，才冻结 Lanczos、Anime4K、QuickSR 的同源同帧 1080p 输出并做画质盲审；
+5. cadence 可减少推理次数，但每个原始 PTS 仍必须输出一帧；先补真实 analyzer 的错误复用/漏复用审核，再计入帧率门结果；
+6. 合理性能候选仍无法达到原片 cadence 时，将 QuickSR 实时路线标记为 `STOPPED`，转向 Anime4K；
+7. SESR-M5、VFI 和稳定 AAR 全部后移；只有 1080p 原片帧率与后续画质两道门都通过后才恢复。
 
 P0 观测字段、代理/未测边界和下一轮单变量 A/B 门禁见
 [REALTIME_PIPELINE_TELEMETRY.md](REALTIME_PIPELINE_TELEMETRY.md)。

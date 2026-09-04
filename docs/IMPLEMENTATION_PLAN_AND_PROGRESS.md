@@ -13,10 +13,16 @@
 GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接入 App。
 这不等于所有增强模式都达到产品级实时和画质门槛。
 
-首个可交付目标仍是单台目标机上的本地 SDR `640×360 → 1280×720 @ 23.976 fps`，
-而不是先承诺 1080p 神经输出。旧 smoke 曾达到 24.0134 fps 的播放器代理吞吐，但最新
-raw-ns 合同下的 720p SERIAL/OVERLAP 总计 p95 仍超过单帧预算；固定同帧画质、最终显示、
-A/V sync 和正式热稳也没有关闭。因此“吞吐接近源帧率”不能写成 M3 产品门禁已完成。
+当前第一硬门是 **QuickSR 的目标 1080p 输出必须持续保持原片帧率**。首个有界声明使用现有
+冻结的 23.976 fps 片源：最终显示必须按每个源 PTS 交付、无计算导致的 drop/bypass、无持续
+积压并保持 A/V sync；动漫 held frame 可以复用已经增强的像素，但仍须按每个原始 PTS 输出
+一帧。当前最好 1080p overlap 代理只有 17.960 fps，低于 23.976 fps，因此按这个产品定义
+明确不可用。720p 旧 smoke 只保留为性能归因和回归诊断档，不再充当产品完成目标。
+
+只有先通过原片帧率硬门，才进入第二道画质停止门：用完全相同的源帧和输出尺寸比较
+原画/Lanczos、Anime4K x2 Small 与 QuickSR。如果 QuickSR 在代表性动漫上没有稳定、明显且
+可盲审复核的优势，同样停止 QuickSR 播放器路线。两道门都必须通过，但当前所有工作优先服务
+于第一道帧率门。
 
 当前主要路线的裁决如下：
 
@@ -128,15 +134,20 @@ P1A 已完成
   -> QuickSR SERIAL Java/native packer ABBA
   -> 裁决：功能通过但性能显著回归，native 默认化被否决
 
-当前关键路径
-  |-- P1B 画质：真实 Android/offscreen GL adapter + trace/receipt + 人工审核
-  `-- P1C 播放：拆分吞吐/排队延迟分类，补 GPU completion/最终显示、A/V sync、生命周期和热稳
+当前唯一 P1B 原片帧率硬门（1080p 输出）
+  -> 23.976 fps 冻结片源逐 PTS 输出；effect-induced drop/bypass=0，队列不持续增长
+  -> 补 GPU completion/最终显示、A/V sync、生命周期和 10～30 分钟热稳
+  -> 未来声称 24/25/30 fps 时分别重跑，不从 23.976 fps 外推
 
-M3 共同检查点（先关闭 360p→720p）
-  -> 当前代码按同一证据合同重跑，画质、最终显示、A/V 和持续运行均过门
-  -> 任一核心门禁失败：保留实验状态；先修证据指向的瓶颈，不扩队列
+条件性 P1C 画质停止门（P1B 通过后）
+  -> 真实 Android/offscreen GL 输出：Lanczos / Anime4K / QuickSR 同源、同帧、同 1080p 尺寸
+  -> 线条、压缩退化、字幕、渐变和跨帧闪烁盲审 + trace/receipt
+  -> QuickSR 无稳定明显优势：STOPPED；Anime4K 转为实时主线
 
-条件性 P1D（M3 关闭后才追 1080p）
+M3A 诊断检查点（360p→720p，不是产品完成声明）
+  -> 只用于定位 readback、QNN、pack、GL upload、队列和 thermal 的占比
+
+条件性 P1D（为关闭 1080p 原片帧率硬门）
   -> 从 profiler 只选一个：输出数据布局/量化 I/O/shared allocator/显示域路径
   -> 固定模型、片源、tuning、队列和 cadence 做 ABBA；失败即停止该变量
 
@@ -147,12 +158,28 @@ M3 共同检查点（先关闭 360p→720p）
 
 ### 当前主要矛盾与优化判据
 
-**项目级主要矛盾是性能实验已经跑到 1080p，但首个 720p 产品声明所需的真实画质、最终显示、
-A/V 和持续运行证据仍未闭合。** 继续换 packer、扩大队列或接入 VFI，不会关闭首个可交付
-目标，反而会叠加新变量。当前优先级必须从“再找一个更快实现”切换为“先证明 720p 输出值得
-显示、确实按时显示，而且可以持续运行”。
+**项目级主要矛盾是 QuickSR 的 1080p 路径不能保证原片帧率。** 当前最好 overlap 代理
+17.960 fps 对 23.976 fps 片源已经失败，而且这还不是最终屏幕显示证据。只要这一门失败，
+QuickSR 无论单帧看起来多好都不能作为实时播放器方案；720p、SESR、VFI、AAR 和广泛画质
+研究全部后移。造成当前失败的主要工程嫌疑之一，是全帧 float32 NCHW 在 GL、CPU、ORT/QNN
+和 RGBA 显示域之间往返。其含义不是一条抽象的模型术语，而是每帧至少经历以下数据域变化：
 
-1080p 的技术子矛盾是全帧 float32 NCHW 在 GL、CPU、ORT/QNN 和 RGBA 显示域之间往返：
+```text
+GL texture（GPU 上的 RGBA 图像）
+  -> readback 到 CPU 的 RGBA8
+  -> CPU 拆成 float32 NCHW：[1, 3, H, W]
+  -> ORT/QNN 交给 HTP 执行
+  -> CPU 取得 float32 NCHW 输出
+  -> CPU clamp/交错打包回 RGBA8
+  -> upload 回 GL texture 显示
+```
+
+`float32` 表示每个 R/G/B 数值占 4 bytes；`NCHW` 表示批次、通道、高、宽，RGB 不再是
+逐像素交错，而是三个连续平面。以当前 `640×360 → 1920×1080` 为例，输入 RGBA8 约
+0.88 MiB，输入 NCHW 约 2.64 MiB，输出 NCHW 约 23.73 MiB，输出 RGBA8 约 7.91 MiB。
+四种显式表示即使每帧只各读写一次，24 fps 也已对应约 844 MiB/s 的数据流量，尚未计入
+驱动、QNN 内部复制、CRC/finite 扫描、同步等待和 GL upload 的额外流量。shared allocator
+可能减少其中一部分交接，但在 trace 证明前不能称为 GL→QNN→GL 零拷贝。
 
 - 24 fps 单帧预算为 41.67 ms；既有 Java 基线的 QNN caller p50 约 44.7 ms，单项已接近或
   超过预算；
@@ -172,9 +199,9 @@ A/V 和持续运行证据仍未闭合。** 继续换 packer、扩大队列或接
 `performance_class` 只做兼容。否则优化可能只是降低队列积压，却被错误归因到 kernel，或
 吞吐接近 24 fps 仍被一个含混的 `offline` 标签遮蔽。
 
-因此下一轮不是直接实现另一个优化，而是先补一个只读测量/验收回合：对同一 720p 和 1080p
-workload 分离 readback-ready proxy、preprocess、QNN caller、tensor copy、pack、GL submit、
-GPU completion 与最终显示，并绑定真实输出。只有结果明确后才从以下方向选择一个：
+下一轮直接补只读性能测量/验收：以 1080p 为产品裁决档、720p 为诊断对照档，分离
+readback-ready proxy、preprocess、QNN caller、tensor copy、pack、GL submit、GPU completion
+与最终显示，并绑定真实输出。只有结果明确后才从以下方向选择一个：
 
 1. 若 float 输出和布局转换主导，先验证 W8A8/uint8 或直接显示友好布局，避免再优化同一
    float NCHW→RGBA 循环；
@@ -186,17 +213,15 @@ GPU completion 与最终显示，并绑定真实输出。只有结果明确后�
 延迟和最终显示另列，不能恶化对应 A 的尾延迟；CRC/PTS/generation/lifecycle 必须无回归，
 并报告额外 PSS。任何一项失败都保留为负结果，不与 overlap、cadence 或新模型混测。
 
-立即执行包不修改热路径，先完成以下三步：
+立即执行包按以下三步：
 
-1. telemetry/report schema 向后兼容地新增 `throughput_class`、`effect_latency_class`、
-   `final_display_status`，并记录 Media3 effect queue=6、pending PBO=1；旧
-   `performance_class` 和阈值保持不变，避免重写历史结论；
-2. 将实际 Android/offscreen GL 输出接入既有 visual contract，生成逐帧 trace、receipt、
-   source/output hash；这一变更不同时调整队列、模型或 packer；
-3. ADB 重新可见后，先用当前默认路径重跑 720p，再根据独立的吞吐、排队延迟、最终显示、
-   A/V 和画质结果决定是否需要低缓冲自定义 effect。Media3 1.11.0 的公开
-   `ByteBufferGlEffect` 不能直接配置队列；如确有必要，应另建 queue=2/6 单变量原型，不能靠
-   反射改私有常量。
+1. telemetry/report schema 新增 `throughput_class`、`effect_latency_class`、
+   `final_display_status`，记录 Media3 effect queue=6、pending PBO=1；按当前默认路径重跑
+   1080p 原片帧率门，720p 只作定位差异的对照；
+2. 若仍低于原片 cadence，按分段结果一次只测一个布局/量化 I/O、shared allocator 或
+   texture-resident 变量；若合理候选均不能过门，将 QuickSR 实时路线标记为 `STOPPED`；
+3. 只有 1080p 原片帧率门通过后，才接真实 Android/offscreen GL 同帧输出并执行
+   Lanczos/Anime4K/QuickSR 画质盲审。
 
 ### P0：RIFE v4.25-lite 真机裁决（已完成）
 

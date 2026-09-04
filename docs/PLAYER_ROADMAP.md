@@ -4,7 +4,7 @@
 >
 > 文档性质：阶段边界、技术合同与证据门禁；不是完成证明。
 >
-> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现。M1/M2 的主要功能代码已经存在；M3 的 `640×360 → 1280×720` 旧 smoke 达到源 cadence 代理吞吐，但最新 raw-ns 合同、真实画质、A/V sync、最终显示 latch 与持续 thermal 仍未共同关闭。1080p overlap 有吞吐收益但仍离线，native packer 已负结果收口。M4 AAR 仍未实现。
+> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现。第一硬门是 1080p 最终显示持续保持原片帧率；当前 overlap 代理 17.960 fps 低于冻结片源 23.976 fps，明确不可用。720p 只作诊断。只有帧率通过后才做第二道画质门；native packer 已负结果收口，M4 AAR 未实现。
 
 ## 1. 先把当前事实说清楚
 
@@ -18,10 +18,10 @@
 | M0 图片路径 | 已实现系统选图、完整图片 tile 2×、CPU/QNN、预览和 PNG 保存 | 本轮没有新的权利清晰质量报告 |
 | M1 | Media3 播放器、effect、PTS 传递、原始/GPU 模式已经运行 | 正式 seek/flush/EOS、截图 hash 和完整生命周期合同 |
 | M2 | 完整帧进入 CPU/QNN，静态 shape 与分阶段计时已经实现 | 冻结 correctness、颜色等价和同帧 reference |
-| M3 experimental | 默认 `640×360 → 1280×720`；指定 23.976 fps workload 的播放器代理约 24 fps、Drop=0 | 画质、最终 latch、A/V sync、p95/p99、功耗、正式 thermal 和 tile/stitch |
+| M3 experimental | 720p 诊断档曾接近 23.976 fps；1080p overlap 代理为 17.960 fps | 第一门：逐源 PTS 最终显示、原片帧率、无 effect drop/bypass、无积压、A/V sync 和正式 thermal；第二门：1080p 画质 |
 | M4 | 未实现 | AAR、模块拆分、稳定 API、兼容矩阵和全新 checkout 交付验证 |
 
-因此可以声称“可运行的实验播放器和逐帧神经路径已实现”，但仍不能泛化为“720p 在所有设备实时且画质正确”。
+因此可以声称“可运行的实验播放器和逐帧神经路径已实现”，但当前不能声称“1080p 画质值得使用”或“保持原片帧率”；按产品硬门，现状不可用。
 
 ## 2. 产品边界
 
@@ -240,12 +240,13 @@ M2 门禁：
 - 所有已接受帧都能由 PTS 和 artifact identity 追溯；
 - 允许慢速或低 FPS，但必须如实记录；不能声称实时。
 
-### M3：360p → 720p tile/full-frame 与持续播放（完整帧性能候选已观察）
+### M3：1080p 原片帧率与画质产品门（720p 仅作诊断）
 
 范围：
 
-- 冻结一个版权安全的 720p reference clip；
-- 用确定性脚本生成 360p degraded input；
+- 冻结版权安全的 reference clip、目标 1080p 输出及原片帧率；首个有界合同为 23.976 fps；
+- 先关闭 1080p 原片帧率硬门；通过后才固定同源同帧的 Lanczos、Anime4K 与 QuickSR 输出并裁决画质；
+- 720p workload 只用于定位瓶颈和回归，不作为产品完成声明；
 - 固定 tile size、overlap、padding、crop 与 stitch 规则；
 - 处理画面边界和非 tile 整数倍尺寸；
 - 比较 bilinear、QNN 和 HR reference；
@@ -258,7 +259,9 @@ M3 门禁：
 - seam、边缘、字幕线条、静态画质和时间稳定性分别评价；
 - PSNR/SSIM 等机器指标与人工 A/B 独立保存，不能互相替代；
 - p50/p95/p99 分阶段延迟、late/drop/bypass、queue depth、内存和温度均有证据；
-- 运行前冻结目标帧率及其 frame budget；只有 p95 end-to-end、持续时长和 drop/thermal 门限都通过后，才允许在该分辨率/设备/模式下写“实时”。
+- 每个源 PTS 都有最终显示输出；动漫 held frame 可复用增强像素，但不能少交一帧；
+- effect-induced drop/bypass 为 0，队列不持续增长，A/V sync 在冻结容差内；
+- 只有固定窗口吞吐始终不低于原片 cadence、持续时长和 thermal 门限都通过后，才允许在该分辨率、设备、片源帧率和模式下写“保持原片帧率”。
 
 ### M4：可复用 AAR 与公开交付（未实现）
 
@@ -307,7 +310,7 @@ M4 门禁：
 | 仅 M0 | “真实图片固定 ROI 已进入图片评价闭环” | “完成全图/视频超分” |
 | M1 PASS | “Media3 effect texture 生命周期已跑通” | “NPU 播放器已完成” |
 | M2 HTP PASS、质量未过 | “低分辨率完整帧真实进入 HTP” | “画质正确/实时” |
-| M3 质量 PASS、性能未过 | “360p→720p 画质合同通过” | “实时播放” |
+| M3 质量 PASS、性能未过 | “1080p 画质合同通过” | “保持原片帧率/实时播放” |
 | M3 全部门禁 PASS | “在指定设备、视频、模式、帧率和持续时长下通过实时门限” | “所有手机/所有视频实时” |
 | M4 + human review | “可复用 Media3 AAR 和 demo 已审计交付” | “任意播放器可动态安装的通用插件” |
 
@@ -325,12 +328,12 @@ M4 门禁：
 
 ## 12. 下一次实际执行入口
 
-1. 把真实 Android/offscreen GL 输出绑定到现有 correctness/画质合同，用同 PTS CPU/golden 与权利清晰 reference 验证并完成盲审；
-2. 先把 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，再在当前代码上重跑 `640×360 → 1280×720 @ 23.976 fps`，补 GPU completion、SurfaceFlinger 或等价最终显示、A/V sync、seek/flush/pause/resume；
-3. 通过 10～30 分钟的温度、频率、功耗、PSS 和掉帧观察关闭 M3，而不是用旧 smoke 替代；
-4. 1080p 只作为条件性性能线：其 Java QNN caller p50 约 44.7 ms、output-pack p50 约 36.6 ms，native packer 已回归，不再重复该方向；
-5. 根据分段 profiler 一次只选择 W8A8/uint8 或显示友好布局、QNN shared allocator/native I/O、texture-resident/低缓冲路径中的一个做 ABBA；
-6. 如果 QNN caller 本身仍越过帧预算，再降低 workload 或完成 SESR-M5 导出/parity 后比较，不靠扩大队列；
-7. M3 的画质、最终显示、A/V 和持续运行全部通过后，再拆分可复用 AAR。
+1. 把 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，重跑 1080p @ 原片 23.976 fps：逐源 PTS 输出、effect-induced drop/bypass=0、无持续积压，并补 GPU completion、SurfaceFlinger 或等价最终显示、A/V sync、seek/flush/pause/resume；720p 只作诊断对照；
+2. 1080p 原片帧率是第一硬门：当前 Java QNN caller p50 约 44.7 ms、output-pack p50 约 36.6 ms，native packer 已回归，不再重复该方向；
+3. 根据分段 profiler 一次只选择 W8A8/uint8 或显示友好布局、QNN shared allocator/native I/O、texture-resident/低缓冲路径中的一个做 ABBA，不靠扩大队列；
+4. 通过 10～30 分钟的温度、频率、功耗、PSS 和掉帧观察；固定窗口均保持原片 cadence 才关闭第一门；
+5. 只有帧率通过后，才绑定真实 Android/offscreen GL 输出到画质合同，冻结 Lanczos、Anime4K、QuickSR 的同源同帧 1080p 输出和 trace/receipt 并做身份隐藏盲审；
+6. 帧率或画质任一硬门失败，QuickSR 实时路线均标记 `STOPPED`，转向 Anime4K；
+7. SESR-M5、VFI 与可复用 AAR 全部后移到两道硬门之后。
 
 若 GL readback/upload 主导总延迟，应保留负结果，并据此决定继续优化 Media3 effect 还是另立 native pipeline 实验；不得在没有测量前用“未来 zero-copy”跳过当前证据。
