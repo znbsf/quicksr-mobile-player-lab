@@ -9,11 +9,15 @@ param(
     [string]$VideoUri,
 
     [string]$CaseId,
+    [switch]$PrimaryOnly,
+    [switch]$SkipInstall,
     [switch]$IncludeExperimental,
     [string]$PrimaryReportPath,
     [string]$MediaRegistrationReceipt,
     [ValidateSet('OFF', 'CONTENT_AWARE_V1')]
     [string]$CadenceMode = 'OFF',
+    [ValidateSet('JAVA', 'NATIVE_NEON')]
+    [string]$OutputPacker = 'JAVA',
     [int]$CaptureFrame,
     [switch]$CaptureOnly,
     [string]$DeviceSerial,
@@ -25,6 +29,9 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($CaptureOnly -and $CadenceMode -ne 'OFF') {
     throw 'CaptureOnly requires CadenceMode OFF so the selected input is inferred.'
+}
+if ($PrimaryOnly -and ($CaseId -ne '1080p-primary' -or $CaptureOnly)) {
+    throw '-PrimaryOnly is restricted to a non-capture -CaseId 1080p-primary run.'
 }
 $script:scriptDirectory = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($script:scriptDirectory)) {
@@ -707,7 +714,10 @@ if ($CaptureOnly) {
     if ($CaseId -eq $baselineId) {
         $cases = @($caseById[$baselineId])
     } elseif ($CaseId -eq $primaryId) {
-        throw "-CaseId $primaryId cannot bypass $baselineId; omit -CaseId to run the required chain."
+        if (-not $PrimaryOnly) {
+            throw "-CaseId $primaryId requires -PrimaryOnly for an explicit isolated optimization run."
+        }
+        $cases = @($caseById[$primaryId])
     } elseif ($experimentalIds -contains $CaseId) {
         if (-not $IncludeExperimental) {
             throw "-CaseId $CaseId requires -IncludeExperimental and a verified $primaryId report."
@@ -780,7 +790,15 @@ try {
     Test-BoundRemoteMedia -TargetDeviceArguments $deviceArgs -MediaRegistration $mediaRegistration
 
     $apk = (Resolve-Path -LiteralPath $ApkPath).Path
-    Invoke-Adb ($deviceArgs + @('install', '-r', $apk)) | Out-Null
+    if ($SkipInstall) {
+        $installedPath = ((Invoke-Adb ($deviceArgs + @(
+                    'shell', 'pm', 'path', $plan.app_package))) -join '').Trim()
+        if ($installedPath -notmatch '^package:') {
+            throw '-SkipInstall requested but the benchmark package is not installed.'
+        }
+    } else {
+        Invoke-Adb ($deviceArgs + @('install', '-r', $apk)) | Out-Null
+    }
     $python = Resolve-Python
     $pythonCommand = $python.Command
     $pythonPrefix = @($python.Prefix)
@@ -853,7 +871,8 @@ foreach ($case in $cases) {
             '--es', $plan.intent_extras.video_mode, 'QUICKSR_QNN',
             '--es', $plan.intent_extras.video_profile, $case.profile,
             '--es', $plan.intent_extras.video_tuning, 'SUSTAINED',
-            '--es', 'dev.aisystems.quicksrplayerlab.extra.CADENCE_MODE', $CadenceMode
+            '--es', 'dev.aisystems.quicksrplayerlab.extra.CADENCE_MODE', $CadenceMode,
+            '--es', 'dev.aisystems.quicksrplayerlab.extra.OUTPUT_PACKER', $OutputPacker
         )
         if ($captureFrameRequested) {
             # Capture-only has a separate non-performance contract and may select any

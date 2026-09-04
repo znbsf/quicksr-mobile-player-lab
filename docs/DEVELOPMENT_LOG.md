@@ -251,18 +251,23 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   QNN, device or human visual/rhythm review ran, so neither Anime4K equivalence nor actual cadence
   behavior/visual quality is promoted.
 
-## 2026-09-03 — Native output packer host implementation; device A/B pending
+## 2026-09-04 — QuickSR JNI/NEON output-packer ABBA
 
-- **Worktree implementation:** added a JNI/arm64 NEON NCHW-to-RGBA direct-buffer packer behind an
-  explicit benchmark-only selection. The Java pack/copy path remains the default and fallback;
-  native startup performs a fail-closed equivalence/lifecycle self-check before use.
-- **Host verification:** the isolated worktree passed 107 JVM tests, 28 Python contract tests,
-  lint, arm64 CMake/JNI compilation and APK assembly. Tests cover rectangular scaling, alpha,
-  finite/boundary conversion, ownership and lifecycle. Generated `.cxx`, APK, model and logs remain
-  ignored.
-- **Device boundary:** the final APK was not installed. The device ROM rejected unattended USB
-  installs with `INSTALL_FAILED_USER_RESTRICTED` and does not accept ADB-injected confirmation; a
-  real touch is required. Instrumentation, 1080p A-to-B-to-B-to-A, sanitized evidence and a
-  performance disposition therefore remain unexecuted.
-- **Integration decision:** keep the worktree uncommitted and out of `main` until that single
-  physical confirmation allows the planned device run. Host-ready is not recorded as device-tested.
+- **Implementation:** added a default-off arm64 JNI/NEON path that packs float NCHW directly into
+  the pooled upload buffer, while preserving the Java fallback, bounded ownership, CRC, cadence,
+  stale-generation and release behavior. Explicit benchmark selection fails closed through a
+  deterministic Java/native startup self-test.
+- **Identity/correctness:** the installed APK matched the local APK hash and signing certificate.
+  B1/B2 self-tests passed. The strict ABBA summarizer revalidated and rehashed all four logs; 244
+  aligned cross-packer occurrences covering 70/180 distinct cycle identities had zero output-CRC
+  conflicts. The partial cycle coverage is recorded rather than promoted to full numerical proof.
+- **Performance:** at 1080p SERIAL, Java A1/A2 averaged 11.855 fps and 36.566 ms output-pack p50;
+  native B1/B2 averaged 6.765 fps and 102.353 ms. Direct copy fell to about 0.002 ms, but overall
+  FPS regressed 42.94% and total p50 rose 77.96%. Inference remained comparable and A2 recovered.
+- **Lifecycle/memory:** Back produced one worker cleanup and one release with zero errors and no
+  resumed Activity in both short Java/native probes. Eight whole-process PSS samples ranged
+  367,113-387,842 KiB for Java and 373,926-425,655 KiB for native; the short ordered samples do not
+  establish an incremental memory benefit or leak.
+- **Decision:** reject native as the default and retain it only as a reproducible, explicit
+  experiment. Java remains the production path. No APK, raw device log, media, device identifier,
+  or local path is published.

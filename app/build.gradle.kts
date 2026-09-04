@@ -106,7 +106,7 @@ fun sourceIdentity(files: Collection<File>, baseDirectory: File): String {
 }
 
 val sourceIdentityFiles = fileTree("src/main") {
-    include("**/*.java", "**/*.xml", "**/*.txt")
+    include("**/*.java", "**/*.xml", "**/*.txt", "**/*.cpp", "**/CMakeLists.txt")
 }.files + setOf(
     project.file("build.gradle.kts"),
     rootProject.file("prototype-plan.json"),
@@ -130,6 +130,10 @@ val sourceIdentityFiles = fileTree("src/main") {
 val appSourceSha256 = sourceIdentity(sourceIdentityFiles, rootProject.projectDir)
 val prototypeBuildId = providers.gradleProperty("prototypeBuildId").orElse("manual-unlinked").get()
 val quickSrPostprocessOverlap = providers.gradleProperty("quickSrPostprocessOverlap")
+    .map { it.toBooleanStrict() }
+    .orElse(false)
+    .get()
+val quickSrNativeOutputPacker = providers.gradleProperty("quickSrNativeOutputPacker")
     .map { it.toBooleanStrict() }
     .orElse(false)
     .get()
@@ -370,6 +374,7 @@ val verifyAnime4kSmallShader by tasks.registering {
 android {
     namespace = "dev.aisystems.quicksrplayerlab"
     compileSdk = 36
+    ndkVersion = "25.2.9519653"
 
     defaultConfig {
         applicationId = "dev.aisystems.quicksrplayerlab"
@@ -380,6 +385,12 @@ android {
 
         ndk {
             abiFilters += targetAbi
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17", "-Wall", "-Wextra", "-Werror")
+            }
         }
 
         testInstrumentationRunner = "android.app.Instrumentation"
@@ -437,6 +448,14 @@ android {
         buildConfigField("String", "APP_SOURCE_SHA256", "\"$appSourceSha256\"")
         buildConfigField("String", "PROTOTYPE_BUILD_ID", "\"$prototypeBuildId\"")
         buildConfigField("boolean", "QUICKSR_POSTPROCESS_OVERLAP", quickSrPostprocessOverlap.toString())
+        buildConfigField("boolean", "QUICKSR_NATIVE_OUTPUT_PACKER", quickSrNativeOutputPacker.toString())
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -491,4 +510,5 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-effect:1.11.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("junit:junit:4.13.2")
 }

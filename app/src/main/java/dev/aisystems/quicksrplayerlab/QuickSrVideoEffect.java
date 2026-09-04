@@ -60,6 +60,11 @@ final class QuickSrVideoEffect implements GlEffect {
         OVERLAP
     }
 
+    enum OutputPackerMode {
+        JAVA,
+        NATIVE_NEON
+    }
+
     enum Profile {
         FAST_64("64x64 -> 128x128", ModelVariant.FIXED64_DCR_FULL, 64, 64, 128, 128),
         REALTIME_256X144(
@@ -241,6 +246,7 @@ final class QuickSrVideoEffect implements GlEffect {
         final QuickSrSession.Tuning tuning;
         final Profile profile;
         final PostprocessMode postprocessMode;
+        final OutputPackerMode outputPackerMode;
         final AnimeCadenceAnalyzer.Mode cadenceMode;
         final AnimeCadenceAnalyzer.Decision cadenceDecision;
         final AnimeCadenceAnalyzer.Reason cadenceReason;
@@ -383,6 +389,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.profile = profile;
             this.postprocessMode = PostprocessMode.SERIAL;
+            this.outputPackerMode = OutputPackerMode.JAVA;
             this.cadenceMode = AnimeCadenceAnalyzer.Mode.OFF;
             this.cadenceDecision = AnimeCadenceAnalyzer.Decision.PROCESS;
             this.cadenceReason = AnimeCadenceAnalyzer.Reason.DISABLED;
@@ -471,6 +478,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 QuickSrSession.Tuning tuning,
                 Profile profile,
                 PostprocessMode postprocessMode,
+                OutputPackerMode outputPackerMode,
                 int effectInputWidth,
                 int effectInputHeight,
                 FrameTimings timings,
@@ -479,6 +487,7 @@ final class QuickSrVideoEffect implements GlEffect {
             this.tuning = tuning;
             this.profile = profile;
             this.postprocessMode = postprocessMode;
+            this.outputPackerMode = outputPackerMode;
             this.cadenceMode = timings.cadenceMode;
             this.cadenceDecision = timings.cadenceDecision;
             this.cadenceReason = timings.cadenceReason;
@@ -759,6 +768,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 benchmarkRunId,
                 captureSpec,
                 postprocessOverlap,
+                false,
                 AnimeCadenceAnalyzer.Mode.OFF,
                 listener);
     }
@@ -773,6 +783,30 @@ final class QuickSrVideoEffect implements GlEffect {
             boolean postprocessOverlap,
             AnimeCadenceAnalyzer.Mode cadenceMode,
             StatsListener listener) {
+        this(
+                context,
+                mode,
+                profile,
+                tuning,
+                benchmarkRunId,
+                captureSpec,
+                postprocessOverlap,
+                false,
+                cadenceMode,
+                listener);
+    }
+
+    QuickSrVideoEffect(
+            Context context,
+            QuickSrSession.Mode mode,
+            Profile profile,
+            QuickSrSession.Tuning tuning,
+            String benchmarkRunId,
+            VideoEvidenceStore.CaptureSpec captureSpec,
+            boolean postprocessOverlap,
+            boolean nativeOutputPacker,
+            AnimeCadenceAnalyzer.Mode cadenceMode,
+            StatsListener listener) {
         processor = new ProcessorImpl(
                 context.getApplicationContext(),
                 mode,
@@ -781,6 +815,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 benchmarkRunId,
                 captureSpec,
                 postprocessOverlap,
+                nativeOutputPacker,
                 cadenceMode,
                 listener);
     }
@@ -929,6 +964,7 @@ final class QuickSrVideoEffect implements GlEffect {
         private final String benchmarkRunId;
         private final VideoEvidenceStore.CaptureSpec captureSpec;
         private final PostprocessMode postprocessMode;
+        private final OutputPackerMode outputPackerMode;
         private final AnimeCadenceAnalyzer.Mode cadenceMode;
         private final StatsListener listener;
         private final LongSupplier monotonicClock;
@@ -1049,6 +1085,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     null,
                     VideoEvidenceStore.CaptureSpec.none(),
                     false,
+                    false,
                     AnimeCadenceAnalyzer.Mode.OFF,
                     listener,
                     System::nanoTime);
@@ -1071,6 +1108,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     benchmarkRunId,
                     captureSpec,
                     postprocessOverlap,
+                    false,
                     AnimeCadenceAnalyzer.Mode.OFF,
                     listener);
         }
@@ -1093,6 +1131,32 @@ final class QuickSrVideoEffect implements GlEffect {
                     benchmarkRunId,
                     captureSpec,
                     postprocessOverlap,
+                    false,
+                    cadenceMode,
+                    listener,
+                    SystemClock::elapsedRealtimeNanos);
+        }
+
+        private ProcessorImpl(
+                Context context,
+                QuickSrSession.Mode mode,
+                Profile profile,
+                QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
+                boolean nativeOutputPacker,
+                AnimeCadenceAnalyzer.Mode cadenceMode,
+                StatsListener listener) {
+            this(
+                    context,
+                    mode,
+                    profile,
+                    tuning,
+                    benchmarkRunId,
+                    captureSpec,
+                    postprocessOverlap,
+                    nativeOutputPacker,
                     cadenceMode,
                     listener,
                     SystemClock::elapsedRealtimeNanos);
@@ -1116,6 +1180,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     benchmarkRunId,
                     captureSpec,
                     postprocessOverlap,
+                    false,
                     AnimeCadenceAnalyzer.Mode.OFF,
                     listener,
                     monotonicClock);
@@ -1129,6 +1194,32 @@ final class QuickSrVideoEffect implements GlEffect {
                 String benchmarkRunId,
                 VideoEvidenceStore.CaptureSpec captureSpec,
                 boolean postprocessOverlap,
+                AnimeCadenceAnalyzer.Mode cadenceMode,
+                StatsListener listener,
+                LongSupplier monotonicClock) {
+            this(
+                    context,
+                    mode,
+                    profile,
+                    tuning,
+                    benchmarkRunId,
+                    captureSpec,
+                    postprocessOverlap,
+                    false,
+                    cadenceMode,
+                    listener,
+                    monotonicClock);
+        }
+
+        private ProcessorImpl(
+                Context context,
+                QuickSrSession.Mode mode,
+                Profile profile,
+                QuickSrSession.Tuning tuning,
+                String benchmarkRunId,
+                VideoEvidenceStore.CaptureSpec captureSpec,
+                boolean postprocessOverlap,
+                boolean nativeOutputPacker,
                 AnimeCadenceAnalyzer.Mode cadenceMode,
                 StatsListener listener,
                 LongSupplier monotonicClock) {
@@ -1157,6 +1248,9 @@ final class QuickSrVideoEffect implements GlEffect {
             this.postprocessMode = postprocessOverlap
                     ? PostprocessMode.OVERLAP
                     : PostprocessMode.SERIAL;
+            this.outputPackerMode = nativeOutputPacker
+                    ? OutputPackerMode.NATIVE_NEON
+                    : OutputPackerMode.JAVA;
             this.cadenceMode = cadenceMode;
             this.listener = listener;
             this.monotonicClock = monotonicClock;
@@ -1521,7 +1615,9 @@ final class QuickSrVideoEffect implements GlEffect {
                 timings.cadenceMotionScore = cadence.motionScore;
                 if (inputTensorScratch == null) {
                     inputTensorScratch = new float[3 * inputPixels];
-                    outputRgbaScratch = new byte[outputPixels * RGBA_BYTES_PER_PIXEL];
+                    if (outputPackerMode == OutputPackerMode.JAVA) {
+                        outputRgbaScratch = new byte[outputPixels * RGBA_BYTES_PER_PIXEL];
+                    }
                 }
                 timings.outputTensorAcquireStartedNs = nowNs();
                 if (postprocessMode == PostprocessMode.OVERLAP) {
@@ -1740,6 +1836,7 @@ final class QuickSrVideoEffect implements GlEffect {
                 FrameTimings timings,
                 SettableFuture<FrameResult> resultFuture,
                 boolean recycleOutputTensor) {
+            ByteBuffer directRgba = null;
             try {
                 if (released || !pipelineTelemetry.isCurrent(timings.token)) {
                     pipelineTelemetry.markDropped(
@@ -1750,22 +1847,38 @@ final class QuickSrVideoEffect implements GlEffect {
                     return;
                 }
                 timings.outputPackStartedNs = nowNs();
-                packNchwToRgba(
-                        outputTensor,
-                        rgba,
-                        profile.inputWidth(),
-                        profile.inputHeight(),
-                        profile.outputWidth(),
-                        profile.outputHeight(),
-                        outputRgbaScratch);
+                if (outputPackerMode == OutputPackerMode.NATIVE_NEON) {
+                    directRgba = acquireOutputBuffer();
+                    NativeOutputPacker.pack(
+                            outputTensor,
+                            rgba,
+                            profile.inputWidth(),
+                            profile.inputHeight(),
+                            profile.outputWidth(),
+                            profile.outputHeight(),
+                            directRgba);
+                } else {
+                    packNchwToRgba(
+                            outputTensor,
+                            rgba,
+                            profile.inputWidth(),
+                            profile.inputHeight(),
+                            profile.outputWidth(),
+                            profile.outputHeight(),
+                            outputRgbaScratch);
+                }
                 timings.outputPackFinishedNs = nowNs();
                 timings.outputHashStartedNs = timings.outputPackFinishedNs;
-                timings.outputCrc32 = crc32Hex(outputRgbaScratch);
+                timings.outputCrc32 = outputPackerMode == OutputPackerMode.NATIVE_NEON
+                        ? crc32Hex(directRgba)
+                        : crc32Hex(outputRgbaScratch);
                 timings.outputHashFinishedNs = nowNs();
                 timings.directBufferCopyStartedNs = timings.outputHashFinishedNs;
-                ByteBuffer directRgba = acquireOutputBuffer();
-                directRgba.put(outputRgbaScratch);
-                directRgba.flip();
+                if (outputPackerMode == OutputPackerMode.JAVA) {
+                    directRgba = acquireOutputBuffer();
+                    directRgba.put(outputRgbaScratch);
+                    directRgba.flip();
+                }
                 timings.directBufferCopyFinishedNs = nowNs();
                 timings.outputReadyNs = timings.directBufferCopyFinishedNs;
                 if (released || !pipelineTelemetry.isCurrent(timings.token)) {
@@ -1773,6 +1886,7 @@ final class QuickSrVideoEffect implements GlEffect {
                     // last expensive stage so an old generation can never reach Media3 at a new
                     // playback position.
                     recycleOutputBuffer(directRgba);
+                    directRgba = null;
                     pipelineTelemetry.markDropped(
                             timings.token,
                             timings.outputReadyNs,
@@ -1784,7 +1898,7 @@ final class QuickSrVideoEffect implements GlEffect {
                         && timings.token.cadenceStreamEpoch == cadenceStreamEpoch) {
                     synchronized (cadenceCacheLock) {
                         cadenceCachePixels = copyIntoCadenceCache(
-                                outputRgbaScratch,
+                                directRgba,
                                 cadenceCachePixels);
                         cachedSrOutput = new CachedSrOutput(
                                 cadenceCachePixels,
@@ -1798,6 +1912,7 @@ final class QuickSrVideoEffect implements GlEffect {
                         directRgba,
                         timings,
                         this::recycleFrameResult);
+                directRgba = null;
                 synchronized (outputBufferPoolLock) {
                     outstandingFrameResults.add(frameResult);
                 }
@@ -1807,6 +1922,7 @@ final class QuickSrVideoEffect implements GlEffect {
             } catch (Throwable failure) {
                 failFrame("video-postprocess", timings, resultFuture, failure);
             } finally {
+                recycleOutputBuffer(directRgba);
                 recycleInputBuffer(rgba);
                 if (recycleOutputTensor) {
                     recycleOverlapOutputTensor(outputTensor);
@@ -2135,6 +2251,7 @@ final class QuickSrVideoEffect implements GlEffect {
                                 tuning,
                                 profile,
                                 postprocessMode,
+                                outputPackerMode,
                                 inputWidth,
                                 inputHeight,
                                 result.timings,
@@ -2500,6 +2617,27 @@ final class QuickSrVideoEffect implements GlEffect {
         CRC32 crc32 = new CRC32();
         crc32.update(value, 0, value.length);
         return String.format("%08x", crc32.getValue());
+    }
+
+    static String crc32Hex(ByteBuffer value) {
+        ByteBuffer bytes = value.duplicate();
+        bytes.position(0);
+        CRC32 crc32 = new CRC32();
+        crc32.update(bytes);
+        return String.format("%08x", crc32.getValue());
+    }
+
+    static byte[] copyIntoCadenceCache(ByteBuffer source, byte[] existing) {
+        if (source == null) {
+            throw new IllegalArgumentException("Cadence cache source is required");
+        }
+        ByteBuffer bytes = source.duplicate();
+        bytes.position(0);
+        byte[] target = existing != null && existing.length == bytes.remaining()
+                ? existing
+                : new byte[bytes.remaining()];
+        bytes.get(target);
+        return target;
     }
 
     private static byte normalizedToByte(float value) {

@@ -1,6 +1,6 @@
 # 动漫视频增强：实现计划与进展
 
-状态日期：2026-09-03
+状态日期：2026-09-04
 
 盘点基线：`main` 的文档前一提交 `26052cc`
 
@@ -24,7 +24,10 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
 3. **QNN inference/postprocess 重叠已实现为默认关闭的构建实验。** 720p 已受源帧率限制，
    平均代理吞吐仅提高约 0.6%；1080p 从 11.435 提高到 17.960 fps，但仍属 `offline`，
    p95 尾部变差且增加 23.73 MiB 输出张量，因此不能改成默认路径。
-4. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
+4. **JNI/NEON direct output packer 已完成 ABBA 并被否决为默认。** 同 APK 的 1080p
+   SERIAL 比较中，平均吞吐从 Java 的 11.855 降至 6.765 fps，output-pack p50 从 36.566
+   增至 102.353 ms；Java 保持默认，native 只保留显式实验路径。
+5. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
    native CLI/离线评测。IFRNet-S 与 v4.25-lite 已分别完成真机探针并停止；后者虽然在
    观察设备上兼容，但只在 256x144 更快，另两档慢 56.0-77.2%，没有一致替换收益。
 5. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
@@ -59,6 +62,8 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
              -> inference
              -> serial postprocess（默认）
                 或 bounded overlap（构建开关，默认 OFF）
+             -> Java output pack（默认）
+                或 JNI/arm64 NEON direct pack（显式实验，默认 OFF）
              -> Media3 output-submit 代理
 
 RIFE / IFRNet / ANVIL
@@ -76,7 +81,7 @@ RIFE / IFRNet / ANVIL
   内容变化、字幕高对比 guard、最大连续复用 2 帧；
 - `app/src/main/java/dev/aisystems/quicksrplayerlab/Anime4kSmallEffect.java`：
   GLES 五段图、RGBA16F 中间纹理、能力检查和两级回退；
-- `app/build.gradle.kts`：`quickSrPostprocessOverlap` 默认 `false`；
+- `app/build.gradle.kts`：`quickSrPostprocessOverlap` 和 `quickSrNativeOutputPacker` 默认 `false`；
 - `vfi-benchmark/`：prefilter、host/device CLI 构建、常驻矩阵和候选证据；没有 App 接线。
 
 ## 4. 实现与证据进展
@@ -86,7 +91,7 @@ RIFE / IFRNet / ANVIL
 | Media3 播放器与 QuickSR CPU/QNN | `IMPLEMENTED` | 单设备 720p/1080p/1440p/4K-display 功能矩阵 | 保留；实时、最终显示和长时热稳分开判断 |
 | 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
 | QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；下一变量是 native direct packer |
-| QuickSR native direct packer | 独立工作树原型，未提交、未进入 `main` | `HOST_ONLY`：JNI/arm64 NEON、Java fallback/default、107 JVM、28 Python、lint 与 arm64 APK/JNI 构建通过；最终 APK 未装入手机 | `DEVICE_PENDING`：MIUI 返回 `INSTALL_FAILED_USER_RESTRICTED`，需一次真实触摸后再做 1080p ABBA；此前不得合入或声称收益 |
+| JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
 | Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
 | cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
 | Anime4K/cadence 画质合同 | `IMPLEMENTED`，主机工具已进入 `main` | `HOST_ONLY`：6 个空间 case、14 个时序 case/74 帧；只验证 declared-oracle conformance，runtime evidence=`NOT_BOUND` | 下一步接真实 offscreen GL/mpv/Android trace/receipt 和人工盲审；不能用 oracle-filled PASS 关闭画质门禁 |
@@ -100,6 +105,7 @@ RIFE / IFRNet / ANVIL
 专项证据：
 
 - [QNN 后处理重叠 A/B](ANDROID_QNN_POSTPROCESS_OVERLAP_AB.md)
+- [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)
 - [动漫 cadence 复用](ANIME_CADENCE_REUSE.md)
 - [Anime4K Android GPU 集成](ANIME4K_ANDROID_GPU_INTEGRATION.md)
 - [动漫 VFI 离线基线](ANIME_VFI_OFFLINE_EVALUATION.md)
@@ -113,9 +119,13 @@ P0 已完成
   -> RIFE v4.25-lite 三档 resident matrix
   -> 裁决：兼容，但无一致替换收益，STOPPED
 
-当前状态
-  |-- P1A QuickSR：主机原型已完成，MIUI 安装确认未完成 -> 1080p ABBA 待执行
-  `-- P1B 画质：canonical 主机合同已合入 -> 真实 adapter/trace + 人工审核待执行
+P1A 已完成
+  -> QuickSR SERIAL Java/native packer ABBA
+  -> 裁决：功能通过但性能显著回归，native 默认化被否决
+
+当前可并行
+  |-- P1A QuickSR：分析新的单变量前先保留 Java pack 默认
+  `-- P1B 画质：canonical 主机合同已合入，继续真实 adapter/trace + 人工审核
 
 P1 共同检查点
   -> 性能、数值、画质、生命周期均过门：再讨论实验 UI 和长时热稳
@@ -142,21 +152,17 @@ P1 共同检查点
 而且没有一档保有完整播放器余量。结果详见
 [RIFE v4.25-lite 新版运行时探针](ANIME_VFI_RIFE_V425_LITE_PROBE.md)。
 
-### P1A：QuickSR native direct packer
+### P1A：QuickSR native direct packer（已完成）
 
 以默认 SERIAL 1080p 为基线，只替换 float NCHW 到可上传 RGBA direct buffer 的 pack/copy
 实现；模型、QNN tuning、队列、输入片源、cadence 和 profile 全部固定。先做 Java/native
 逐帧 hash 与边界尺寸测试，再做至少 ABBA 真机比较。重点看 output-pack p50/p95、总计、
 吞吐、PSS、drop/bypass、generation/seek 和释放行为。
 
-只有在数值一致、p95 不恶化且有可重复净收益时，才讨论默认化；否则保留 Java 路径。
-
-独立工作树已实现 JNI/arm64 NEON NCHW→RGBA direct-buffer packer、默认 Java 路径、启动前
-正确性自检、矩形缩放/alpha/边界值/ownership/lifecycle 测试和 ABBA runner 支持。主机侧
-107 个 JVM 测试、28 个 Python 合同测试、lint、arm64 CMake/JNI 和 APK 构建通过。设备 ROM
-要求对 USB 安装做一次真实触摸确认；无人确认的安装均以 `INSTALL_FAILED_USER_RESTRICTED`
-结束，因此最终 APK 尚未安装，instrumentation、1080p ABBA、sanitized evidence 和性能裁决
-均未发生。该工作树有意保持未提交、未合入，不能把 host-ready 写成 device-tested。
+ABBA 已完成。244 次可对齐跨路径重复没有输出 CRC 冲突，覆盖 180 帧周期中的 70 个不同
+identity；B1/B2 的确定性 Java/native 启动自检均为 PASS。功能门禁、队列、drop/bypass 和
+生命周期通过，但平均 FPS 下降 42.94%，pack p50 增长 179.91%，因此保留 Java 默认。
+结果见 [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)。
 
 ### P1B：代表性画质与 cadence 安全性
 
@@ -193,8 +199,8 @@ reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这�
 1. **P0 已在主线完成，不继续 RIFE v4.25-lite 集成。** 既有离线 runner 和负结果保留，
    避免后续会话重复探测同一候选。
 2. 两个互不重叠的工作树已经执行：`visual-quality-gates` 经审查修正三项 P1 后已合入
-   `main`；`native-output-packer` 只拥有 App/native build 和对应测试，因设备安装确认仍
-   保持未提交。真实触摸完成后应继续原工作树，不重新实现或创建重复任务。
+   `main`；`native-output-packer` 已完成真机 ABBA、负性能裁决和设备测试。主线复核后保留
+   Java 默认，native 只作为显式、默认关闭的可审计实验路径。
 3. SESR 或 ANVIL 一次只启动一个。二者会引入新的 runtime、模型和许可证据，不与播放器
    热路径实验混在同一分支。
 4. 各任务完成后先回报结果，再由主线审查 patch equivalence、测试、证据边界和 source-only

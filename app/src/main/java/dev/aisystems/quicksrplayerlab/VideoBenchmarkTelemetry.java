@@ -14,6 +14,8 @@ final class VideoBenchmarkTelemetry {
     static final String EXTRA_VIDEO_PROFILE = "dev.aisystems.quicksrplayerlab.extra.VIDEO_PROFILE";
     static final String EXTRA_VIDEO_TUNING = "dev.aisystems.quicksrplayerlab.extra.VIDEO_TUNING";
     static final String EXTRA_CADENCE_MODE = "dev.aisystems.quicksrplayerlab.extra.CADENCE_MODE";
+    static final String EXTRA_OUTPUT_PACKER =
+            "dev.aisystems.quicksrplayerlab.extra.OUTPUT_PACKER";
     static final String EXTRA_CAPTURE_FRAME = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_FRAME";
     static final String EXTRA_CAPTURE_PTS_US = "dev.aisystems.quicksrplayerlab.extra.CAPTURE_PTS_US";
     // Android's logger truncates messages around 4 KiB. One fully instrumented frame is already
@@ -65,6 +67,22 @@ final class VideoBenchmarkTelemetry {
             QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
             VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap,
             AnimeCadenceAnalyzer.Mode cadenceMode) {
+        return configurationJson(
+                runId,
+                mode,
+                tuning,
+                profile,
+                qnnRuntimeExpected,
+                captureSpec,
+                postprocessOverlap,
+                false,
+                cadenceMode);
+    }
+
+    static String configurationJson(String runId, String mode, QuickSrSession.Tuning tuning,
+            QuickSrVideoEffect.Profile profile, boolean qnnRuntimeExpected,
+            VideoEvidenceStore.CaptureSpec captureSpec, boolean postprocessOverlap,
+            boolean nativeOutputPacker, AnimeCadenceAnalyzer.Mode cadenceMode) {
         StringBuilder value = envelope("configuration", runId);
         stringField(value, "mode", mode);
         stringField(value, "tuning", tuning.name());
@@ -73,6 +91,14 @@ final class VideoBenchmarkTelemetry {
                 value,
                 "postprocessMode",
                 postprocessOverlap ? "OVERLAP" : "SERIAL");
+        stringField(
+                value,
+                "outputPacker",
+                nativeOutputPacker ? "NATIVE_NEON" : "JAVA");
+        stringField(
+                value,
+                "outputPackerSelfTest",
+                nativeOutputPacker ? "PASS" : "NOT_RUN");
         stringField(value, "cadenceMode", cadenceMode.name());
         stringField(value, "cadenceAnalyzerVersion", AnimeCadenceAnalyzer.VERSION);
         numberField(value, "cadenceMaxReuseStreak", AnimeCadenceAnalyzer.MAX_REUSE_STREAK);
@@ -196,6 +222,7 @@ final class VideoBenchmarkTelemetry {
         stringField(value, "tuning", first.tuning.name());
         stringField(value, "profile", first.profile.name());
         stringField(value, "postprocessMode", first.postprocessMode.name());
+        stringField(value, "outputPacker", first.outputPackerMode.name());
         stringField(value, "cadenceMode", first.cadenceMode.name());
         numberField(value, "effectInputWidth", first.effectInputWidth);
         numberField(value, "effectInputHeight", first.effectInputHeight);
@@ -209,9 +236,10 @@ final class VideoBenchmarkTelemetry {
             if (sample.mode != first.mode || sample.tuning != first.tuning
                     || sample.profile != first.profile
                     || sample.postprocessMode != first.postprocessMode
+                    || sample.outputPackerMode != first.outputPackerMode
                     || sample.cadenceMode != first.cadenceMode) {
                 throw new IllegalArgumentException(
-                        "benchmark frame batch mixes mode, tuning, profile, postprocess or cadence mode");
+                        "benchmark frame batch mixes mode, tuning, profile, postprocess, packer or cadence mode");
             }
             if (index > 0) value.append(',');
             value.append('{');

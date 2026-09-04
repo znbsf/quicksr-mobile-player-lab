@@ -1,6 +1,7 @@
 package dev.aisystems.quicksrplayerlab;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -321,6 +322,21 @@ public final class QuickSrVideoEffectTest {
         assertEquals("b63cfbcd", QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 4}));
         assertFalse(QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 4})
                 .equals(QuickSrVideoEffect.crc32Hex(new byte[]{1, 2, 3, 5})));
+    }
+
+    @Test
+    public void directCadenceCacheCopyPreservesCallerPositionAndReusesOwnedArray() {
+        ByteBuffer source = ByteBuffer.allocateDirect(8);
+        source.put(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+        source.flip();
+        source.position(3);
+        byte[] existing = new byte[8];
+
+        byte[] copied = QuickSrVideoEffect.copyIntoCadenceCache(source, existing);
+
+        assertSame(existing, copied);
+        assertArrayEquals(new byte[]{1, 2, 3, 4, 5, 6, 7, 8}, copied);
+        assertEquals(3, source.position());
     }
 
     @Test

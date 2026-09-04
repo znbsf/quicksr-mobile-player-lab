@@ -1,12 +1,12 @@
 # Project status
 
-状态日期：2026-09-03
+状态日期：2026-09-04
 
 本文件区分源码实现、主机构建、真机执行、播放器代理性能、数值正确性、画质、热稳定性和人工审核。任何一项 PASS 都不能代替其他项。
 
 ## 一句话结论
 
-v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN postprocess overlap 均已有源码；一台 Android 16 / Adreno 740 已提供有界功能或 A/B 证据。Anime4K 仍缺同帧画质/GPU timing，QuickSR 1080p overlap 仍属 offline，VFI 仍只在独立 CLI 中，不能合并表述为产品级实时完成。
+v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN postprocess overlap 均已有源码；JNI/NEON direct output packer 也已完成真机 ABBA，但性能显著回归，Java 继续作为默认。一台 Android 16 / Adreno 740 只提供有界功能或 A/B 证据；不能合并表述为产品级实时完成。
 
 ## 当前状态
 
@@ -17,7 +17,7 @@ v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN pos
 | Media3 播放器 | IMPLEMENTED / DEVICE SMOKE PASS | 本地视频、PlayerView、原画/GPU Lanczos/Anime4K x2 Small/QuickSR CPU/QuickSR QNN HTP 切换已实现；Anime4K 暂停、seek、恢复、HOME/resume 与三轮返回/重开无崩溃 | DRM、HDR、直播、字幕复杂场景和通用播放器插件不在当前范围 |
 | 上一次视频 | PASS | 持久化 URI 权限、URI 和显示名；下次启动可一键重播 | 文档不保存私人 URI 或文件名 |
 | QNN 运行时 | IMPLEMENTED | fixed-shape 模型 hash 校验、HTP tuning、graph finalization、持久 input/output tensor、资源释放和有限值抽查已实现 | 当前视频 smoke 没有附带发布级 placement/底层 HTP trace |
-| QuickSR native output packer | WORKTREE HOST-READY / NOT IN MAIN | 独立工作树已有 JNI/arm64 NEON direct-buffer packer、默认 Java fallback、自检和测试；107 JVM、28 Python、lint、arm64 CMake/JNI/APK 构建通过 | MIUI USB 安装需要真实触摸且返回 `INSTALL_FAILED_USER_RESTRICTED`；最终 APK、instrumentation 与 1080p ABBA 均未完成，代码未提交/未合入，不得声称设备收益 |
+| QuickSR native output packer | IMPLEMENTED / DEVICE ABBA（默认 OFF） | 同 APK 的 1080p SERIAL ABBA 已完成；AndroidJUnitRunner 真机执行 3/3 packer 边界、数值/alpha 与 ownership 测试通过；Java/native 对齐样本零 CRC 冲突 | native 平均 FPS -42.94%、pack p50 +179.91%，否决默认化；周期不同帧仅覆盖 70/180，短 PSS 不是长期无泄漏或增量内存证明 |
 | 720p 神经输出 smoke | PASS（限定范围） | `640×360 → 1280×720`；645 帧 / 26.860 秒 = 24.0134 fps；四个稳定约 5 秒 MediaCodec 窗口均 Render=120、Drop=0 | 只是单设备、单 SDR 本地片源；不是 SurfaceFlinger latch、全量 A/V sync 或通用实时结论 |
 | 长时探索运行 | OBSERVED | 同档位约 189.523 秒、4545 帧，折算约 23.981 fps，稳定窗口 Drop=0；电池温度代理约 39.5°C | 非标准功耗/温升基线，未形成频率、功耗、环境温度与 p95/p99 报告 |
 | 数值正确性 | PASS（观察性张量范围） | 11 个权利清晰 clip 的 27 个合同选帧均用 Android 捕获的原始 NCHW 输入与 PC CPU ORT 对照；零失配、零非有限值，并生成 Lanczos 基线 | 不是 P4 real-image/SSIM、全帧/视频/显示画质或 per-node placement 证明 |
@@ -29,6 +29,7 @@ v0.15.0 的播放器主链、Anime4K、默认关闭的 cadence 复用和 QNN pos
 | Anime4K Android GPU | DEVICE FUNCTION PASS（单设备、有界） | Android 16 / Adreno 740 / GLES 3.2 直接报告 half-float/float color-buffer 扩展；720p/1080p/1440p 五段首帧均 model-active，未走两级 fallback；7.5 秒 24 fps clip 的 SF buffer 代理为 180/179/179，PSS 峰值 177,443-179,664 KiB，电池温度代理保持 38.9-39.0 C；固定源 pin、六案例主机同帧合同与 PSNR/SSIM/edge evaluator 已就绪 | 尚未取得真实 mpv/Android 配对输出；固定帧等价、字幕/线条人工质量、GPU timing、长时 thermal、p50/p95/p99、功耗、最终显示和其他设备仍未证明 |
 | Anime cadence SR 复用 | IMPLEMENTED / DEVICE A/B（默认 OFF） | 只允许 benchmark Intent 开启；generation/stream epoch/缓存 ownership/最多连续 2 帧复用已测试。单设备 720p ON 共 680 帧，423 processed、257 reused，推理减少 37.79%；257 次均对齐冻结 hold map，映射 motion false reuse 为 0；混合一拍一/二/三、平移、嘴型/粒子、切换、淡变和字幕主机 oracle 已生成 | 既有结果仍只是 effect output-submit 代理；新 evaluator 只比较 submission 自报字段/文件与 canonical oracle，未测当前 analyzer。低对比字幕、代表性动漫节奏、可重放 trace/receipt/执行身份、最终显示、人工画质、1080p 与长时热稳未证明，普通交互 UI 仍保持 OFF |
 | QNN postprocess overlap | IMPLEMENTED / DEVICE A/B（默认 OFF） | 有界双阶段和额外单个输出张量已接线；720p 平均 23.573→23.711 fps（+0.6%），1080p 11.435→17.960 fps（+57.1%） | 1080p 仍属 offline，total p95 由 536.44 增至 625.37 ms，另增 23.73 MiB 张量；不是默认候选，最终显示/A-V/thermal 未证明 |
+| QNN JNI/NEON output packer | IMPLEMENTED / DEVICE ABBA（默认 OFF） | 同 APK、1080p SERIAL 的 Java→native 平均 FPS 11.855→6.765；244 次对齐重复零 CRC 冲突，B1/B2 自检、生命周期和功能门禁通过 | pack p50 36.566→102.353 ms，显著回归；共同不同帧只覆盖周期 70/180，短 PSS 不是增量内存证明；Java 保持默认 |
 | Anime VFI 离线探针 | HOST + DEVICE RESIDENT MATRIX（单设备、有界） | RIFE v4.6 五档基线保留；IFRNet-S 同机三档完成但更慢，已停止。RIFE v4.25-lite 的 current ncnn 已解除 `MemoryData` 阻塞并完成三档真机矩阵：256x144 快 18.7%，但 160x90/320x180 慢 77.2%/56.0%，PSS 全档略高，已停止 | 全部仍为 offline-only，未进入播放器/APK。ANVIL 需 H.264 MV + SM8550/V73 专用 QNN runtime/context；权重再分发、代表性动漫时序质量、人工审核和长时热稳未证明 |
 | Android 高分辨率档 | PASS（单设备功能限定） | 权利清晰子集在一台物理 Qualcomm 设备完成 1080p 主档、受门禁 1440p 实验档与 4K 显示回退档；4K 是 1080p neural→4K GL canvas | 未证明实时、热稳定、内存压力、最终显示、通用设备或原生 4K 神经输出 |
 | x86_64 模拟器路径 | PASS（既有 v0.14.0 功能限定）/ v0.15.0 BUILD READY | Android Studio API 35 AVD 曾完成 720p/1080p/1440p/4K 首帧；本轮 x86_64 assemble 通过 | 本轮按设备占用约束未调用 adb、未安装 v0.15.0，也未让模拟器编译 Anime4K shader；模拟器 CPU/GPU 结果均不能外推目标手机 |
@@ -77,7 +78,8 @@ local SDR video
 - 同一轮中，1440p 实验档为 195 measured frames、7.71 fps，4K 显示回退为 305 measured frames、11.36 fps；两者功能 PASS、均 `offline`。4K 不是原生神经 4K。
 - 1080p 的无抓取中位 queue/ORT/output-conversion/total p50 为 329/43/37/414 ms，p95 为 348/47/42/435 ms。它们是 effect-pipeline 样本，不是 NPU kernel、最终显示或端到端 A/V 延迟。
 - 27 个合同选帧的 Android QNN→PC CPU 比较全部零失配、零非有限值，并各有主机 Lanczos 基线；比较只证明观察性张量一致性，不解冻 P4 或质量门禁。
-- 后处理重叠的单变量 A/B 已完成：720p 受源 cadence 限制、收益约 +0.6%；1080p 代理吞吐提高约 57.1%，但仍只有 17.960 fps、p95 变差并增加 23.73 MiB 张量，因此默认仍是 SERIAL。JNI/NEON direct output packer 已到独立工作树 host-ready，但尚未安装最终 APK或执行设备 ABBA。
+- 后处理重叠的单变量 A/B 已完成：720p 受源 cadence 限制、收益约 +0.6%；1080p 代理吞吐提高约 57.1%，但仍只有 17.960 fps、p95 变差并增加 23.73 MiB 张量，因此默认仍是 SERIAL。
+- JNI/NEON direct output packer 的 1080p SERIAL ABBA 已完成：虽然 direct-copy p50 约 0.661→0.002 ms，但 pack p50 36.566→102.353 ms、平均 FPS -42.94%，因此否决默认化并保留 Java。
 - cadence-aware 720p A/B 实测减少 37.79% 推理，effect output-submit 代理由 23.717 提升至 24.069 fps；这只对冻结 15→24 重复映射有效，不能外推到复杂动漫语义或最终显示。
 - QNN context cache 主要改善 session startup，不能解决稳态每帧 output conversion。
 - C/C++/NEON、GPU compute shader、PBO 或 shared I/O 都是候选手段；只有逐段 profiler 显示收益后才应引入。
@@ -86,7 +88,7 @@ local SDR video
 
 ## 仍然开放的门禁
 
-1. 手机旁有人时重新拉起一次最终 APK 安装并真实点击确认；随后在现有工作树以 1080p SERIAL 为基线做 JNI/NEON direct output packer 单变量 ABBA，保持模型、tuning、队列、cadence 与片源不变；
+1. native output packer 已完成负结果收口；新的 QuickSR 热路径变量必须另立假设，不能把 native packer 与 overlap/扩队列混合后重测来掩盖回归；
 2. Anime4K 获取确定 effect 输出的固定同帧参考，补 clean、退化、线稿、字幕边缘和人工盲审，不再依赖 OEM UI 截图；
 3. cadence 增加混合一拍一/二/三、慢平移、嘴型、粒子、切镜、淡入淡出和低对比字幕的错误复用/漏复用审核；
 4. 加入 SurfaceFlinger 或等价最终显示观测，并继续检查 A/V sync、seek、flush、pause/resume；

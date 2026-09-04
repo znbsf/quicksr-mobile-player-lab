@@ -235,6 +235,24 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual("PASS", result["functional_gate"])
         self.assertEqual("OVERLAP", result["postprocess_mode"])
 
+    def test_native_output_packer_requires_self_test_and_matching_frame_batches(self):
+        events = self.events()
+        events[0].update({
+            "outputPacker": "NATIVE_NEON",
+            "outputPackerSelfTest": "PASS",
+        })
+        events[2]["outputPacker"] = "NATIVE_NEON"
+
+        result = self.validate(events)
+
+        self.assertEqual("PASS", result["functional_gate"])
+        self.assertEqual("NATIVE_NEON", result["output_packer"])
+
+        events[0]["outputPackerSelfTest"] = "NOT_RUN"
+        result = self.validate(events)
+        self.assertEqual("FAIL", result["functional_gate"])
+        self.assertTrue(any("outputPackerSelfTest" in failure for failure in result["failures"]))
+
     def test_frame_batch_mode_must_match_configuration(self):
         events = self.events()
         events[2]["postprocessMode"] = "OVERLAP"

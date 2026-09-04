@@ -32,6 +32,7 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"workerQueueCapacity\":2"));
         assertTrue(value.contains("\"workerCleanupReservedSlots\":1"));
         assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
+        assertTrue(value.contains("\"outputPacker\":\"JAVA\""));
         assertTrue(value.contains("\"cadenceMode\":\"OFF\""));
         assertTrue(value.contains(
                 "\"cadenceAnalyzerVersion\":\"anime-cadence-analyzer-v1\""));
@@ -71,6 +72,24 @@ public final class VideoBenchmarkTelemetryTest {
         assertTrue(value.contains("\"cadenceMode\":\"CONTENT_AWARE_V1\""));
         assertTrue(value.contains("\"cadenceCacheBytes\":3686400"));
         assertTrue(value.contains("\"cadenceMaxReuseStreak\":2"));
+    }
+
+    @Test
+    public void nativePackerConfigurationIsExplicitAndSelfTested() {
+        String value = VideoBenchmarkTelemetry.configurationJson(
+                "native-packer",
+                "QUICKSR_QNN",
+                QuickSrSession.Tuning.SUSTAINED,
+                QuickSrVideoEffect.Profile.FULL_1080P_3X,
+                true,
+                VideoEvidenceStore.CaptureSpec.none(),
+                false,
+                true,
+                AnimeCadenceAnalyzer.Mode.OFF);
+
+        assertTrue(value.contains("\"postprocessMode\":\"SERIAL\""));
+        assertTrue(value.contains("\"outputPacker\":\"NATIVE_NEON\""));
+        assertTrue(value.contains("\"outputPackerSelfTest\":\"PASS\""));
     }
 
     @Test

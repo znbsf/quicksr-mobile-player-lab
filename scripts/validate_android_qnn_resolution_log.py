@@ -197,6 +197,18 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
                 f"got {postprocess_mode!r}"
             )
         overlap_enabled = postprocess_mode == "OVERLAP"
+        output_packer = configuration.get("outputPacker", "JAVA")
+        if output_packer not in {"JAVA", "NATIVE_NEON"}:
+            failures.append(
+                "configuration outputPacker: expected JAVA or NATIVE_NEON, "
+                f"got {output_packer!r}"
+            )
+        expected_packer_self_test = "PASS" if output_packer == "NATIVE_NEON" else "NOT_RUN"
+        if configuration.get("outputPackerSelfTest", "NOT_RUN") != expected_packer_self_test:
+            failures.append(
+                "configuration outputPackerSelfTest: expected "
+                f"{expected_packer_self_test!r}, got {configuration.get('outputPackerSelfTest')!r}"
+            )
         output_tensor_bytes = (
             case["model_output"][0] * case["model_output"][1] * 3 * 4
         )
@@ -281,19 +293,24 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         configured_cadence_mode = (
             configurations[0].get("cadenceMode", "OFF") if configurations else "OFF"
         )
+        configured_output_packer = (
+            configurations[0].get("outputPacker", "JAVA") if configurations else "JAVA"
+        )
         for field, expected in {
             "schemaVersion": 2,
             "mode": "QNN_HTP",
             "tuning": "SUSTAINED",
             "profile": case["profile"],
             "postprocessMode": configured_postprocess_mode,
+            "outputPacker": configured_output_packer,
             "modelInputWidth": case["model_input"][0],
             "modelInputHeight": case["model_input"][1],
             "modelOutputWidth": case["model_output"][0],
             "modelOutputHeight": case["model_output"][1],
         }.items():
-            if batch.get(field) != expected:
-                failures.append(f"frame batch {field}: expected {expected!r}, got {batch.get(field)!r}")
+            observed = batch.get(field, "JAVA" if field == "outputPacker" else None)
+            if observed != expected:
+                failures.append(f"frame batch {field}: expected {expected!r}, got {observed!r}")
         if batch.get("cadenceMode", "OFF") != configured_cadence_mode:
             failures.append(
                 "frame batch cadenceMode: expected "
@@ -509,6 +526,7 @@ def validate(plan: dict[str, Any], case: dict[str, Any], events: list[dict[str, 
         "case_id": case["id"],
         "run_id": run_id,
         "postprocess_mode": configurations[0].get("postprocessMode") if configurations else None,
+        "output_packer": configurations[0].get("outputPacker", "JAVA") if configurations else None,
         "cadence_mode": cadence_mode,
         "functional_gate": "PASS" if not failures else "FAIL",
         "performance_class": performance_class,

@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "experiment": "android-qnn-native-output-packer-abba",
+  "sequence": [
+    "JAVA",
+    "NATIVE_NEON",
+    "NATIVE_NEON",
+    "JAVA"
+  ],
+  "status": "PASS",
+  "functional_gate": "PASS",
+  "performance_disposition": "REJECT_DEFAULT_RETAIN_EXPERIMENTAL",
+  "rows": [
+    {
+      "label": "A1",
+      "packer": "JAVA",
+      "measured_frames": 315,
+      "observed_fps": 11.811192659412793,
+      "max_worker_queue_depth": 2,
+      "dropped_count": 0,
+      "bypassed_count": 0,
+      "raw_log_sha256": "e6297b8d24d0c459cf7dd43c66ff7b9ebb04d1bed71351562ed0dfed9d3c1d2e",
+      "inferenceCallerWallNs": {
+        "p50_ms": 44.670781,
+        "p95_ms": 49.299792
+      },
+      "tensorOutputCopyNs": {
+        "p50_ms": 2.084062,
+        "p95_ms": 2.910625
+      },
+      "outputPackNs": {
+        "p50_ms": 36.807291,
+        "p95_ms": 39.425
+      },
+      "directBufferCopyNs": {
+        "p50_ms": 0.672084,
+        "p95_ms": 1.153021
+      },
+      "effectTotalToOutputSubmitProxyNs": {
+        "p50_ms": 485.334115,
+        "p95_ms": 526.78401
+      }
+    },
+    {
+      "label": "B1",
+      "packer": "NATIVE_NEON",
+      "measured_frames": 173,
+      "observed_fps": 6.749142109552068,
+      "max_worker_queue_depth": 2,
+      "dropped_count": 0,
+      "bypassed_count": 0,
+      "raw_log_sha256": "8350c0935f741919a9808fd4b9cad8042fd494ef008176ee885feaabfc40e2c6",
+      "inferenceCallerWallNs": {
+        "p50_ms": 43.864271,
+        "p95_ms": 49.082032
+      },
+      "tensorOutputCopyNs": {
+        "p50_ms": 2.098073,
+        "p95_ms": 2.8075
+      },
+      "outputPackNs": {
+        "p50_ms": 102.655625,
+        "p95_ms": 106.134063
+      },
+      "directBufferCopyNs": {
+        "p50_ms": 0.002031,
+        "p95_ms": 0.003385
+      },
+      "effectTotalToOutputSubmitProxyNs": {
+        "p50_ms": 865.120208,
+        "p95_ms": 900.97349
+      }
+    },
+    {
+      "label": "B2",
+      "packer": "NATIVE_NEON",
+      "measured_frames": 174,
+      "observed_fps": 6.780930949325311,
+      "max_worker_queue_depth": 2,
+      "dropped_count": 0,
+      "bypassed_count": 0,
+      "raw_log_sha256": "c81faf08d7c21cf1c65ca6ad368430d4b3adc205c6e4462a8a654373910ad264",
+      "inferenceCallerWallNs": {
+        "p50_ms": 44.110521,
+        "p95_ms": 49.724947
+      },
+      "tensorOutputCopyNs": {
+        "p50_ms": 2.11724,
+        "p95_ms": 2.891459
+      },
+      "outputPackNs": {
+        "p50_ms": 102.05,
+        "p95_ms": 105.918646
+      },
+      "directBufferCopyNs": {
+        "p50_ms": 0.002084,
+        "p95_ms": 0.003698
+      },
+      "effectTotalToOutputSubmitProxyNs": {
+        "p50_ms": 861.825781,
+        "p95_ms": 900.294114
+      }
+    },
+    {
+      "label": "A2",
+      "packer": "JAVA",
+      "measured_frames": 319,
+      "observed_fps": 11.899317721006694,
+      "max_worker_queue_depth": 2,
+      "dropped_count": 0,
+      "bypassed_count": 0,
+      "raw_log_sha256": "ee039727c2d1a94ed1f9b53f69729f951b4381cc70c12fc6f5996f3cfe53d882",
+      "inferenceCallerWallNs": {
+        "p50_ms": 44.72,
+        "p95_ms": 49.540521
+      },
+      "tensorOutputCopyNs": {
+        "p50_ms": 2.077083,
+        "p95_ms": 2.99302
+      },
+      "outputPackNs": {
+        "p50_ms": 36.324479,
+        "p95_ms": 39.219427
+      },
+      "directBufferCopyNs": {
+        "p50_ms": 0.64901,
+        "p95_ms": 1.111927
+      },
+      "effectTotalToOutputSubmitProxyNs": {
+        "p50_ms": 485.076823,
+        "p95_ms": 591.661874
+      }
+    }
+  ],
+  "aggregate": {
+    "java_mean_fps": 11.855255190209743,
+    "native_neon_mean_fps": 6.76503652943869,
+    "fps_change_percent": -42.93639047917447,
+    "output_pack_p50_ms": {
+      "java_mean": 36.565884999999994,
+      "native_neon_mean": 102.3528125
+    },
+    "direct_buffer_copy_p50_ms": {
+      "java_mean": 0.660547,
+      "native_neon_mean": 0.0020575
+    },
+    "total_p50_ms": {
+      "java_mean": 485.205469,
+      "native_neon_mean": 863.4729945
+    },
+    "output_pack_p50_change_percent": 179.91340152166427,
+    "total_p50_change_percent": 77.9602765565695
+  },
+  "plan_sha256": "c9cf90538cfd75a5341651b95a20009ec251bfc01d90992856f742d0c61179b7",
+  "media_registration": {
+    "status": "BOUND",
+    "clip_id": "quick-bbb-360p-24-clean",
+    "clip_sha256": "b9244a7d24b8db2e6aba470a81e8c0469b96690a0a0f49aacb29498d8ed7ebc2",
+    "clip_frame_count": 180,
+    "receipt_sha256": "f2c66c845125722560014ba8dcc5edd7d63ed940f042dfaf2b896646cb71265d",
+    "source_manifest_sha256": "b890641a683ee8e5d5bc5e5310e063a983a754fc66f981f5c222811cbdf320f1"
+  },
+  "output_crc_consistency": {
+    "cycle_alignment": "PTS_MODULO_INFERRED_DURATION_FROM_PTS_ZERO_IDENTITY",
+    "cycle_duration_us": 7500000,
+    "registered_cycle_frame_count": 180,
+    "java_cycle_identity_count": 176,
+    "native_neon_cycle_identity_count": 70,
+    "shared_cycle_identity_count": 70,
+    "full_cycle_coverage_status": "INCOMPLETE",
+    "matched_cycle_identity_occurrence_count": 244,
+    "minimum_required_matched_occurrence_count": 180,
+    "minimum_run_frame_count": 188,
+    "exact_output_crc_mismatch_count": 0,
+    "scope": "cross_packer_output_consistency_not_independent_numeric_correctness",
+    "status": "PASS",
+    "mismatches": {}
+  }
+}
