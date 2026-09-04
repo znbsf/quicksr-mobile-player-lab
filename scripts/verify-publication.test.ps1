@@ -32,12 +32,32 @@ try {
         -Destination (Join-Path $caseRoot "scripts/verify-publication.ps1")
     Set-Content -LiteralPath (Join-Path $caseRoot "README.md") `
         -Value "# Synthetic publication-safety fixture" -Encoding utf8
+    New-Item -ItemType Directory -Path (Join-Path $caseRoot "docs/diagrams") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-safe.puml") `
+        -Value "@startuml`nAlice -> Bob: safe`n@enduml" -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-safe.svg") `
+        -Value '<svg xmlns="http://www.w3.org/2000/svg"><text>safe</text></svg>' -Encoding utf8
     git -C $caseRoot init -b main | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Could not initialize the synthetic Git repository."
     }
 
     Invoke-ExpectedExit -Expected 0 -Label "safe source-only fixture"
+
+    Set-Content -LiteralPath (Join-Path $caseRoot "docs/unscoped.svg") `
+        -Value '<svg xmlns="http://www.w3.org/2000/svg"><text>not allowlisted</text></svg>' -Encoding utf8
+    Invoke-ExpectedExit -Expected 1 -Label "unscoped SVG negative fixture"
+    Remove-Item -LiteralPath (Join-Path $caseRoot "docs/unscoped.svg")
+
+    Set-Content -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-active.svg") `
+        -Value '<svg xmlns="http://www.w3.org/2000/svg"><script>void 0</script></svg>' -Encoding utf8
+    Invoke-ExpectedExit -Expected 1 -Label "active SVG negative fixture"
+    Remove-Item -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-active.svg")
+
+    Set-Content -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-include.puml") `
+        -Value "@startuml`n!includeurl https://example.invalid/remote.puml`n@enduml" -Encoding utf8
+    Invoke-ExpectedExit -Expected 1 -Label "PlantUML include negative fixture"
+    Remove-Item -LiteralPath (Join-Path $caseRoot "docs/diagrams/edge-include.puml")
 
     New-Item -ItemType Directory -Path (Join-Path $caseRoot "models") -Force | Out-Null
     [System.IO.File]::WriteAllBytes(

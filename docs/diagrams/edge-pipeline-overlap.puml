@@ -1,0 +1,68 @@
+@startuml
+title 三段有界流水线 / Bounded Three-stage Pipeline
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Noto Sans SC
+skinparam defaultFontSize 14
+skinparam ArrowColor #475569
+skinparam LifeLineBorderColor #64748B
+skinparam LifeLineBackgroundColor #F8FAFC
+skinparam ParticipantBorderColor #64748B
+skinparam ParticipantBackgroundColor #E0F2FE
+skinparam ParticipantFontColor #0F172A
+skinparam NoteBorderColor #94A3B8
+skinparam NoteBackgroundColor #FEF3C7
+skinparam SequenceGroupBorderColor #94A3B8
+skinparam SequenceGroupBackgroundColor #F8FAFC
+
+participant "Media3 GL lane" as GL
+participant "Inference lane\n1 worker" as Infer
+participant "QNN HTP" as Htp
+participant "Postprocess lane\n1 worker" as Post
+participant "Pack stripes\n4 workers" as Pack
+participant "SurfaceFlinger" as Surface
+
+GL -> GL : claim FrameToken N\ncopy RGBA before Media3 recycles it
+GL -> Infer : enqueue frame N\nframe admission capacity = 2
+activate Infer
+Infer -> Infer : RGBA -> float NCHW
+Infer -> Htp : Session.run(N) into pinned slot A
+activate Htp
+Htp --> Infer : result-ready(N)
+deactivate Htp
+Infer -> Post : transfer output-slot lease N
+deactivate Infer
+
+par N+1 inference
+  GL -> Infer : enqueue frame N+1
+  activate Infer
+  Infer -> Htp : Session.run(N+1) into slot B
+  activate Htp
+  Htp --> Infer : result-ready(N+1)
+  deactivate Htp
+  deactivate Infer
+else N postprocess
+  activate Post
+  Post -> Post : deferred bulk copy(N)
+  Post -> Pack : NHWC -> RGBA8\n4 fixed row ranges
+  activate Pack
+  Pack --> Post : packed frame N
+  deactivate Pack
+  Post --> GL : FrameResult N + original PTS
+  deactivate Post
+end
+
+GL -> GL : reject stale generation\nverify frameId / PTS identity
+GL -> Surface : direct output texture upload(N)\noutput-submit proxy timestamp
+
+note over Infer,Post
+  FIFO + bounded queues + explicit leases provide backpressure.
+  More queue depth would hide backlog, not increase service rate.
+end note
+
+note over GL,Surface
+  output-submit is not GPU completion or final presentation.
+  SurfaceFlinger cadence remains a separate acceptance gate.
+end note
+@enduml

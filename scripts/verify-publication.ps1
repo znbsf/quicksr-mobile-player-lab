@@ -197,6 +197,8 @@ foreach ($relativePath in $candidatePaths) {
 
     $name = [System.IO.Path]::GetFileName($relativePath)
     $extension = [System.IO.Path]::GetExtension($relativePath)
+    $isPlantUmlDiagramSource = $relativePath -match '(?i)^docs/diagrams/edge-[a-z0-9][a-z0-9._-]*\.puml$'
+    $isRenderedPlantUmlDiagram = $relativePath -match '(?i)^docs/diagrams/edge-[a-z0-9][a-z0-9._-]*\.svg$'
 
     if ($name -match '(?i)^\.env(?:\..+)?$' -or $forbiddenNames.Contains($name) -or
         $secretExtensions.Contains($extension)) {
@@ -214,7 +216,10 @@ foreach ($relativePath in $candidatePaths) {
         continue
     }
 
-    $isText = $textExtensions.Contains($extension) -or $textNames.Contains($name)
+    $isText = $textExtensions.Contains($extension) -or
+        $textNames.Contains($name) -or
+        $isPlantUmlDiagramSource -or
+        $isRenderedPlantUmlDiagram
     if ($relativePath.Equals($wrapperJar, [System.StringComparison]::OrdinalIgnoreCase)) {
         continue
     }
@@ -224,6 +229,31 @@ foreach ($relativePath in $candidatePaths) {
     }
     if ($contentScanExemptions.Contains($relativePath)) {
         continue
+    }
+
+    if ($isPlantUmlDiagramSource) {
+        try {
+            $plantUmlText = Get-Content -LiteralPath $fullPath -Raw
+            if ($plantUmlText -match '(?im)^\s*!(?:include|includeurl|include_many|include_once|import)\b') {
+                Add-Finding 'diagram-source' $relativePath 'PlantUML source may not include local or remote files.'
+            }
+        } catch {
+            Add-Finding 'read-failure' $relativePath 'PlantUML source could not be read and therefore could not be verified.'
+        }
+    }
+
+    if ($isRenderedPlantUmlDiagram) {
+        try {
+            $svgText = Get-Content -LiteralPath $fullPath -Raw
+            if ($svgText -notmatch '(?i)^\s*<svg\b') {
+                Add-Finding 'diagram-output' $relativePath 'Rendered diagram is not an SVG document.'
+            }
+            if ($svgText -match '(?i)<\s*(?:script|foreignObject)\b|javascript\s*:|(?:xlink:)?href\s*=') {
+                Add-Finding 'diagram-output' $relativePath 'Rendered SVG contains active or externally linked content.'
+            }
+        } catch {
+            Add-Finding 'read-failure' $relativePath 'Rendered SVG could not be read and therefore could not be verified.'
+        }
     }
 
     try {

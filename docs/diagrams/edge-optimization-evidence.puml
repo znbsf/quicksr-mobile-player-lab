@@ -1,0 +1,51 @@
+@startuml
+!pragma layout smetana
+title 优化演进与证据边界 / Optimization Evidence Trail
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Noto Sans SC
+skinparam defaultFontSize 14
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+skinparam rectangleBorderColor #64748B
+skinparam rectangleFontColor #0F172A
+skinparam noteBorderColor #94A3B8
+skinparam noteBackgroundColor #FEF3C7
+
+top to bottom direction
+
+rectangle "早期串行观测\npreprocess + QNN + copy + pack + GL\n约 11.435 FPS" as Serial #FEE2E2
+rectangle "三段有界 overlap\nN+1 inference / N postprocess / N-1 GL\n早期约 17.960 FPS" as Overlap #E0F2FE
+rectangle "float NHWC + 四条带 pack\n连续 RGB 访问\n最终 pack p50 / p95 = 11.321 / 15.503 ms" as Nhwc #FCE7F3
+rectangle "双 pinned output + deferred copy\ninference caller p95 平均 34.733 -> 30.529 ms\n额外约 23.730 MiB" as Deferred #FEF3C7
+rectangle "只在首个成功输出做完整 finite scan\n移除稳态周期性 330-353 ms 停顿" as Finite #ECFDF5
+rectangle "同尺寸 output texture 直传\n一次观测 GL submit p95 6.435 -> 3.460 ms\n删除中间纹理与 blit" as Direct #E0F2FE
+rectangle "最终默认处理路径\n828 帧，30.0045 FPS\nPTS coverage 约 1，drop / bypass = 0 / 0" as Throughput #DCFCE7
+rectangle "仍开放的最终显示门\nQuickSR QNN 1 / 2 PASS\n失败轮最大间隔 58.153 ms" as Display #FEE2E2
+
+Serial --> Overlap : 改变调度结构
+Overlap --> Nhwc : 改善输出访存
+Nhwc --> Deferred : 移出 inference 关键路径
+Deferred --> Finite : 删除稳态诊断停顿
+Finite --> Direct : 删除冗余 GL 环节
+Direct --> Throughput : 平均处理吞吐达标
+Throughput --> Display : 继续验证最终消费者
+
+rectangle "JNI / NEON packer\npack p50 36.566 -> 102.353 ms\n平均 FPS -42.94%\nSTOPPED" as Native #FEE2E2
+rectangle "双 PBO upload\nGL p95 3.460 -> 1.832 ms\n显示仍 1 / 2 PASS，+15.820 MiB\nNONDEFAULT" as Pbo #FEF3C7
+
+Nhwc ..> Native : 负结果
+Direct ..> Pbo : 局部更快，产品门未改善
+
+note right of Throughput
+  图中的数字来自不同阶段和受控 A/B，
+  不能相加、相乘或解释成同一帧的耗时分解。
+end note
+
+note right of Display
+  30 FPS throughput 不等于零抖动显示；
+  下一步需要关联 Perfetto、GL fence、
+  BufferQueue 与 FrameTimeline。
+end note
+@enduml

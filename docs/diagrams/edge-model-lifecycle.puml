@@ -1,0 +1,59 @@
+@startuml
+!pragma layout smetana
+title 模型从上游到手机 / Model Artifact Lifecycle
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Noto Sans SC
+skinparam defaultFontSize 14
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+skinparam rectangleBorderColor #64748B
+skinparam rectangleFontColor #0F172A
+skinparam noteBorderColor #94A3B8
+skinparam noteBackgroundColor #F8FAFC
+
+top to bottom direction
+
+rectangle "1. 上游来源与权利审查\ncheckpoint、训练数据、代码许可证分别判断" as Source #E0F2FE
+rectangle "2. 本地 canonical ONNX\n记录文件名、bytes、SHA-256、input/output name" as Canonical #FEF3C7
+rectangle "3. 确定性图变换\n固定 batch/height/width\n选择 2x / 3x / 4x" as Fixed #FCE7F3
+rectangle "4. 输出布局包装\n1080p: NCHW RGB -> float32 NHWC RGB\n卷积权重保持不变" as Layout #FCE7F3
+rectangle "5. PC ORT 正确性门\nshape、finite、容差、重复 hash、算子清单" as PcGate #ECFDF5
+rectangle "6. Manifest + Gradle fail-closed\n输入模型、派生脚本、产物 hash 全部冻结" as Manifest #F1F5F9
+rectangle "7. APK build-local staging\n仅把已验证本地模型复制到 generated assets" as Build #E0F2FE
+rectangle "8. ModelVariant + QuickSrSession\n加载时重新检查 bytes / SHA / shape / layout" as Runtime #FEF3C7
+rectangle "9. ORT QNN EP -> HTP\n显式选择 backend，拒绝 CPU EP 静默回退" as Device #EDE9FE
+rectangle "10. 分层证据\n数值正确性、provider、吞吐、最终显示、thermal" as Evidence #ECFDF5
+
+Source --> Canonical
+Canonical --> Fixed
+Fixed --> Layout
+Layout --> PcGate
+PcGate --> Manifest : PASS
+Manifest --> Build
+Build --> Runtime
+Runtime --> Device
+Device --> Evidence
+
+rectangle "Git 可跟踪\n派生代码、manifest、hash、测试、脱敏摘要" as Tracked #DCFCE7
+rectangle "仅本地保存\ncheckpoint、ONNX、APK、媒体、raw logs / tensors" as LocalOnly #FEE2E2
+
+Fixed ..> Tracked
+Manifest ..> Tracked
+Canonical ..> LocalOnly
+Layout ..> LocalOnly
+Build ..> LocalOnly
+Evidence ..> Tracked : 仅去标识摘要
+Evidence ..> LocalOnly : 原始证据
+
+note right of PcGate
+  “能加载”“能跑”“数值正确”“跑在 NPU”
+  是四个不同问题，不能共用一个 PASS。
+end note
+
+note right of Device
+  固定 shape 让 QNN graph finalization、
+  buffer 复用和性能回归更可控。
+end note
+@enduml

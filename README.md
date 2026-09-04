@@ -152,6 +152,7 @@ In the app, select an output profile and backend, then choose a local non-DRM SD
 
 ## Evidence and documentation
 
+- [Edge model deployment learning report (Chinese, with PlantUML diagrams)](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
 - [Current project status](docs/STATUS.md)
 - [Implementation plan and progress](docs/IMPLEMENTATION_PLAN_AND_PROGRESS.md)
 - [Real-time architecture optimization audit](docs/REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)

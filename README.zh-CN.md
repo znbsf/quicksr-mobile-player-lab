@@ -166,6 +166,7 @@ App 中先选择输出档位和后端，再选择本地非 DRM SDR 视频。720p
 
 ## 证据与文档导航
 
+- [端侧模型部署学习报告（含 PlantUML 架构图）](docs/EDGE_MODEL_DEPLOYMENT_LEARNING_GUIDE.zh-CN.md)
 - [当前项目状态](docs/STATUS.md)
 - [实现计划与进展](docs/IMPLEMENTATION_PLAN_AND_PROGRESS.md)
 - [实时架构优化审计](docs/REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)

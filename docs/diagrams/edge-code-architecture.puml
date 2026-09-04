@@ -1,0 +1,103 @@
+@startuml
+!pragma layout smetana
+title QuickSR Android 代码架构 / Code Architecture
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Noto Sans SC
+skinparam defaultFontSize 14
+skinparam ArrowColor #475569
+skinparam ArrowThickness 1.2
+skinparam packageBorderColor #94A3B8
+skinparam packageFontColor #0F172A
+skinparam componentBorderColor #64748B
+skinparam componentFontColor #0F172A
+skinparam noteBorderColor #94A3B8
+skinparam noteBackgroundColor #F8FAFC
+
+top to bottom direction
+
+actor "Learner / User" as User
+
+package "UI 与入口 / Entry points" #E0F2FE {
+  component "SuperResolutionActivity\n图片、视频、模式与档位" as SrActivity
+  component "MainActivity\n小尺寸 runtime probe" as MainActivity
+}
+
+package "播放与图像路径 / Media paths" #ECFDF5 {
+  component "Media3 / ExoPlayer\nMediaCodec + PTS + GL effects" as Media3
+  component "QuickSrVideoEffect\n逐帧 readback、排队与交付" as VideoEffect
+  component "Anime4kSmallEffect\nGPU-resident 替代路径" as Anime4K
+  component "FullImageUpscaler\n完整图片 2x / tiling" as ImageUpscaler
+}
+
+package "模型与运行时 / Model runtime" #FEF3C7 {
+  component "ModelVariant\nshape、layout、asset、hash 合同" as Variant
+  component "QuickSrSession\n持久化 input + 1/2 output slots" as Session
+  component "QnnPluginRuntime\n注册 QNN EP、选择 HTP、禁 CPU fallback" as QnnRuntime
+  component "ONNX Runtime\nOrtSession + QNN EP" as Ort
+  component "QuickSrEngine\n确定性 probe 编排" as Engine
+}
+
+package "数据转换 / Data transforms" #FCE7F3 {
+  component "ImageTensorCodec\nRGBA8 -> float NCHW" as Codec
+  component "AlphaUpsampler\n预计算 alpha 映射" as Alpha
+  component "NHWC 4-stripe pack\nfloat RGB -> RGBA8" as Packer
+  component "NativeOutputPacker\n实验路径，默认 OFF" as NativePacker
+}
+
+package "调度、证据与诊断 / Scheduling and evidence" #F1F5F9 {
+  component "VideoPipelineTelemetry\nframeId + PTS + generation + queue" as PipelineTelemetry
+  component "VideoBenchmarkTelemetry\n阶段耗时与配置 JSON" as BenchmarkTelemetry
+  component "VideoEvidenceStore\n受控证据落盘" as EvidenceStore
+  component "DeviceSnapshot / ReceiptStore\n设备与 probe 收据" as Receipt
+}
+
+node "Qualcomm Android device" #EDE9FE {
+  component "HTP / CDSP\nQNN graph execution" as Htp
+  component "SurfaceFlinger\nactual-present proxy" as Surface
+}
+
+User --> SrActivity : 选择媒体、档位和 backend
+User --> MainActivity : 运行 runtime probe
+
+SrActivity --> Media3 : 构建播放器
+Media3 --> VideoEffect : input texture + source PTS
+SrActivity --> Anime4K : 可选 GPU 路径
+Anime4K --> Surface : texture-resident output
+SrActivity --> ImageUpscaler : 图片路径
+
+MainActivity --> Engine
+Engine --> Session
+ImageUpscaler --> Session
+VideoEffect --> Session : inference lane
+Session --> Variant : 校验静态 tensor 合同
+Session --> QnnRuntime : QNN 模式
+QnnRuntime --> Ort : provider / options
+Session --> Ort : persistent OrtSession
+Ort --> Htp : fused graph execution
+
+VideoEffect --> Codec : preprocess
+VideoEffect --> Alpha : side-channel alpha
+VideoEffect --> Packer : postprocess lane
+Packer ..> NativePacker : 可替换实验，未默认
+VideoEffect --> Surface : direct output texture upload
+
+VideoEffect --> PipelineTelemetry
+PipelineTelemetry --> BenchmarkTelemetry
+BenchmarkTelemetry --> EvidenceStore
+QnnRuntime --> EvidenceStore : strict snapshot
+Engine --> Receipt
+
+note bottom of VideoEffect
+  热路径的核心职责：
+  所有权、背压、并行与生命周期。
+  它不是单纯的“调用一次模型”。
+end note
+
+note bottom of Htp
+  HTP 会话配置不等于逐节点 placement 证明；
+  最终显示也必须单独验证。
+end note
+@enduml
