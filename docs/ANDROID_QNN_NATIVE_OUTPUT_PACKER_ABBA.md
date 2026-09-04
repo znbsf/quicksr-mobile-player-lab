@@ -32,12 +32,17 @@ ownership, pool return on failure/stale generation, cadence-cache copies, CRC, f
 all accept the direct-buffer path.
 
 Host gates passed with 107 Java tests, 43 Python tests, `lintDebug`, `assembleDebug`, and
-`assembleDebugAndroidTest`; the app APK contains the arm64-v8a JNI build and the instrumentation
-APK builds against it. The device-side in-process self-test compares randomized and boundary values,
+`assembleDebugAndroidTest`; the app APK contains the arm64-v8a JNI build. A later execution attempt
+found that the first instrumentation APK registered the platform `android.app.Instrumentation`
+instead of a JUnit runner, so its tests were compiled but undiscoverable. The follow-up switches to
+`AndroidJUnitRunner`, JUnit4 annotations, and an APK inspection gate that requires the correct runner,
+target package, test class, and all three named test methods. Device execution remains pending after
+that correction. A separate non-installing device gate rejects a missing/wrong registration and
+requires exactly `OK (3 tests)`, preventing a zero-test result from being counted. The device-side
+in-process self-test compares randomized and boundary values,
 a non-square resize, exact RGBA bytes, alpha mapping, repeated buffer ownership, and direct-buffer
-requirements. It passed independently in B1 and B2. The separate instrumentation APK was built but
-was not installed or run because the final device phase explicitly prohibited another install; it
-is therefore a host build gate, not device instrumentation evidence.
+requirements. It passed independently in B1 and B2. The corrected instrumentation suite is still a
+host build/package gate, not passing device instrumentation evidence.
 
 The ABBA summarizer rehashes every raw log, reruns the current strict validator, checks the
 chronological packer sequence and pinned configuration, and binds all runs to the same registered

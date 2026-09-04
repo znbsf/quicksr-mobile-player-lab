@@ -271,3 +271,9 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
 - **Decision:** reject native as the default and retain it only as a reproducible, explicit
   experiment. Java remains the production path. No APK, raw device log, media, device identifier,
   or local path is published.
+- **Instrumentation correction:** a post-commit device attempt exposed that the original test APK
+  declared `android.app.Instrumentation`, so the compiled tests could not be discovered. A follow-up
+  uses `AndroidJUnitRunner` with AndroidX Test 1.7.0/JUnit extension 1.3.0 and adds a host APK gate
+  for the runner, target package, class and three required methods. A non-installing device gate
+  also requires the corrected registration and exactly three passing tests. Device execution is
+  still pending and is not counted as PASS.

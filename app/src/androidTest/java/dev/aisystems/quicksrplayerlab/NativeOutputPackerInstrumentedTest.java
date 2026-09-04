@@ -1,13 +1,23 @@
 package dev.aisystems.quicksrplayerlab;
 
-import junit.framework.TestCase;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Random;
 
-public final class NativeOutputPackerInstrumentedTest extends TestCase {
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+@RunWith(AndroidJUnit4.class)
+public final class NativeOutputPackerInstrumentedTest {
+    @Test
     public void testMatchesJavaForBoundariesAndRandomValues() {
         int inputWidth = 7;
         int inputHeight = 3;
@@ -58,6 +68,7 @@ public final class NativeOutputPackerInstrumentedTest extends TestCase {
         assertTrue(Arrays.equals(expected, bytes(actual)));
     }
 
+    @Test
     public void testRectangularThreeAndFourScalePreservesEveryNearestAlpha() {
         for (int scale : new int[]{3, 4}) {
             int inputWidth = 5;
@@ -91,6 +102,7 @@ public final class NativeOutputPackerInstrumentedTest extends TestCase {
         }
     }
 
+    @Test
     public void testCallerOwnsBuffersAcrossRepeatedCallsAndRejectedHeapBuffer() {
         int inputWidth = 2;
         int inputHeight = 1;

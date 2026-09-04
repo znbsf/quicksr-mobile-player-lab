@@ -393,7 +393,7 @@ android {
             }
         }
 
-        testInstrumentationRunner = "android.app.Instrumentation"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MODEL_SHA256", "\"$lockedModelSha256\"")
         buildConfigField("long", "MODEL_BYTES", "${lockedModelBytes}L")
         buildConfigField("String", "MODEL_FILE", "\"$lockedModelName\"")
@@ -510,5 +510,6 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-effect:1.11.0")
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }
