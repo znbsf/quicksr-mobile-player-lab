@@ -1,10 +1,15 @@
 # Anime model laboratory report
 
-Status date: 2026-09-03
+Status date: 2026-09-04
 
 This report covers frame-by-frame anime super-resolution candidates in the
 independent model-lab worktree based on `ad7e1cb`. It does not cover frame
 interpolation and does not modify or validate the Media3/QNN playback hot path.
+
+This is a candidate-selection report, not the current integration dashboard. Anime4K x2 Small
+subsequently entered the player and obtained bounded single-device model-active function evidence;
+fixed-frame output equivalence, representative anime quality, GPU timing and sustained behavior
+remain open. Current sequencing is owned by `IMPLEMENTATION_PLAN_AND_PROGRESS.md`.
 
 ## Outcome
 
@@ -26,7 +31,7 @@ one promoted GPU shader and one promoted mobile SISR model. A name containing
 
 | Candidate | Source / version / code license | Weights | Training or evaluation data | I/O and size | PC / Android path | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
-| Anime4K x2 Small | [`bloc97/Anime4K`](https://github.com/bloc97/Anime4K) `v4.0.1`, commit `4029bf701ecaa15f163cdc49cffe5501c1acf410`, MIT | Embedded in the MIT shader; URL, 18,638 bytes and SHA-256 frozen | Stable shader training corpus not identified upstream | Dynamic RGB texture, native 2x RGB; 1,384 parameters derived from pinned layer descriptors; five hook passes; peak memory open | mpv/libplacebo GLSL on PC; Android Media3/GLES source integration is host-ready, device validation open | **Advance GPU** |
+| Anime4K x2 Small | [`bloc97/Anime4K`](https://github.com/bloc97/Anime4K) `v4.0.1`, commit `4029bf701ecaa15f163cdc49cffe5501c1acf410`, MIT | Embedded in the MIT shader; URL, 18,638 bytes and SHA-256 frozen | Stable shader training corpus not identified upstream | Dynamic RGB texture, native 2x RGB; 1,384 parameters derived from pinned layer descriptors; five hook passes; peak memory open | mpv/libplacebo GLSL on PC; subsequently integrated into Android Media3/GLES with bounded single-device function evidence; fixed-frame quality/GPU timing still open | **Advance GPU** |
 | Anime4K x2 Medium | Same pinned MIT release | Embedded in shader; URL, 37,685 bytes and SHA-256 frozen | Same provenance gap | Dynamic RGB texture, native 2x RGB; 2,548 parameters published by the pinned generator; nine hook passes; peak memory open | Same, but higher pass count | Hold as quality A/B after Small |
 | FSRCNNX 8-0-4-1 | [`igv/FSRCNN-TensorFlow`](https://github.com/igv/FSRCNN-TensorFlow) release 1.1, tag commit `1aa11ab0e1fc12741fdb84cef31da5619a478670`; repository has GPL and MIT files without a mapping | Small release shader has its own LGPL-3.0-or-later header; LineArt is inside a separate archive without an independently frozen license/hash here | General-100 and classic test sets are mentioned without a rights chain suitable for this task | LUMA shader / NHWC single-channel training graph; native 2x; Small is approximately 2,948 parameters from source; memory open | mpv shader; no validated Android port | Blocked |
 | `realesr-animevideov3` | [`xinntao/Real-ESRGAN`](https://github.com/xinntao/Real-ESRGAN) v0.2.5.0 tag commit `685d429c81888252bdb10f56c7754baededc3823`, BSD-3-Clause; ncnn wrapper is MIT | v0.2.5.0 checkpoint and ncnn model have no separate weight license established here | AnimeVideo-v3 training data are not disclosed | Per-frame NCHW RGB, native 4x; x1/x2/x3 are output resize; 621,424 parameters derived from the pinned 16-convolution SRVGG definition; Android peak open | PyTorch or ncnn Vulkan; no project-device evidence | Blocked |
@@ -46,8 +51,11 @@ one promoted GPU shader and one promoted mobile SISR model. A name containing
   source-only allowlist.
 - A subsequent v0.15.0 source integration retained the exact MIT Small text,
   parses all five passes into a GPU-resident Media3 effect, and passes host
-  source-identity, dimension and Java compilation tests. It has not produced a
-  target-device frame or timing result.
+  source-identity, dimension and Java compilation tests. A later bounded run on one
+  Android 16 / Adreno 740 device produced model-active function samples at 720p,
+  1080p and 1440p without fallback; it still did not produce the fixed paired output,
+  GPU completion timing, representative visual review or sustained evidence required
+  for promotion.
 - The SESR-M5 2x checkpoint was downloaded to ignored local cache, hashed, and
   inspected only as a container; it was not deserialized, exported, committed,
   or added to the Android app.
@@ -122,8 +130,8 @@ its own hash at preparation time and adds four subtitle/profile cases.
 
 ## Android entry gates
 
-Anime4K now has a host-ready player integration, but it may not be promoted as
-validated behavior until the remaining device gates close:
+Anime4K now has a player integration and bounded single-device function evidence, but it may not
+be promoted as quality-validated or product-ready behavior until the remaining gates close:
 
 1. Reproduce PC output on clean, blur/JPEG, line-art and subtitle/edge cases;
    save output hashes and conduct a blinded line/halo/subtitle review.

@@ -2,7 +2,7 @@
 
 状态日期：2026-09-04
 
-盘点基线：`main` 的文档前一提交 `26052cc`
+实现与设备证据基线：`main` 的 `d7daad5`
 
 文档角色：当前实现、证据等级、先后依赖和下一步的唯一总览。早期研究理由仍保留在
 [动漫视频实时超分与插帧执行拆分](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，各项原始测量以链接的专项报告为准。
@@ -13,7 +13,12 @@
 GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接入 App。
 这不等于所有增强模式都达到产品级实时和画质门槛。
 
-当前四条优化线的裁决如下：
+首个可交付目标仍是单台目标机上的本地 SDR `640×360 → 1280×720 @ 23.976 fps`，
+而不是先承诺 1080p 神经输出。旧 smoke 曾达到 24.0134 fps 的播放器代理吞吐，但最新
+raw-ns 合同下的 720p SERIAL/OVERLAP 总计 p95 仍超过单帧预算；固定同帧画质、最终显示、
+A/V sync 和正式热稳也没有关闭。因此“吞吐接近源帧率”不能写成 M3 产品门禁已完成。
+
+当前主要路线的裁决如下：
 
 1. **Anime4K 已进入可选择播放器路径。** 单台 Android 16 / Adreno 740 已完成
    720p、1080p、1440p 的有界 model-active 功能运行；固定同帧参考、GPU timing、
@@ -30,7 +35,7 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
 5. **插帧仍未进入播放器。** RIFE v4.6、IFRNet-S 和 RIFE v4.25-lite 都只存在于独立
    native CLI/离线评测。IFRNet-S 与 v4.25-lite 已分别完成真机探针并停止；后者虽然在
    观察设备上兼容，但只在 256x144 更快，另两档慢 56.0-77.2%，没有一致替换收益。
-5. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
+6. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
    case/74 帧已由 canonical generator、manifest 和 hash 约束；结果只允许写成
    `declared_oracle_conformance`，真实 Anime4K/cadence 运行、代表性动漫和人工审核仍待补。
 
@@ -90,7 +95,7 @@ RIFE / IFRNet / ANVIL
 | --- | --- | --- | --- |
 | Media3 播放器与 QuickSR CPU/QNN | `IMPLEMENTED` | 单设备 720p/1080p/1440p/4K-display 功能矩阵 | 保留；实时、最终显示和长时热稳分开判断 |
 | 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
-| QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；下一变量是 native direct packer |
+| QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；native direct packer 已执行并失败，下一变量必须由分段测量重新选择 |
 | JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期和 3 项 instrumentation 通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
 | Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
 | cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
@@ -123,18 +128,75 @@ P1A 已完成
   -> QuickSR SERIAL Java/native packer ABBA
   -> 裁决：功能通过但性能显著回归，native 默认化被否决
 
-当前可并行
-  |-- P1A QuickSR：分析新的单变量前先保留 Java pack 默认
-  `-- P1B 画质：canonical 主机合同已合入，继续真实 adapter/trace + 人工审核
+当前关键路径
+  |-- P1B 画质：真实 Android/offscreen GL adapter + trace/receipt + 人工审核
+  `-- P1C 播放：拆分吞吐/排队延迟分类，补 GPU completion/最终显示、A/V sync、生命周期和热稳
 
-P1 共同检查点
-  -> 性能、数值、画质、生命周期均过门：再讨论实验 UI 和长时热稳
-  -> 任一核心门禁失败：保留离线/默认关闭，不靠扩大队列掩盖问题
+M3 共同检查点（先关闭 360p→720p）
+  -> 当前代码按同一证据合同重跑，画质、最终显示、A/V 和持续运行均过门
+  -> 任一核心门禁失败：保留实验状态；先修证据指向的瓶颈，不扩队列
+
+条件性 P1D（M3 关闭后才追 1080p）
+  -> 从 profiler 只选一个：输出数据布局/量化 I/O/shared allocator/显示域路径
+  -> 固定模型、片源、tuning、队列和 cadence 做 ABBA；失败即停止该变量
 
 条件性后续
   |-- SESR-M5：只在权利边界允许时做导出、CPU ORT、QNN parity
   `-- ANVIL：只在仍明确需要手机 VFI 时建立 H.264 MV + SM8550/V73 专项
 ```
+
+### 当前主要矛盾与优化判据
+
+**项目级主要矛盾是性能实验已经跑到 1080p，但首个 720p 产品声明所需的真实画质、最终显示、
+A/V 和持续运行证据仍未闭合。** 继续换 packer、扩大队列或接入 VFI，不会关闭首个可交付
+目标，反而会叠加新变量。当前优先级必须从“再找一个更快实现”切换为“先证明 720p 输出值得
+显示、确实按时显示，而且可以持续运行”。
+
+1080p 的技术子矛盾是全帧 float32 NCHW 在 GL、CPU、ORT/QNN 和 RGBA 显示域之间往返：
+
+- 24 fps 单帧预算为 41.67 ms；既有 Java 基线的 QNN caller p50 约 44.7 ms，单项已接近或
+  超过预算；
+- Java output-pack p50 约 36.6 ms，约占一帧预算的 88%；SERIAL 把两项串联后只有
+  11.855 fps；
+- overlap 把 1080p 提高到 17.960 fps，却增加 23.73 MiB 输出张量并把 total p95 从
+  536.44 ms 推高到 625.37 ms；
+- native/NEON packer 已从数据上否决，不能再次作为默认化候选；Media3 固定 effect 缓冲、
+  GPU completion 和最终 latch 仍未被分离测量。
+
+这里还有一个指标矛盾：当前 validator 用单个 `performance_class` 同时要求 observed FPS 达标
+和 `effectTotalToOutputSubmitProxyNs` p95 小于一帧，再把其余情况统一写成 `offline`。但项目使用
+的 [Media3 1.11.0 `ByteBufferGlEffect`](https://github.com/androidx/media/blob/1.11.0/libraries/effect/src/main/java/androidx/media3/effect/ByteBufferGlEffect.java)
+固定 `queueSize=6`、pending pixel-buffer queue 为 1，公开构造器只接收 `Processor`。所以
+“流式吞吐跟得上”与“单帧排队/显示延迟小于 41.67 ms”是两条不同的轴；不能放宽现有严格
+门禁，但应新增 `throughput_class`、`effect_latency_class` 和 `final_display_status`，保留旧
+`performance_class` 只做兼容。否则优化可能只是降低队列积压，却被错误归因到 kernel，或
+吞吐接近 24 fps 仍被一个含混的 `offline` 标签遮蔽。
+
+因此下一轮不是直接实现另一个优化，而是先补一个只读测量/验收回合：对同一 720p 和 1080p
+workload 分离 readback-ready proxy、preprocess、QNN caller、tensor copy、pack、GL submit、
+GPU completion 与最终显示，并绑定真实输出。只有结果明确后才从以下方向选择一个：
+
+1. 若 float 输出和布局转换主导，先验证 W8A8/uint8 或直接显示友好布局，避免再优化同一
+   float NCHW→RGBA 循环；
+2. 若跨 ORT/QNN 边界的复制/同步主导，再单独评估 shared allocator 或 native I/O；
+3. 若 Media3 effect 缓冲或 GL 往返主导，再建立 texture-resident/更低缓冲路径的独立实验；
+4. 若 QNN caller 本身仍越过预算，则降低 workload 或比较 SESR-M5，而不是靠并行队列掩盖。
+
+候选必须沿用现有 fail-closed ABBA：两个 B 回合都达到预先冻结的吞吐目标；单帧 effect
+延迟和最终显示另列，不能恶化对应 A 的尾延迟；CRC/PTS/generation/lifecycle 必须无回归，
+并报告额外 PSS。任何一项失败都保留为负结果，不与 overlap、cadence 或新模型混测。
+
+立即执行包不修改热路径，先完成以下三步：
+
+1. telemetry/report schema 向后兼容地新增 `throughput_class`、`effect_latency_class`、
+   `final_display_status`，并记录 Media3 effect queue=6、pending PBO=1；旧
+   `performance_class` 和阈值保持不变，避免重写历史结论；
+2. 将实际 Android/offscreen GL 输出接入既有 visual contract，生成逐帧 trace、receipt、
+   source/output hash；这一变更不同时调整队列、模型或 packer；
+3. ADB 重新可见后，先用当前默认路径重跑 720p，再根据独立的吞吐、排队延迟、最终显示、
+   A/V 和画质结果决定是否需要低缓冲自定义 effect。Media3 1.11.0 的公开
+   `ByteBufferGlEffect` 不能直接配置队列；如确有必要，应另建 queue=2/6 单变量原型，不能靠
+   反射改私有常量。
 
 ### P0：RIFE v4.25-lite 真机裁决（已完成）
 
@@ -211,13 +273,17 @@ reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这�
 
 ## 7. 本次盘点验证
 
-- `:app:testDebugUnitTest`：105/105 PASS；
-- Python：`scripts` 40/40、`golden-correctness` 14/14、`pc-benchmark` 27/27、
-  `derived-models` 19/19、`vfi-benchmark` 12/12，共 112/112 PASS；
-- 画质合同合入后 source-only publication scan 193 项 PASS；oracle 重签和任意 PPM 冒充
+- `:app:testDebugUnitTest`：107/107 PASS；
+- Python：`scripts` 44/44、`golden-correctness` 14/14、`pc-benchmark` 27/27、
+  `derived-models` 19/19、`vfi-benchmark` 12/12，共 116/116 PASS；需要 ONNX/ORT 的三组
+  使用仓库固定 Python 环境；
+- source-only publication scan 204 项 PASS；oracle 重签和任意 PPM 冒充
   的对抗路径均由测试覆盖，runtime evidence 仍固定为 `NOT_BOUND`；
-- `adb devices -l`：唯一 arm64 真机在线；RIFE v4.25-lite 三档均 PASS，42 个输出在延迟/
-  采样进程间逐个 hash 一致，矩阵结束后进程不存在；
+- 本次同步即时重跑了 JVM 单测、五组 Python 测试和 publication scan；lint、assemble 与
+  三项真机 instrumentation 沿用 `d7daad5` 已记录的最近一次完整门禁结果，没有伪写成本轮重跑；
+- 本次同步检查时当前 shell 的 ADB 在线设备数为 0，因此没有新增真机运行；`d7daad5` 前已经
+  记录的 RIFE v4.25-lite 三档 PASS、42 个输出逐项 hash 一致和 packer ABBA 仍作为历史证据，
+  但下一轮设备门禁必须先重新确认目标机可见；
 - 原始报告保留在忽略目录，提交只记录去标识汇总；设备兼容没有被扩写成播放器实时成功。
 
 ## 8. 计划更新规则

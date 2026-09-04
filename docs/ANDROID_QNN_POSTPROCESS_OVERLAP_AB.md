@@ -61,10 +61,11 @@ The throughput gain is real, but the 1080p p95 tail regression and additional 23
 the candidate unsuitable as the default. The code and telemetry remain reproducible with
 `-PquickSrPostprocessOverlap=true`; normal builds stay serial.
 
-The next single-variable experiment should be a JNI/NEON direct output packer against the serial
-baseline. The 1080p Java output pack remains about 36-42 ms at p50 and 40-46 ms at p95. No JNI/NDK
-app layer exists yet, so that experiment must isolate the new native build/ABI path and keep the
-model, QNN execution, queue policy, input, tuning, and cadence unchanged.
+At the time of this report, the next single-variable experiment was a JNI/NEON direct output packer
+against the serial baseline. That follow-up has since completed: it preserved functional and
+cross-packer consistency gates but regressed mean FPS by 42.94% and output-pack p50 by 179.91%, so
+it was rejected as a default. This paragraph is retained as experiment chronology; current next-step
+selection is owned by `IMPLEMENTATION_PLAN_AND_PROGRESS.md` and must not repeat the native packer.
 
 QNN evidence remains session-configuration evidence, not per-node provider-placement proof. Final
 display latch, input-to-photon latency, visual quality, A/V sync, power, and thermal stability remain

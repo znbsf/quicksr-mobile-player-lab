@@ -1,10 +1,10 @@
 # QuickSR Mobile Player 路线图
 
-> 文档更新：2026-09-01
+> 文档更新：2026-09-04
 >
 > 文档性质：阶段边界、技术合同与证据门禁；不是完成证明。
 >
-> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现，并完成单 workload 吞吐观察。M1/M2 的主要功能代码已经存在；M3 有 `640×360 → 1280×720` 完整帧实验路径，但 correctness、画质、p95/p99、A/V sync、最终显示 latch、持续 thermal 和 tile/stitch 门禁尚未全部关闭。M4 AAR 仍未实现。
+> 当前活动状态：Media3 播放器与逐帧 QNN HTP 闭环已实现。M1/M2 的主要功能代码已经存在；M3 的 `640×360 → 1280×720` 旧 smoke 达到源 cadence 代理吞吐，但最新 raw-ns 合同、真实画质、A/V sync、最终显示 latch 与持续 thermal 仍未共同关闭。1080p overlap 有吞吐收益但仍离线，native packer 已负结果收口。M4 AAR 仍未实现。
 
 ## 1. 先把当前事实说清楚
 
@@ -319,18 +319,18 @@ M4 门禁：
 4. [Android `GlShaderProgram` API：texture、PTS、异步输出与 GL context](https://developer.android.com/reference/androidx/media3/effect/GlShaderProgram)
 5. [ORT Java `OnnxTensor` API：NIO buffer 输入和 backing buffer](https://onnxruntime.ai/docs/api/java/ai/onnxruntime/OnnxTensor.html)
 6. [ORT Java `OrtSession`：pinned outputs](https://github.com/microsoft/onnxruntime/blob/main/java/src/main/java/ai/onnxruntime/OrtSession.java)
-7. [QNN Execution Provider：HTP、CPU fallback、shared allocator 与 profiling 选项](https://github.com/onnxruntime/onnxruntime-qnn/blob/main/docs/execution_providers/QNN-ExecutionProvider.md)
+7. [QNN Execution Provider v2.5.0：HTP、CPU fallback、shared allocator 与 profiling 选项](https://github.com/onnxruntime/onnxruntime-qnn/blob/v2.5.0/docs/execution_providers/QNN-ExecutionProvider.md)
 8. [Qualcomm AI Hub QuickSRNetSmall 模型页](https://aihub.qualcomm.com/models/quicksrnetsmall)
 9. [Qualcomm QuickSRNetSmall 模型实现：2×/3×/4× scale factor checkpoint 来源](https://github.com/qualcomm/ai-hub-models/blob/main/src/qai_hub_models/models/quicksrnetsmall/model.py)
 
 ## 12. 下一次实际执行入口
 
-1. 冻结视频 correctness/画质合同，并用同 PTS CPU/golden 与权利清晰 reference 验证；
-2. 保存各阶段 raw ns 样本、队列深度和 accepted/processed/drop/late，报告 p50/p95/p99；
-3. 补 SurfaceFlinger 或等价最终显示观测、A/V sync、seek/flush/pause/resume；
-4. 优先 A/B 优化当前约 10 ms 的输出转换与 GL upload；
-5. 只有在测量显示 Java 热循环主导时才引入 NDK NEON 或 compute shader；
-6. 再评估 W8A8 I/O、QNN shared allocator、native I/O 或更深 zero-copy；
-7. 通过持续 thermal/功耗与画质门禁后，再拆分可复用 AAR。
+1. 把真实 Android/offscreen GL 输出绑定到现有 correctness/画质合同，用同 PTS CPU/golden 与权利清晰 reference 验证并完成盲审；
+2. 先把 observed throughput、effect 排队/处理延迟和 final-display 状态拆成独立字段，再在当前代码上重跑 `640×360 → 1280×720 @ 23.976 fps`，补 GPU completion、SurfaceFlinger 或等价最终显示、A/V sync、seek/flush/pause/resume；
+3. 通过 10～30 分钟的温度、频率、功耗、PSS 和掉帧观察关闭 M3，而不是用旧 smoke 替代；
+4. 1080p 只作为条件性性能线：其 Java QNN caller p50 约 44.7 ms、output-pack p50 约 36.6 ms，native packer 已回归，不再重复该方向；
+5. 根据分段 profiler 一次只选择 W8A8/uint8 或显示友好布局、QNN shared allocator/native I/O、texture-resident/低缓冲路径中的一个做 ABBA；
+6. 如果 QNN caller 本身仍越过帧预算，再降低 workload 或完成 SESR-M5 导出/parity 后比较，不靠扩大队列；
+7. M3 的画质、最终显示、A/V 和持续运行全部通过后，再拆分可复用 AAR。
 
 若 GL readback/upload 主导总延迟，应保留负结果，并据此决定继续优化 Media3 effect 还是另立 native pipeline 实验；不得在没有测量前用“未来 zero-copy”跳过当前证据。
