@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "experiment": "quicksr-1080p-realtime-architecture-probes",
+  "date": "2026-09-04",
+  "source_commit": "22774fd",
+  "target": {
+    "input": "640x360-rgb",
+    "neural_output": "1920x1080-rgb",
+    "source_fps": 23.976,
+    "frame_budget_ms": 41.708,
+    "best_existing_overlap_proxy_fps": 17.96,
+    "required_throughput_gain_percent": 33.497
+  },
+  "host_probes": [
+    {
+      "candidate": "uint8-nhwc-rgb-graph-output",
+      "status": "PASS_HOST_EQUIVALENCE",
+      "mismatched_values": 0,
+      "float_output_bytes": 24883200,
+      "rgb8_output_bytes": 6220800,
+      "boundary_byte_reduction_percent": 75.0,
+      "source_cpu_p50_ms": 60.651,
+      "candidate_cpu_p50_ms": 81.158,
+      "boundary": "The CPU timing includes appended conversion operators and does not predict QNN placement or device speed."
+    },
+    {
+      "candidate": "temporal-batch-2",
+      "status": "PASS_HOST_EQUIVALENCE_DEPRIORITIZED",
+      "max_abs_error": 0.0,
+      "observed_cpu_throughput_gain_percent_range": [
+        4.205,
+        16.864
+      ],
+      "batch_output_bytes": 49766400,
+      "boundary": "Adds at least one frame of collection latency and doubles one graph output; QNN behavior is unmeasured."
+    },
+    {
+      "candidate": "two-way-spatial-batch-with-four-pixel-halo",
+      "status": "PASS_HOST_EQUIVALENCE_NO_HOST_SPEEDUP",
+      "max_abs_error": 0.0,
+      "extra_input_percent": 1.25,
+      "observed_cpu_throughput_gain_percent_range": [
+        -2.312,
+        0.738
+      ],
+      "boundary": "Provides a correctness basis for a future multi-graph probe, but batching alone did not improve host CPU throughput."
+    }
+  ],
+  "emulator_probes": {
+    "device_class": "Android_API_35_x86_64_Medium_Phone_API_35_isolated_emulator",
+    "serial_policy": "all_final_commands_explicitly_bound_to_the_new_isolated_instance; the_preexisting_emulator_was_not_used_for_final_evidence",
+    "status": "PASS_7_OF_7_INSTRUMENTATION_TESTS",
+    "scope": "Correctness and directional scheduling evidence only; not arm64, QNN HTP, power, thermal, or product throughput evidence.",
+    "latest_pack_probe_ms": {
+      "current_heap_then_direct_p50": 31.78,
+      "current_opaque_input_p50": 30.17,
+      "heap_parallel_2_p50": 16.9,
+      "heap_parallel_4_p50": 10.06,
+      "rgb_heap_1_p50": 23.79,
+      "rgb_heap_2_p50": 15.86,
+      "rgb_heap_4_p50": 13.07,
+      "mapped_alpha_heap_1_p50": 24.4,
+      "mapped_alpha_heap_4_p50": 7.04,
+      "opaque_rgba_heap_1_p50": 21.61,
+      "opaque_rgba_heap_4_p50": 6.66,
+      "direct_int_p50": 103.3,
+      "direct_float_tensor_heap_1_p50": 208.28,
+      "direct_float_tensor_heap_4_p50": 57.96
+    },
+    "repeated_pack_findings": {
+      "focused_abba_process_count": 3,
+      "mapped_alpha_abba_gain_percent": [
+        11.87,
+        24.57,
+        19.5
+      ],
+      "four_thread_candidates": "directionally_unstable_and_sometimes_slower_than_single_thread",
+      "absolute_timing_use": "do_not_extrapolate_to_arm64_or_qnn"
+    },
+    "latest_scan_probe_ms": {
+      "preprocess_p50": 2.47,
+      "output_pack_p50": 29.51,
+      "heap_to_direct_copy_p50": 0.31,
+      "input_crc_p50": 0.27,
+      "output_heap_crc_p50": 2.29,
+      "output_direct_crc_p50": 2.21,
+      "float_output_finite_scan_p50": 108.87
+    },
+    "rgb8_texture_contract": {
+      "status": "PASS",
+      "format": "GL_RGB8",
+      "upload_format": "GL_RGB/GL_UNSIGNED_BYTE",
+      "readback": "exact-rgb-and-alpha-255"
+    },
+    "actual_media3_quicksr_cpu_gl_runs": {
+      "status": "PASS_FUNCTIONAL_OFFLINE_PERFORMANCE_COMPARISON_INCONCLUSIVE",
+      "source": "generated_640x360_24000_over_1001_h264_4_seconds",
+      "profile": "FULL_1080P_3X",
+      "sequence": [
+        {
+          "mode": "serial_a1",
+          "frames": 499,
+          "steady_frames": 489,
+          "observed_fps": 9.699,
+          "ort_run_p50_ms": 59.0,
+          "output_pack_p50_ms": 25.6635,
+          "gl_submit_proxy_p50_ms": 2.5571,
+          "queue_p50_ms": 258.0,
+          "last_sample_dropped": 0,
+          "last_sample_bypassed": 0,
+          "max_queue_depth": 2,
+          "release_processed": 499,
+          "release_queue_depth": 0
+        },
+        {
+          "mode": "overlap_b",
+          "frames": 344,
+          "steady_frames": 334,
+          "observed_fps": 8.699,
+          "ort_run_p50_ms": 98.0,
+          "output_pack_p50_ms": 46.5883,
+          "gl_submit_proxy_p50_ms": 3.614,
+          "queue_p50_ms": 276.0,
+          "tensor_wait_p50_ms": 0.02,
+          "last_sample_dropped": 0,
+          "last_sample_bypassed": 0,
+          "max_queue_depth": 2,
+          "release_processed": 344,
+          "release_queue_depth": 0
+        },
+        {
+          "mode": "serial_a2",
+          "frames": 249,
+          "steady_frames": 239,
+          "observed_fps": 6.451,
+          "ort_run_p50_ms": 80.0,
+          "output_pack_p50_ms": 48.1767,
+          "gl_submit_proxy_p50_ms": 3.3914,
+          "queue_p50_ms": 384.0,
+          "last_sample_dropped": 10,
+          "last_sample_bypassed": 0,
+          "max_queue_depth": 2,
+          "release_processed": 249,
+          "release_dropped": 15,
+          "release_queue_depth": 0,
+          "drop_context": "No drops through accepted=209; drops appeared after repeated end-of-stream/flush generation changes and final activity teardown, so they are not attributed to steady model compute."
+        }
+      ],
+      "comparison": "INCONCLUSIVE_HOST_DRIFT_EXCEEDS_CANDIDATE_DIFFERENCE",
+      "boundary": "The A1-B-A2 decline (9.699 to 8.699 to 6.451 fps) and simultaneous stage-time drift show that this dual-emulator host cannot adjudicate serial-versus-overlap throughput. The runs validate Media3-to-QuickSR-CPU-to-GL wiring, bounded ownership and cleanup only; CPU emulator FPS does not predict QNN HTP."
+    }
+  },
+  "decision": {
+    "primary_next_device_candidate": "uint8-nhwc-rgb-graph-output-plus-rgb8-texture",
+    "secondary_device_candidate": "qnn-shared-buffer-or-native-io-binding",
+    "parallel_pack_role": "default-off bridge candidate only",
+    "precomputed_alpha_map_role": "integrated_into_the_existing_single_thread_java_path_with_exact_equivalence; physical-device_performance_pending",
+    "temporal_batch_role": "deprioritized",
+    "spatial_batch_role": "multi-graph correctness basis only",
+    "emulator_pipeline_role": "functional_and_lifecycle_validation_only; serial-versus-overlap performance is inconclusive because host drift exceeded the candidate difference",
+    "rejected_java_paths": [
+      "per-pixel-direct-intbuffer-output",
+      "per-element-direct-floatbuffer-readback"
+    ],
+    "unresolved": "Only a physical Qualcomm QNN run can determine whether any candidate closes the 23.976 fps source-cadence gate."
+  }
+}

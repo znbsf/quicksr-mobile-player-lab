@@ -2,7 +2,7 @@
 
 状态日期：2026-09-04
 
-实现与设备证据基线：`main` 的 `d7daad5`
+实现与设备证据基线：`main` 的 `22774fd`；其后的架构探针尚待物理机 QNN 裁决
 
 文档角色：当前实现、证据等级、先后依赖和下一步的唯一总览。早期研究理由仍保留在
 [动漫视频实时超分与插帧执行拆分](ANIME_VIDEO_SR_RESEARCH_AND_EXECUTION_PLAN.md)，各项原始测量以链接的专项报告为准。
@@ -44,6 +44,12 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
 6. **动漫画质主机合同已进入主线，但仍不是画质 PASS。** 六个空间 case 和 14 个时序
    case/74 帧已由 canonical generator、manifest 和 hash 约束；结果只允许写成
    `declared_oracle_conformance`，真实 Anime4K/cadence 运行、代表性动漫和人工审核仍待补。
+7. **1080p 架构候选已完成主机/模拟器第一轮淘汰。** 同权重 `uint8 NHWC RGB` 图输出逐值
+   零失配并将边界输出缩小 75%，`GL_RGB8` 上传合同通过；temporal batch=2 仅有 4.2%～16.9%
+   的主机方向收益，空间 batch 基本无收益，Java direct FloatBuffer/IntBuffer 路线明显更慢。
+   预计算 alpha 索引保持任意 alpha 逐字节一致，新独立 AVD 三次专项 ABBA 的单线程方向收益
+   为 11.87%、24.57%、19.50%，已接入现有 Java pack 且未新增线程；这些都不是 HTP 性能证据，当前唯一主候选
+   仍是显示友好图输出加 RGB8 纹理。
 
 2026-09-03 的 P0 真机裁决已经完成。三档均 `PASS`，每档两次进程的 14 个输出全部 hash
 一致，进程退出干净；这证明限定设备兼容，不改变 `OFFLINE_ONLY` 或播放器未接线的边界。
@@ -73,7 +79,7 @@ GPU-resident Anime4K x2 Small、QuickSR CPU 和 QuickSR QNN HTP 切换均已接�
              -> inference
              -> serial postprocess（默认）
                 或 bounded overlap（构建开关，默认 OFF）
-             -> Java output pack（默认）
+             -> Java output pack（默认；alpha 映射按 profile 预计算）
                 或 JNI/arm64 NEON direct pack（显式实验，默认 OFF）
              -> Media3 output-submit 代理
 
@@ -103,6 +109,8 @@ RIFE / IFRNet / ANVIL
 | 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
 | QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；native direct packer 已执行并失败，下一变量必须由分段测量重新选择 |
 | JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期和 3 项 instrumentation 通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
+| Java 预计算 alpha 映射 | `IMPLEMENTED`，现有 Java pack 路径 | `HOST_ONLY`：JVM/模拟器逐字节等价；新独立 AVD 三次专项 ABBA +11.87%/+24.57%/+19.50% | 保留实现；物理机重跑后才能计入 1080p 吞吐收益 |
+| 显示友好输出/RGB8/聚合探针 | 实验脚本与 instrumentation 已实现，未接播放器默认路径 | `HOST_ONLY`：u8 NHWC RGB 零失配、边界 -75%；RGB8 GL 合同 PASS；batch/分块/直接 buffer 已得正负结果 | u8 RGB 图输出升为下一物理机单变量；batch 与 Java direct 路线降级/停止 |
 | Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
 | cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
 | Anime4K/cadence 画质合同 | `IMPLEMENTED`，主机工具已进入 `main` | `HOST_ONLY`：6 个空间 case、14 个时序 case/74 帧；只验证 declared-oracle conformance，runtime evidence=`NOT_BOUND` | 下一步接真实 offscreen GL/mpv/Android trace/receipt 和人工盲审；不能用 oracle-filled PASS 关闭画质门禁 |
@@ -117,6 +125,7 @@ RIFE / IFRNet / ANVIL
 
 - [QNN 后处理重叠 A/B](ANDROID_QNN_POSTPROCESS_OVERLAP_AB.md)
 - [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)
+- [1080p 实时架构优化审计](REALTIME_ARCHITECTURE_OPTIMIZATION_AUDIT.md)
 - [动漫 cadence 复用](ANIME_CADENCE_REUSE.md)
 - [Anime4K Android GPU 集成](ANIME4K_ANDROID_GPU_INTEGRATION.md)
 - [动漫 VFI 离线基线](ANIME_VFI_OFFLINE_EVALUATION.md)
@@ -148,8 +157,11 @@ M3A 诊断检查点（360p→720p，不是产品完成声明）
   -> 只用于定位 readback、QNN、pack、GL upload、队列和 thermal 的占比
 
 条件性 P1D（为关闭 1080p 原片帧率硬门）
-  -> 从 profiler 只选一个：输出数据布局/量化 I/O/shared allocator/显示域路径
-  -> 固定模型、片源、tuning、队列和 cadence 做 ABBA；失败即停止该变量
+  -> D1：同权重 uint8 NHWC RGB 图输出 + RGB8 texture，先验 QNN 全图 placement/parity
+  -> 固定片源、tuning、队列和 cadence 做 ABBA；两次 B 均过 23.976 fps 才保留
+  -> D2：D1 仍失败时只测 native ORT/QNN shared allocator，不与其他变量混测
+  -> D3：QNN caller 仍跨预算时，比较同权重 ncnn/Vulkan GPU-resident 路线
+  -> temporal batch、空间 batch 和 Java direct buffer 不进入当前主线
 
 条件性后续
   |-- SESR-M5：只在权利边界允许时做导出、CPU ORT、QNN parity
@@ -189,6 +201,9 @@ GL texture（GPU 上的 RGBA 图像）
   536.44 ms 推高到 625.37 ms；
 - native/NEON packer 已从数据上否决，不能再次作为默认化候选；Media3 固定 effect 缓冲、
   GPU completion 和最终 latch 仍未被分离测量。
+- 新增主机/模拟器探针表明：图边界直接输出 RGB8 可把 23.73 MiB float 输出降到 5.93 MiB
+  且逐值一致；RGB8 GLES 合同通过。temporal batch 的方向收益只有 4.2%～16.9%，空间 batch
+  约为 -2.3%～+0.7%，均不足以单独关闭 33.5% 吞吐缺口；Java 逐元素 direct buffer 路线停止。
 
 这里还有一个指标矛盾：当前 validator 用单个 `performance_class` 同时要求 observed FPS 达标
 和 `effectTotalToOutputSubmitProxyNs` p95 小于一帧，再把其余情况统一写成 `offline`。但项目使用
@@ -215,12 +230,13 @@ readback-ready proxy、preprocess、QNN caller、tensor copy、pack、GL submit�
 
 立即执行包按以下三步：
 
-1. telemetry/report schema 新增 `throughput_class`、`effect_latency_class`、
-   `final_display_status`，记录 Media3 effect queue=6、pending PBO=1；按当前默认路径重跑
-   1080p 原片帧率门，720p 只作定位差异的对照；
-2. 若仍低于原片 cadence，按分段结果一次只测一个布局/量化 I/O、shared allocator 或
-   texture-resident 变量；若合理候选均不能过门，将 QuickSR 实时路线标记为 `STOPPED`；
-3. 只有 1080p 原片帧率门通过后，才接真实 Android/offscreen GL 同帧输出并执行
+1. 物理 Qualcomm 设备出现后先复现 OVERLAP 基线，再让同权重 `uint8 NHWC RGB` 图通过
+   QNN 编译、placement、CPU/QNN parity，并接 `GL_RGB8` texture 做固定片源 ABBA；
+2. 若仍低于原片 cadence，依次且一次只测 shared allocator/native I/O、同权重 GPU-resident
+   runtime、profile 支持下的双 QNN graph；合理候选均失败则将 QuickSR 实时路线标记为
+   `STOPPED`；
+3. 同步补 `throughput_class`、`effect_latency_class`、`final_display_status`，但不以遥测字段
+   替代实际速度；只有 1080p 原片帧率门通过后，才接真实 Android/offscreen GL 同帧输出并执行
    Lanczos/Anime4K/QuickSR 画质盲审。
 
 ### P0：RIFE v4.25-lite 真机裁决（已完成）
@@ -298,18 +314,23 @@ reference/output identity，同时输出 PSNR、global SSIM 和 edge MAE。这�
 
 ## 7. 本次盘点验证
 
-- `:app:testDebugUnitTest`：107/107 PASS；
-- Python：`scripts` 44/44、`golden-correctness` 14/14、`pc-benchmark` 27/27、
-  `derived-models` 19/19、`vfi-benchmark` 12/12，共 116/116 PASS；需要 ONNX/ORT 的三组
-  使用仓库固定 Python 环境；
-- source-only publication scan 204 项 PASS；oracle 重签和任意 PPM 冒充
-  的对抗路径均由测试覆盖，runtime evidence 仍固定为 `NOT_BOUND`；
-- 本次同步即时重跑了 JVM 单测、五组 Python 测试和 publication scan；lint、assemble 与
-  三项真机 instrumentation 沿用 `d7daad5` 已记录的最近一次完整门禁结果，没有伪写成本轮重跑；
-- 本次同步检查时当前 shell 的 ADB 在线设备数为 0，因此没有新增真机运行；`d7daad5` 前已经
-  记录的 RIFE v4.25-lite 三档 PASS、42 个输出逐项 hash 一致和 packer ABBA 仍作为历史证据，
-  但下一轮设备门禁必须先重新确认目标机可见；
-- 原始报告保留在忽略目录，提交只记录去标识汇总；设备兼容没有被扩写成播放器实时成功。
+- `:app:testDebugUnitTest`：108/108 PASS；`lintDebug`、`assembleDebugAndroidTest` 和
+  `assembleDebug` PASS；
+- 新开的 `Medium_Phone_API_35` x86_64 独立 AVD 完整 instrumentation 为 7/7 PASS，覆盖既有
+  native packer 测试、新增 output-pack 候选、alpha-map 专项 ABBA 以及 GLES3 RGB8 texture
+  合同；所有最终命令显式绑定新 serial，没有继续占用此前正在工作的 AVD；
+- 0.15.0 x86_64 debug APK 在独立 AVD cold launch，并以生成的 640x360@23.976 H.264 实际走通
+  Media3→QuickSR CPU→GL 的 serial A1 / overlap B / serial A2：9.699 / 8.699 / 6.451 fps。
+  A2 未恢复 A1，且 ORT/pack 同步大幅漂移，因此模拟器流水线性能裁决为 **不确定**；它只证明
+  接线、队列上界和释放路径。A2 的 drop 在 accepted=209 后随循环片源 flush/generation 切换及
+  Activity 销毁出现，不能归因于稳定推理；
+- 三个 ONNX 主机探针均 PASS：显示友好 u8 输出逐值零失配，temporal batch=2 零误差，
+  4-pixel halo 空间分块拼接零误差；生成模型只保留在忽略的 `build/experiments/`；
+- 早一轮记录的五组 Python 116/116 仍是历史回归证据，本轮没有把它伪写成重跑；本轮新增
+  Python 脚本已执行且通过 `py_compile`，当前 source-only publication scan 211 项 PASS；
+- 当前 `adb devices -l` 只有 x86_64 AVD，没有物理 Qualcomm 设备。因此新增数据不能证明
+  QNN HTP 吞吐、功耗、热稳或最终显示；历史 RIFE/packer 真机证据仍保留但不外推；
+- 机器可读探针摘要已经去设备标识。原始模型产物、设备日志和本地路径不进入发布集合。
 
 ## 8. 计划更新规则
 

@@ -968,6 +968,8 @@ final class QuickSrVideoEffect implements GlEffect {
         private final AnimeCadenceAnalyzer.Mode cadenceMode;
         private final StatsListener listener;
         private final LongSupplier monotonicClock;
+        private final int[] outputAlphaXOffsets;
+        private final int[] outputAlphaRowOffsets;
         private final ThreadPoolExecutor inferenceExecutor;
         private final ThreadPoolExecutor postprocessExecutor;
         private final Semaphore frameQueueSlots = new Semaphore(
@@ -1254,6 +1256,10 @@ final class QuickSrVideoEffect implements GlEffect {
             this.cadenceMode = cadenceMode;
             this.listener = listener;
             this.monotonicClock = monotonicClock;
+            this.outputAlphaXOffsets = createAlphaXOffsets(
+                    profile.inputWidth(), profile.outputWidth());
+            this.outputAlphaRowOffsets = createAlphaRowOffsets(
+                    profile.inputWidth(), profile.inputHeight(), profile.outputHeight());
             ThreadPoolExecutor executor = new ThreadPoolExecutor(
                     1,
                     1,
@@ -1858,14 +1864,16 @@ final class QuickSrVideoEffect implements GlEffect {
                             profile.outputHeight(),
                             directRgba);
                 } else {
-                    packNchwToRgba(
+                    packNchwToRgbaWithAlphaMaps(
                             outputTensor,
                             rgba,
                             profile.inputWidth(),
                             profile.inputHeight(),
                             profile.outputWidth(),
                             profile.outputHeight(),
-                            outputRgbaScratch);
+                            outputRgbaScratch,
+                            outputAlphaXOffsets,
+                            outputAlphaRowOffsets);
                 }
                 timings.outputPackFinishedNs = nowNs();
                 timings.outputHashStartedNs = timings.outputPackFinishedNs;
@@ -2592,6 +2600,66 @@ final class QuickSrVideoEffect implements GlEffect {
                 int inputX = Math.min(inputWidth - 1, x * inputWidth / outputWidth);
                 packedRgba[rgbaOffset++] = inputRgba[
                         inputAlphaRow + inputX * RGBA_BYTES_PER_PIXEL + 3];
+                outputPixel++;
+            }
+        }
+    }
+
+    static int[] createAlphaXOffsets(int inputWidth, int outputWidth) {
+        checkedPixels(inputWidth, 1);
+        checkedPixels(outputWidth, 1);
+        int[] offsets = new int[outputWidth];
+        for (int x = 0; x < outputWidth; x++) {
+            int inputX = Math.min(inputWidth - 1, x * inputWidth / outputWidth);
+            offsets[x] = inputX * RGBA_BYTES_PER_PIXEL + 3;
+        }
+        return offsets;
+    }
+
+    static int[] createAlphaRowOffsets(
+            int inputWidth,
+            int inputHeight,
+            int outputHeight) {
+        checkedPixels(inputWidth, inputHeight);
+        checkedPixels(1, outputHeight);
+        int[] offsets = new int[outputHeight];
+        for (int y = 0; y < outputHeight; y++) {
+            int inputY = Math.min(inputHeight - 1, y * inputHeight / outputHeight);
+            offsets[y] = inputY * inputWidth * RGBA_BYTES_PER_PIXEL;
+        }
+        return offsets;
+    }
+
+    static void packNchwToRgbaWithAlphaMaps(
+            float[] output,
+            byte[] inputRgba,
+            int inputWidth,
+            int inputHeight,
+            int outputWidth,
+            int outputHeight,
+            byte[] packedRgba,
+            int[] alphaXOffsets,
+            int[] alphaRowOffsets) {
+        int inputPixels = checkedPixels(inputWidth, inputHeight);
+        int outputPixels = checkedPixels(outputWidth, outputHeight);
+        if (output.length != 3 * outputPixels
+                || inputRgba.length != inputPixels * RGBA_BYTES_PER_PIXEL
+                || packedRgba.length != outputPixels * RGBA_BYTES_PER_PIXEL
+                || alphaXOffsets.length != outputWidth
+                || alphaRowOffsets.length != outputHeight) {
+            throw new IllegalArgumentException("QuickSR video output buffer length mismatch");
+        }
+        int greenPlane = outputPixels;
+        int bluePlane = outputPixels * 2;
+        int rgbaOffset = 0;
+        for (int y = 0; y < outputHeight; y++) {
+            int inputAlphaRow = alphaRowOffsets[y];
+            int outputPixel = y * outputWidth;
+            for (int x = 0; x < outputWidth; x++) {
+                packedRgba[rgbaOffset++] = normalizedToByte(output[outputPixel]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[greenPlane + outputPixel]);
+                packedRgba[rgbaOffset++] = normalizedToByte(output[bluePlane + outputPixel]);
+                packedRgba[rgbaOffset++] = inputRgba[inputAlphaRow + alphaXOffsets[x]];
                 outputPixel++;
             }
         }

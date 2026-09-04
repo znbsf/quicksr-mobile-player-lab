@@ -181,6 +181,47 @@ public final class QuickSrVideoEffectTest {
     }
 
     @Test
+    public void mappedAlphaPackerMatchesLegacyForRectangularNonIntegerScale() {
+        int inputWidth = 4;
+        int inputHeight = 3;
+        int outputWidth = 7;
+        int outputHeight = 5;
+        int outputPixels = outputWidth * outputHeight;
+        byte[] inputRgba = new byte[inputWidth * inputHeight * 4];
+        for (int pixel = 0; pixel < inputWidth * inputHeight; pixel++) {
+            inputRgba[pixel * 4 + 3] = (byte) (pixel * 17 + 3);
+        }
+        float[] output = new float[outputPixels * 3];
+        for (int value = 0; value < output.length; value++) {
+            output[value] = (value % 31 - 5) / 25.0f;
+        }
+        byte[] legacy = new byte[outputPixels * 4];
+        byte[] mapped = new byte[outputPixels * 4];
+
+        QuickSrVideoEffect.packNchwToRgba(
+                output,
+                inputRgba,
+                inputWidth,
+                inputHeight,
+                outputWidth,
+                outputHeight,
+                legacy);
+        QuickSrVideoEffect.packNchwToRgbaWithAlphaMaps(
+                output,
+                inputRgba,
+                inputWidth,
+                inputHeight,
+                outputWidth,
+                outputHeight,
+                mapped,
+                QuickSrVideoEffect.createAlphaXOffsets(inputWidth, outputWidth),
+                QuickSrVideoEffect.createAlphaRowOffsets(
+                        inputWidth, inputHeight, outputHeight));
+
+        assertArrayEquals(legacy, mapped);
+    }
+
+    @Test
     public void high256ConversionUsesFullInputAnd512Output() {
         int inputSide = QuickSrVideoEffect.Profile.HIGH_256.inputSide();
         int outputSide = QuickSrVideoEffect.Profile.HIGH_256.outputSide();
