@@ -275,5 +275,8 @@ This log keeps failed attempts and scope corrections. A closed tooling problem d
   declared `android.app.Instrumentation`, so the compiled tests could not be discovered. A follow-up
   uses `AndroidJUnitRunner` with AndroidX Test 1.7.0/JUnit extension 1.3.0 and adds a host APK gate
   for the runner, target package, class and three required methods. A non-installing device gate
-  also requires the corrected registration and exactly three passing tests. Device execution is
-  still pending and is not counted as PASS.
+  also requires the corrected registration and exactly three passing tests. After installing the
+  corrected test APK, the runner discovered three tests, each returned status code zero, and the
+  suite ended with `OK (3 tests)` and instrumentation code `-1`. This is packer
+  correctness/ownership/boundary evidence only; the ABBA performance rejection and incomplete
+  70/180 cycle coverage remain unchanged.

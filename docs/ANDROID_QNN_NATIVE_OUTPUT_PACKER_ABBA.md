@@ -31,18 +31,19 @@ bounded row. The Java fallback and its old constructor call sites remain intact.
 ownership, pool return on failure/stale generation, cadence-cache copies, CRC, flush, and release
 all accept the direct-buffer path.
 
-Host gates passed with 107 Java tests, 43 Python tests, `lintDebug`, `assembleDebug`, and
+Host gates passed with 107 Java tests, 44 Python tests, `lintDebug`, `assembleDebug`, and
 `assembleDebugAndroidTest`; the app APK contains the arm64-v8a JNI build. A later execution attempt
 found that the first instrumentation APK registered the platform `android.app.Instrumentation`
 instead of a JUnit runner, so its tests were compiled but undiscoverable. The follow-up switches to
 `AndroidJUnitRunner`, JUnit4 annotations, and an APK inspection gate that requires the correct runner,
-target package, test class, and all three named test methods. Device execution remains pending after
-that correction. A separate non-installing device gate rejects a missing/wrong registration and
-requires exactly `OK (3 tests)`, preventing a zero-test result from being counted. The device-side
-in-process self-test compares randomized and boundary values,
+target package, test class, and all three named test methods. After the corrected test APK was
+installed, the non-installing device gate found exactly three tests, observed each finish with status
+code zero, and ended with `OK (3 tests)` plus instrumentation code `-1`. The device-side in-process
+self-test compares randomized and boundary values,
 a non-square resize, exact RGBA bytes, alpha mapping, repeated buffer ownership, and direct-buffer
-requirements. It passed independently in B1 and B2. The corrected instrumentation suite is still a
-host build/package gate, not passing device instrumentation evidence.
+requirements. It passed independently in B1 and B2. The three device instrumentation tests also
+passed. This closes the tested packer correctness, boundary mapping and caller-ownership gate; it
+does not add performance evidence, complete the 180-frame CRC cycle, or prove final-display quality.
 
 The ABBA summarizer rehashes every raw log, reruns the current strict validator, checks the
 chronological packer sequence and pinned configuration, and binds all runs to the same registered
@@ -94,6 +95,8 @@ remains reproducible. Do not enlarge queues or combine this with overlap to hide
 
 The sanitized machine summary is
 [android-qnn-native-output-packer-abba-summary.json](evidence/android-qnn-native-output-packer-abba-summary.json).
+Its device-test section is validated from the separate sanitized
+[instrumentation receipt](evidence/android-qnn-native-output-packer-device-tests.json).
 Raw logs, APKs, media, device identifiers, and local paths remain ignored. Final display latch,
 input-to-photon latency, visual quality, A/V sync, sustained power and thermal behavior remain
 unmeasured. QNN evidence remains session-configuration evidence, not per-node placement proof.

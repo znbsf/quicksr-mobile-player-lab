@@ -91,7 +91,7 @@ RIFE / IFRNet / ANVIL
 | Media3 播放器与 QuickSR CPU/QNN | `IMPLEMENTED` | 单设备 720p/1080p/1440p/4K-display 功能矩阵 | 保留；实时、最终显示和长时热稳分开判断 |
 | 逐帧 telemetry、generation、PTS、CRC、队列和生命周期 | `IMPLEMENTED` | 已用于 overlap/cadence 真机报告 | 继续作为所有热路径 A/B 的共同合同 |
 | QNN postprocess overlap | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：1080p +57.1% 代理吞吐，但仍离线且尾部回归 | 保留实验，不设默认；下一变量是 native direct packer |
-| JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
+| JNI/NEON direct output packer | `IMPLEMENTED`，默认 OFF | `DEVICE_BOUNDED`：ABBA 功能/生命周期和 3 项 instrumentation 通过，但平均 FPS -42.94%、pack p50 +179.91% | 否决默认化；Java 保持默认，native 仅留可审计实验 |
 | Anime4K x2 Small | `IMPLEMENTED`，UI 可选 | `DEVICE_BOUNDED`：三档 model-active，短片无 fallback | 先补固定同帧和 GPU timing，不急着换 Medium |
 | cadence-aware SR reuse | `IMPLEMENTED`，仅 benchmark 可开 | `DEVICE_BOUNDED`：720p 减少 37.79% 推理，映射 motion false reuse 为 0 | 继续画质/复杂 cadence 门禁；暂不进普通 UI |
 | Anime4K/cadence 画质合同 | `IMPLEMENTED`，主机工具已进入 `main` | `HOST_ONLY`：6 个空间 case、14 个时序 case/74 帧；只验证 declared-oracle conformance，runtime evidence=`NOT_BOUND` | 下一步接真实 offscreen GL/mpv/Android trace/receipt 和人工盲审；不能用 oracle-filled PASS 关闭画质门禁 |
@@ -161,7 +161,9 @@ P1 共同检查点
 
 ABBA 已完成。244 次可对齐跨路径重复没有输出 CRC 冲突，覆盖 180 帧周期中的 70 个不同
 identity；B1/B2 的确定性 Java/native 启动自检均为 PASS。功能门禁、队列、drop/bypass 和
-生命周期通过，但平均 FPS 下降 42.94%，pack p50 增长 179.91%，因此保留 Java 默认。
+生命周期通过；修正 runner 后的 3 项真机 instrumentation 也全部通过，范围仅为 packer
+数值一致性、边界映射与缓冲区 ownership。平均 FPS 仍下降 42.94%，pack p50 增长 179.91%，
+因此保留 Java 默认。
 结果见 [QNN native output packer ABBA](ANDROID_QNN_NATIVE_OUTPUT_PACKER_ABBA.md)。
 
 ### P1B：代表性画质与 cadence 安全性

@@ -70,6 +70,35 @@ def percent_change(baseline: float, candidate: float) -> float:
     return (candidate - baseline) * 100.0 / baseline
 
 
+def validate_device_instrumentation(evidence: dict[str, Any]) -> dict[str, Any]:
+    expected = {
+        "schema_version": 1,
+        "experiment": "android-qnn-native-output-packer-device-tests",
+        "status": "PASS",
+        "runner": "androidx.test.runner.AndroidJUnitRunner",
+        "discovered_test_count": 3,
+        "passed_test_count": 3,
+        "per_test_final_status_code": 0,
+        "instrumentation_code": -1,
+        "scope": "packer_correctness_alpha_boundary_mapping_and_buffer_ownership_only",
+        "raw_device_output_published": False,
+    }
+    for field, value in expected.items():
+        if evidence.get(field) != value:
+            raise ValueError(
+                f"device instrumentation {field}: expected {value!r}, got {evidence.get(field)!r}"
+            )
+    required_exclusions = {
+        "performance",
+        "complete_180_frame_crc_cycle",
+        "final_display",
+        "long_run_memory_or_lifecycle",
+    }
+    if set(evidence.get("excluded_claims", [])) != required_exclusions:
+        raise ValueError("device instrumentation scope exclusions are incomplete")
+    return evidence
+
+
 def load_run(
     session: Path,
     plan: dict[str, Any],
@@ -131,6 +160,14 @@ def main() -> int:
         / "android-qnn-resolution-plan.json",
     )
     parser.add_argument("--minimum-matched-frame-occurrences", type=positive_int, default=180)
+    parser.add_argument(
+        "--device-instrumentation",
+        type=Path,
+        default=Path(__file__).resolve().parents[1]
+        / "docs"
+        / "evidence"
+        / "android-qnn-native-output-packer-device-tests.json",
+    )
     args = parser.parse_args()
 
     if len(args.run) != 4:
@@ -138,6 +175,9 @@ def main() -> int:
     plan_bytes = args.plan.read_bytes()
     plan = json.loads(plan_bytes.decode("utf-8"))
     plan_sha256 = hashlib.sha256(plan_bytes).hexdigest()
+    device_instrumentation = validate_device_instrumentation(
+        json.loads(args.device_instrumentation.read_text(encoding="utf-8"))
+    )
     runs: list[tuple[str, Path]] = []
     for value in args.run:
         label, separator, raw_path = value.partition("=")
@@ -303,6 +343,7 @@ def main() -> int:
             "status": status,
             "mismatches": mismatches,
         },
+        "device_instrumentation": device_instrumentation,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

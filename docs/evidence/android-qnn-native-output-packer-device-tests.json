@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "experiment": "android-qnn-native-output-packer-device-tests",
+  "status": "PASS",
+  "runner": "androidx.test.runner.AndroidJUnitRunner",
+  "discovered_test_count": 3,
+  "passed_test_count": 3,
+  "per_test_final_status_code": 0,
+  "reported_elapsed_seconds": 0.018,
+  "instrumentation_code": -1,
+  "scope": "packer_correctness_alpha_boundary_mapping_and_buffer_ownership_only",
+  "excluded_claims": [
+    "performance",
+    "complete_180_frame_crc_cycle",
+    "final_display",
+    "long_run_memory_or_lifecycle"
+  ],
+  "raw_device_output_published": false
+}
